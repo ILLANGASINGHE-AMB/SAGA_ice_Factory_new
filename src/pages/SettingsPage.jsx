@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useSettings } from '../hooks/useSettings';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { Button } from '../components/Button';
 import { Input, TextArea } from '../components/FormFields';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { supabase } from '../lib/supabase';
-import { Building, Upload, Palette, ShieldAlert, Download, FolderSync } from 'lucide-react';
+import { Building, Upload, Palette, ShieldAlert, Download, FolderSync, Trash2, AlertOctagon } from 'lucide-react';
 
 export function SettingsPage() {
   const { settings, isLoading, updateSettings } = useSettings();
+  const { isAdmin } = useAuth();
   const toast = useToast();
 
   // Settings form states
@@ -28,6 +30,10 @@ export function SettingsPage() {
   const [importConfirmOpen, setImportConfirmOpen] = useState(false);
   const [selectedImportFile, setSelectedImportFile] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
+
+  // Clear Database states
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [clearLoading, setClearLoading] = useState(false);
 
   // Sync appearance options from external triggers (like the sidebar)
   useEffect(() => {
@@ -253,6 +259,39 @@ export function SettingsPage() {
       }
     };
     reader.readAsText(selectedImportFile);
+  };
+
+  // --- Admin-Only Clear Database Operation ---
+  const handleClearAllData = async () => {
+    setClearLoading(true);
+    try {
+      // 1. Delete records from Supabase tables in reverse dependency order
+      await supabase.from('debt_settlements').delete().neq('id', -1);
+      await supabase.from('debts').delete().neq('id', -1);
+      await supabase.from('sales').delete().neq('id', -1);
+      await supabase.from('customers').delete().neq('id', -1);
+      await supabase.from('production_batches').delete().neq('id', -1);
+      await supabase.from('equipment_maintenance').delete().neq('id', -1);
+      await supabase.from('operating_expenses').delete().neq('id', -1);
+
+      // 2. Reset inventory quantities back to 0
+      await supabase.from('inventory').update({ quantity: 0, updated_at: new Date().toISOString() }).neq('id', -1);
+
+      // 3. Clear local storage fallbacks
+      localStorage.removeItem('saga_production_batches');
+      localStorage.removeItem('saga_equipment_maintenance');
+      localStorage.removeItem('saga_operating_expenses');
+
+      toast.success("All factory records and data cleared successfully!");
+      setClearConfirmOpen(false);
+      
+      // Reload page to refresh all active hooks and state
+      setTimeout(() => window.location.reload(), 1000);
+    } catch (err) {
+      toast.error(`Failed to clear database: ${err.message}`);
+    } finally {
+      setClearLoading(false);
+    }
   };
 
   if (isLoading) {
@@ -502,7 +541,7 @@ export function SettingsPage() {
             </Button>
 
             {/* Import PC */}
-            <label className="w-full cursor-pointer flex items-center justify-center space-x-2 py-2 bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-950/40 rounded-xl text-xs font-semibold transition border border-rose-200 dark:border-rose-900/50">
+            <label className="w-full cursor-pointer flex items-center justify-center space-x-2 py-2 bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-950/40 rounded-xl text-xs font-semibold transition border border-blue-200 dark:border-blue-900/50">
               <FolderSync size={15} />
               <span>Import from Backup</span>
               <input
@@ -514,6 +553,31 @@ export function SettingsPage() {
             </label>
           </div>
         </div>
+
+        {/* Danger Zone: Clear Database (Admin Only) */}
+        {isAdmin && (
+          <div className="bg-red-50/50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-2xl shadow-sm p-6 space-y-4">
+            <div className="flex items-center space-x-2 border-b border-red-100 dark:border-red-900/40 pb-3 text-red-600 dark:text-red-400">
+              <AlertOctagon size={20} />
+              <h3 className="text-base font-bold font-heading">
+                Admin Danger Zone
+              </h3>
+            </div>
+
+            <p className="text-xs text-red-700 dark:text-red-300 font-medium">
+              Irreversibly wipe all operational records (sales, customer database, debts, freezing batches, maintenance logs, expenses) and reset inventory stock to 0.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setClearConfirmOpen(true)}
+              className="w-full flex items-center justify-center space-x-2 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
+            >
+              <Trash2 size={16} />
+              <span>Clear All Data (Wipe Database)</span>
+            </button>
+          </div>
+        )}
 
       </div>
 
@@ -529,6 +593,17 @@ export function SettingsPage() {
         message="WARNING: Importing data will completely erase and overwrite all current customers, sales history, settings, and outstanding debts. This action is irreversible. Do you want to proceed?"
         confirmLabel="Overwrite DB"
         isLoading={importLoading}
+      />
+
+      {/* --- Clear All Database Data Confirmation Modal --- */}
+      <ConfirmDialog
+        isOpen={clearConfirmOpen}
+        onClose={() => setClearConfirmOpen(false)}
+        onConfirm={handleClearAllData}
+        title="CRITICAL WARNING: Wipe All Factory Database Records?"
+        message="ARE YOU ABSOLUTELY SURE? This will permanently DELETE all customers, sales orders, debt records, debt settlements, freezing batches, machinery logs, and operational expense ledgers. Factory settings and user login accounts will be preserved. This action CANNOT be undone!"
+        confirmLabel="YES, PERMANENTLY CLEAR ALL DATA"
+        isLoading={clearLoading}
       />
 
     </div>
