@@ -15,6 +15,9 @@ import { SalesPage } from './pages/SalesPage';
 import { DebtsPage } from './pages/DebtsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { ProductionPage } from './pages/ProductionPage';
+import { ExpenseLedgerPage } from './pages/ExpenseLedgerPage';
+import { ClientPortalPage } from './pages/ClientPortalPage';
 
 function App() {
   const { settings } = useSettings();
@@ -53,6 +56,16 @@ function App() {
                 <ProtectedRoute>
                   <AppShell>
                     <DashboardPage />
+                  </AppShell>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/production"
+              element={
+                <ProtectedRoute>
+                  <AppShell>
+                    <ProductionPage />
                   </AppShell>
                 </ProtectedRoute>
               }
@@ -97,8 +110,28 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/client-portal"
+              element={
+                <ProtectedRoute>
+                  <AppShell>
+                    <ClientPortalPage />
+                  </AppShell>
+                </ProtectedRoute>
+              }
+            />
 
             {/* Admin-Only Routes */}
+            <Route
+              path="/expenses"
+              element={
+                <AdminRoute>
+                  <AppShell>
+                    <ExpenseLedgerPage />
+                  </AppShell>
+                </AdminRoute>
+              }
+            />
             <Route
               path="/reports"
               element={

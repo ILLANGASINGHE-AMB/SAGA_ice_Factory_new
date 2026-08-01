@@ -14,7 +14,10 @@ import {
   Menu,
   Sun,
   Moon,
-  Type
+  Type,
+  Zap,
+  Receipt,
+  Building2
 } from 'lucide-react';
 
 export function AppShell({ children }) {
@@ -82,10 +85,13 @@ export function AppShell({ children }) {
 
   const navItems = [
     { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} />, adminOnly: false },
+    { name: 'Production & Ops', path: '/production', icon: <Zap size={20} />, adminOnly: false },
     { name: 'Inventory', path: '/inventory', icon: <Package size={20} />, adminOnly: false },
     { name: 'Customers', path: '/customers', icon: <Users size={20} />, adminOnly: false },
     { name: 'Sales', path: '/sales', icon: <ShoppingCart size={20} />, adminOnly: false },
     { name: 'Debts', path: '/debts', icon: <DollarSign size={20} />, adminOnly: false },
+    { name: 'Expense Ledger', path: '/expenses', icon: <Receipt size={20} />, adminOnly: true },
+    { name: 'Client Portal', path: '/client-portal', icon: <Building2 size={20} />, adminOnly: false },
     { name: 'Reports', path: '/reports', icon: <FileBarChart size={20} />, adminOnly: true },
     { name: 'Settings', path: '/settings', icon: <SettingsIcon size={20} />, adminOnly: true }
   ];
