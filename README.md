@@ -76,4 +76,4 @@ npm run dev
 
 ## 📄 License
 
-Internal Enterprise Application for Sagacious Ice Factory.
+Internal Enterprise Application for Sagacious Ice Factory developed by Helllsinghe Digi Tech.
