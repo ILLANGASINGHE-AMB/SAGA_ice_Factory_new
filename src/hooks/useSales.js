@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { generateBillPDFBlob } from '../utils/pdfGenerator';
 
 export function useSales() {
   const [sales, setSales] = useState([]);
@@ -100,6 +101,56 @@ export function useSales() {
     const sale_code = `S-${newCount + 1}-${dateSuffix}`;
     const total_amount = price_per_cube * quantity;
 
+    // Fetch customer & settings for PDF Bill generation
+    const { data: customer } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('id', customer_id)
+      .single();
+
+    const { data: settings } = await supabase
+      .from('settings')
+      .select('*')
+      .limit(1)
+      .single();
+
+    let bill_pdf_url = null;
+
+    // Generate PDF Blob and upload to Supabase Storage 'bills' bucket
+    try {
+      const saleObj = {
+        sale_code,
+        customer,
+        cube_type,
+        quantity,
+        price_per_cube,
+        total_amount,
+        payment_type,
+        sale_date: now.toISOString(),
+        created_by
+      };
+
+      const pdfBlob = generateBillPDFBlob(saleObj, settings || {});
+      const fileName = `BILL_${sale_code}_${Date.now()}.pdf`;
+
+      const { data: uploadData, error: uploadErr } = await supabase.storage
+        .from('bills')
+        .upload(fileName, pdfBlob, {
+          contentType: 'application/pdf',
+          upsert: true
+        });
+
+      if (!uploadErr && uploadData) {
+        const { data: publicUrlData } = supabase.storage
+          .from('bills')
+          .getPublicUrl(fileName);
+        
+        bill_pdf_url = publicUrlData?.publicUrl || null;
+      }
+    } catch (pdfErr) {
+      console.warn("PDF generation / storage upload skipped:", pdfErr);
+    }
+
     // 4. Create Sale Record
     const { data: newSale, error: saleErr } = await supabase
       .from('sales')
@@ -111,8 +162,8 @@ export function useSales() {
         price_per_cube,
         total_amount,
         payment_type,
-        bill_pdf_url: null,
-        sale_date: new Date().toISOString(),
+        bill_pdf_url,
+        sale_date: now.toISOString(),
         created_by
       })
       .select('*')
@@ -141,12 +192,6 @@ export function useSales() {
       debtId = newDebt.id;
     }
 
-    const { data: customer } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('id', customer_id)
-      .single();
-
     return {
       id: newSale.id,
       sale_code,
@@ -156,6 +201,7 @@ export function useSales() {
       price_per_cube,
       total_amount,
       payment_type,
+      bill_pdf_url,
       sale_date: newSale.sale_date,
       created_by,
       customer,

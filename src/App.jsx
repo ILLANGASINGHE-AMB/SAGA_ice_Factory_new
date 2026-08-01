@@ -17,6 +17,7 @@ import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ProductionPage } from './pages/ProductionPage';
 import { ExpenseLedgerPage } from './pages/ExpenseLedgerPage';
+import { PublicBillPage } from './pages/PublicBillPage';
 
 function App() {
   const { settings } = useSettings();
@@ -45,8 +46,9 @@ function App() {
       <AuthProvider>
         <ToastProvider>
           <Routes>
-            {/* Public Auth Route */}
+            {/* Public Routes */}
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/bill/:saleCode" element={<PublicBillPage />} />
 
             {/* Protected App Shell Routes */}
             <Route

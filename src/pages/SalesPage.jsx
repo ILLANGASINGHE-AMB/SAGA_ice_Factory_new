@@ -211,14 +211,23 @@ export function SalesPage() {
     const name = placedSaleRecord.customer?.name;
     const amount = placedSaleRecord.total_amount;
     
-    // Format message exactly as requested
     const paymentTypeText = placedSaleRecord.payment_type === 'cash' ? 'Cash' : 'Debit';
+    
+    // Construct 24-hour PDF bill link
+    const billURL = `${window.location.origin}/bill/${placedSaleRecord.sale_code}`;
+
     const text = `Hello, ${name},
 Your Order with ${placedSaleRecord.quantity.toLocaleString()} Ice Cubes is completed.
 The Payment type is : ${paymentTypeText}
-The Total is : LKR ${amount.toLocaleString()}`;
+The Total is : LKR ${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+
+📄 View/Download 24-Hour PDF Bill:
+${billURL}`;
     
-    const waURL = `https://wa.me/94${phone.substring(1)}?text=${encodeURIComponent(text)}`;
+    const cleanPhone = phone ? phone.replace(/\D/g, '') : '';
+    const formattedPhone = cleanPhone.length === 10 ? `94${cleanPhone.substring(1)}` : cleanPhone;
+
+    const waURL = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(text)}`;
     window.open(waURL, '_blank');
     
     setWhatsappPromptOpen(false);

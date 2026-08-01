@@ -211,6 +211,12 @@ export function generateBillPDF(sale, settings) {
   return doc;
 }
 
+export function generateBillPDFBlob(sale, settings) {
+  const doc = generateBillPDF(sale, settings);
+  return doc.output('blob');
+}
+
+
 // 2. Generate Debt Settlement Receipt PDF
 export function generateSettlementReceiptPDF(settlement, settings) {
   const doc = new jsPDF({

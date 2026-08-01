@@ -272,18 +272,40 @@ create policy "Allow read operating_expenses" on public.operating_expenses for s
 create policy "Allow write operating_expenses" on public.operating_expenses for all to authenticated using (true);
 
 -- ==========================================
--- 7. Enable Supabase Realtime for Tables
+-- 8. Supabase Storage Bucket & 24-Hour PDF Bills Cleanup
 -- ==========================================
 
-alter publication supabase_realtime add table public.profiles;
-alter publication supabase_realtime add table public.inventory;
-alter publication supabase_realtime add table public.customers;
-alter publication supabase_realtime add table public.sales;
-alter publication supabase_realtime add table public.debts;
-alter publication supabase_realtime add table public.debt_settlements;
-alter publication supabase_realtime add table public.settings;
-alter publication supabase_realtime add table public.production_batches;
-alter publication supabase_realtime add table public.equipment_maintenance;
-alter publication supabase_realtime add table public.operating_expenses;
+-- Create storage bucket 'bills' if not exists
+insert into storage.buckets (id, name, public)
+values ('bills', 'bills', true)
+on conflict (id) do update set public = true;
+
+-- Storage policies for bucket 'bills'
+create policy "Public Access to Bills" on storage.objects
+  for select using (bucket_id = 'bills');
+
+create policy "Allow Insert Bills for Authenticated & Public" on storage.objects
+  for insert with check (bucket_id = 'bills');
+
+create policy "Allow Delete Bills for Authenticated" on storage.objects
+  for delete using (bucket_id = 'bills');
+
+-- Function to purge PDF bills created > 24 hours ago
+create or replace function public.purge_expired_pdf_bills()
+returns void as $$
+begin
+  -- Delete storage objects in bucket 'bills' older than 24 hours
+  delete from storage.objects
+  where bucket_id = 'bills'
+    and created_at < (now() - interval '24 hours');
+    
+  -- Reset bill_pdf_url on sales older than 24 hours
+  update public.sales
+  set bill_pdf_url = null
+  where sale_date < (now() - interval '24 hours')
+    and bill_pdf_url is not null;
+end;
+$$ language plpgsql security definer;
+
 
 
