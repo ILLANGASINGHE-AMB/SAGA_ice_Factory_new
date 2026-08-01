@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "DM Sans", system-ui, -apple-system, sans-serif;
+  --font-heading: "Space Grotesk", system-ui, -apple-system, sans-serif;
+
+  /* Premium Industrial Color Scheme - Navy Slate Base + Icy Blue Accents */
+  --color-slate-900: #0b0f19;
+  --color-slate-950: #05070c;
+  --color-navy-50: #f0f9ff;
+  --color-navy-100: #e0f2fe;
+  --color-navy-200: #bae6fd;
+  --color-navy-300: #7dd3fc;
+  --color-navy-400: #38bdf8;
+  --color-navy-500: #0ea5e9;
+  --color-navy-600: #0284c7;
+  --color-navy-700: #0369a1;
+  --color-navy-800: #075985;
+  --color-navy-900: #0c4a6e;
+}
+
+:root {
+  /* Text scale variable */
+  --text-base-size: 16px;
+}
+
+html {
+  font-size: var(--text-base-size);
+  font-family: var(--font-sans);
+  height: 100%;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+}
+
+/* Custom Scrollbar for sleek industrial feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Glassmorphism utility */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.dark .glass-panel {
+  background: rgba(11, 15, 25, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
