@@ -16,8 +16,7 @@ import {
   Moon,
   Type,
   Zap,
-  Receipt,
-  Building2
+  Receipt
 } from 'lucide-react';
 
 export function AppShell({ children }) {
@@ -91,7 +90,6 @@ export function AppShell({ children }) {
     { name: 'Sales', path: '/sales', icon: <ShoppingCart size={20} />, adminOnly: false },
     { name: 'Debts', path: '/debts', icon: <DollarSign size={20} />, adminOnly: false },
     { name: 'Expense Ledger', path: '/expenses', icon: <Receipt size={20} />, adminOnly: true },
-    { name: 'Client Portal', path: '/client-portal', icon: <Building2 size={20} />, adminOnly: false },
     { name: 'Reports', path: '/reports', icon: <FileBarChart size={20} />, adminOnly: true },
     { name: 'Settings', path: '/settings', icon: <SettingsIcon size={20} />, adminOnly: true }
   ];

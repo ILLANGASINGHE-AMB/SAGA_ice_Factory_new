@@ -17,7 +17,6 @@ import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ProductionPage } from './pages/ProductionPage';
 import { ExpenseLedgerPage } from './pages/ExpenseLedgerPage';
-import { ClientPortalPage } from './pages/ClientPortalPage';
 
 function App() {
   const { settings } = useSettings();
@@ -106,16 +105,6 @@ function App() {
                 <ProtectedRoute>
                   <AppShell>
                     <DebtsPage />
-                  </AppShell>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/client-portal"
-              element={
-                <ProtectedRoute>
-                  <AppShell>
-                    <ClientPortalPage />
                   </AppShell>
                 </ProtectedRoute>
               }
