@@ -32,10 +32,35 @@ export function PublicBillPage() {
           .eq('sale_code', saleCode)
           .single();
 
-        if (saleErr || !saleData) {
+        let finalSale = saleData;
+
+        if (!finalSale) {
+          // Retry without join in case join failed
+          const { data: saleOnly } = await supabase
+            .from('sales')
+            .select('*')
+            .eq('sale_code', saleCode)
+            .single();
+          
+          if (saleOnly) {
+            finalSale = saleOnly;
+          }
+        }
+
+        if (!finalSale) {
           setErrorMsg("Bill invoice not found. Please check your sale code or link.");
           setIsLoading(false);
           return;
+        }
+
+        // Fetch customer if not joined
+        if (!finalSale.customer && finalSale.customer_id) {
+          const { data: custData } = await supabase
+            .from('customers')
+            .select('*')
+            .eq('id', finalSale.customer_id)
+            .single();
+          if (custData) finalSale.customer = custData;
         }
 
         // 2. Fetch Factory Settings
@@ -45,7 +70,7 @@ export function PublicBillPage() {
           .limit(1)
           .single();
 
-        setSale(saleData);
+        setSale(finalSale);
         setSettings(setObj || {});
 
         // 3. Check 24-Hour Expiration against sale_date

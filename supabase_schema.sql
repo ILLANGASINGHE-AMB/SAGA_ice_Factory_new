@@ -141,22 +141,22 @@ create policy "Allow write inventory for admins" on public.inventory
   for all to authenticated using (public.is_admin());
 
 -- Settings policies
-create policy "Allow read settings for authenticated" on public.settings
-  for select to authenticated using (true);
+create policy "Allow read settings for public" on public.settings
+  for select using (true);
 
 create policy "Allow write settings for admins" on public.settings
   for all to authenticated using (public.is_admin());
 
 -- Customers policies
-create policy "Allow read customers for authenticated" on public.customers
-  for select to authenticated using (true);
+create policy "Allow read customers for public" on public.customers
+  for select using (true);
 
 create policy "Allow write customers for authenticated" on public.customers
   for all to authenticated using (true);
 
 -- Sales policies
-create policy "Allow read sales for authenticated" on public.sales
-  for select to authenticated using (true);
+create policy "Allow read sales for public" on public.sales
+  for select using (true);
 
 create policy "Allow write sales for authenticated" on public.sales
   for all to authenticated using (true);
