@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useExpenses } from '../hooks/useExpenses';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { Button } from '../components/Button';
 import { Modal } from '../components/Modal';
@@ -35,6 +36,7 @@ import {
 
 export function ExpenseLedgerPage() {
   const { expenses, isLoading, addExpense, deleteExpense, pnlMetrics } = useExpenses();
+  const { isAdmin } = useAuth();
   const toast = useToast();
 
   const [search, setSearch] = useState('');
@@ -336,13 +338,23 @@ export function ExpenseLedgerPage() {
                       LKR {parseFloat(exp.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <button
-                        onClick={() => handleDelete(exp.id)}
-                        className="p-1 text-slate-400 hover:text-red-500 transition"
-                        title="Delete expense entry"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                      {isAdmin ? (
+                        <button
+                          onClick={() => handleDelete(exp.id)}
+                          className="p-1 text-slate-400 hover:text-red-500 transition"
+                          title="Delete expense entry"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      ) : (
+                        <button
+                          disabled
+                          className="p-1 text-slate-300 dark:text-slate-700 opacity-40 cursor-not-allowed"
+                          title="Admin privilege required to delete entries"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

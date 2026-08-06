@@ -177,30 +177,17 @@ export function InventoryPage() {
                   <span>Add</span>
                 </Button>
 
-                {/* Remove button admin only */}
-                {isAdmin ? (
-                  <Button 
-                    variant="secondary" 
-                    size="sm"
-                    disabled={item.quantity === 0}
-                    onClick={() => openModal('remove', item)}
-                    className="flex items-center justify-center space-x-1 border border-slate-300 dark:border-slate-700"
-                  >
-                    <Minus size={14} />
-                    <span>Remove</span>
-                  </Button>
-                ) : (
-                  <Button 
-                    variant="secondary" 
-                    size="sm"
-                    disabled
-                    className="flex items-center justify-center space-x-1 opacity-40 cursor-not-allowed"
-                    title="Admin privilege required"
-                  >
-                    <Minus size={14} />
-                    <span>Remove</span>
-                  </Button>
-                )}
+                {/* Remove stock button available to all operators */}
+                <Button 
+                  variant="secondary" 
+                  size="sm"
+                  disabled={item.quantity === 0}
+                  onClick={() => openModal('remove', item)}
+                  className="flex items-center justify-center space-x-1 border border-slate-300 dark:border-slate-700"
+                >
+                  <Minus size={14} />
+                  <span>Remove</span>
+                </Button>
 
                 {/* Edit Price admin only, hidden/disabled for WST */}
                 {!isWst ? (

@@ -112,27 +112,29 @@ function App() {
               }
             />
 
-            {/* Admin-Only Routes */}
+            {/* Standard Staff & Admin Accessible Pages */}
             <Route
               path="/expenses"
               element={
-                <AdminRoute>
+                <ProtectedRoute>
                   <AppShell>
                     <ExpenseLedgerPage />
                   </AppShell>
-                </AdminRoute>
+                </ProtectedRoute>
               }
             />
             <Route
               path="/reports"
               element={
-                <AdminRoute>
+                <ProtectedRoute>
                   <AppShell>
                     <ReportsPage />
                   </AppShell>
-                </AdminRoute>
+                </ProtectedRoute>
               }
             />
+
+            {/* Admin-Only Settings Route */}
             <Route
               path="/settings"
               element={
