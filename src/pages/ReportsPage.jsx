@@ -7,7 +7,7 @@ import { Input, Select } from '../components/FormFields';
 import { Table } from '../components/Table';
 import { Badge } from '../components/Badge';
 import { generateReportPDF } from '../utils/pdfGenerator';
-import { FileBarChart2, FileText, Download, Calendar, UserCheck, CreditCard } from 'lucide-react';
+import { FileBarChart2, FileText, Download, Calendar, UserCheck, CreditCard, SlidersHorizontal } from 'lucide-react';
 
 export function ReportsPage() {
   const { settings } = useSettings();
@@ -33,6 +33,14 @@ export function ReportsPage() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   
+  // Custom Report filter states
+  const [customCustomerId, setCustomCustomerId] = useState('all');
+  const [customCubeType, setCustomCubeType] = useState('all');
+  const [customPaymentType, setCustomPaymentType] = useState('all');
+  const [customFromDate, setCustomFromDate] = useState('');
+  const [customToDate, setCustomToDate] = useState('');
+  const [customIncludeDebts, setCustomIncludeDebts] = useState(false);
+
   // Preview data state
   const [previewData, setPreviewData] = useState(null);
 
@@ -271,6 +279,96 @@ export function ReportsPage() {
       });
 
       customerListWithDetails.sort((a,b) => b.totalPurchased - a.totalPurchased);
+    } else if (activeReport === 'custom') {
+      reportTitle = "Customized Analytical Report";
+      
+      const filterParts = [];
+
+      // 1. Date filter
+      if (customFromDate || customToDate) {
+        let start = customFromDate ? new Date(customFromDate) : new Date(0);
+        if (customFromDate) start.setHours(0,0,0,0);
+        let end = customToDate ? new Date(customToDate) : new Date();
+        if (customToDate) end.setHours(23,59,59,999);
+
+        filteredSales = sales.filter(s => {
+          const d = new Date(s.sale_date);
+          return d >= start && d <= end;
+        });
+
+        filterParts.push(`Period: ${customFromDate || 'Start'} to ${customToDate || 'Today'}`);
+      } else {
+        filteredSales = [...sales];
+        filterParts.push('Period: All Time');
+      }
+
+      // 2. Customer filter
+      if (customCustomerId !== 'all') {
+        const targetCustId = parseInt(customCustomerId, 10);
+        filteredSales = filteredSales.filter(s => s.customer_id === targetCustId);
+        const custObj = customers.find(c => c.id === targetCustId);
+        filterParts.push(`Customer: ${custObj?.name || 'Walk-in'}`);
+      } else {
+        filterParts.push('Customer: All');
+      }
+
+      // 3. Cube Type filter
+      if (customCubeType !== 'all') {
+        filteredSales = filteredSales.filter(s => s.cube_type === customCubeType);
+        filterParts.push(`Cube: ${customCubeType === 'manufactured' ? 'MFC' : 'RSC'}`);
+      } else {
+        filterParts.push('Cube: All Types');
+      }
+
+      // 4. Payment Type filter
+      if (customPaymentType !== 'all') {
+        filteredSales = filteredSales.filter(s => s.payment_type === customPaymentType);
+        filterParts.push(`Payment: ${customPaymentType.toUpperCase()}`);
+      } else {
+        filterParts.push('Payment: All Methods');
+      }
+
+      dateRangeStr = filterParts.join(' • ');
+
+      // Calculate settlements in scope if dates applied
+      settlements.forEach(setl => {
+        let inRange = true;
+        if (customFromDate) {
+          const start = new Date(customFromDate);
+          start.setHours(0,0,0,0);
+          if (new Date(setl.settlement_date) < start) inRange = false;
+        }
+        if (customToDate) {
+          const end = new Date(customToDate);
+          end.setHours(23,59,59,999);
+          if (new Date(setl.settlement_date) > end) inRange = false;
+        }
+        if (customCustomerId !== 'all') {
+          if (setl.customer_id !== parseInt(customCustomerId, 10)) inRange = false;
+        }
+        if (inRange) totalSettled += setl.amount_paid;
+      });
+
+      // If Include Debts option is active
+      if (customIncludeDebts) {
+        let filteredDebts = debts;
+        if (customCustomerId !== 'all') {
+          filteredDebts = debts.filter(d => d.customer_id === parseInt(customCustomerId, 10));
+        }
+        debtorsList = filteredDebts.map(d => {
+          const cust = customers.find(c => c.id === d.customer_id);
+          return {
+            id: d.id,
+            code: cust?.customer_code || 'N/A',
+            name: cust?.name || 'Unknown',
+            originalAmount: d.total_amount,
+            paidAmount: d.paid_amount,
+            amountOwed: d.remaining_amount,
+            status: d.status,
+            created: new Date(d.created_at).toLocaleDateString()
+          };
+        });
+      }
     }
 
     // 2. Map financial aggregates
@@ -301,6 +399,7 @@ export function ReportsPage() {
       sales: mappedSales,
       debtors: debtorsList,
       customers: customerListWithDetails,
+      customDebtDetails: customIncludeDebts ? debtorsList : null,
       summary: {
         totalRevenue,
         cashRevenue,
@@ -465,6 +564,20 @@ export function ReportsPage() {
                 <span className="text-sm">Customer Details Report</span>
               </div>
             </button>
+
+            <button
+              onClick={() => { setActiveReport('custom'); setPreviewData(null); }}
+              className={`w-full text-left p-4 rounded-xl border transition flex items-center justify-between ${
+                activeReport === 'custom'
+                  ? 'border-navy-500 bg-navy-50/50 dark:bg-navy-950/20 text-navy-800 dark:text-navy-300 font-semibold'
+                  : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <SlidersHorizontal size={18} className="text-navy-500" />
+                <span className="text-sm font-semibold">Customized Report</span>
+              </div>
+            </button>
           </div>
         </div>
 
@@ -511,6 +624,77 @@ export function ReportsPage() {
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
                 />
+              </>
+            )}
+
+            {activeReport === 'custom' && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <Input
+                    label="From Date"
+                    name="customFDate"
+                    type="date"
+                    value={customFromDate}
+                    onChange={(e) => setCustomFromDate(e.target.value)}
+                  />
+                  <Input
+                    label="To Date"
+                    name="customTDate"
+                    type="date"
+                    value={customToDate}
+                    onChange={(e) => setCustomToDate(e.target.value)}
+                  />
+                </div>
+
+                <Select
+                  label="Filter by Customer"
+                  name="customCustomer"
+                  value={customCustomerId}
+                  onChange={(e) => setCustomCustomerId(e.target.value)}
+                  options={[
+                    { value: 'all', label: 'All Customers (All-inclusive)' },
+                    ...customers.map(c => ({ value: String(c.id), label: `${c.name} (${c.customer_code})` }))
+                  ]}
+                />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <Select
+                    label="Cube Type"
+                    name="customCube"
+                    value={customCubeType}
+                    onChange={(e) => setCustomCubeType(e.target.value)}
+                    options={[
+                      { value: 'all', label: 'All Types' },
+                      { value: 'manufactured', label: 'Manufactured (MFC)' },
+                      { value: 'resell', label: 'Resell (RSC)' }
+                    ]}
+                  />
+
+                  <Select
+                    label="Payment Method"
+                    name="customPayment"
+                    value={customPaymentType}
+                    onChange={(e) => setCustomPaymentType(e.target.value)}
+                    options={[
+                      { value: 'all', label: 'All Methods' },
+                      { value: 'cash', label: 'Cash Only' },
+                      { value: 'debt', label: 'Credit / Debt' }
+                    ]}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Include Debt Details</span>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={customIncludeDebts}
+                      onChange={(e) => setCustomIncludeDebts(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-navy-600"></div>
+                  </label>
+                </div>
               </>
             )}
 
@@ -680,6 +864,35 @@ export function ReportsPage() {
                           <td className="px-6 py-2.5 font-mono font-semibold">LKR {sale.total_amount.toLocaleString()}</td>
                           <td className="px-6 py-2.5"><Badge type={sale.payment_type} /></td>
                           <td className="px-6 py-2.5 font-mono text-slate-400">{new Date(sale.sale_date).toLocaleDateString()}</td>
+                        </tr>
+                      )}
+                    />
+                  </div>
+                )}
+
+                {/* Conditional Debt Details Table for Custom Reports */}
+                {activeReport === 'custom' && previewData?.customDebtDetails && (
+                  <div className="space-y-3 pt-4 border-t border-dashed border-slate-200 dark:border-slate-800">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-rose-500">Associated Outstanding Debts</h4>
+                    <Table
+                      headers={[
+                        { key: 'code', label: 'Code' },
+                        { key: 'name', label: 'Customer' },
+                        { key: 'originalAmount', label: 'Original Debt' },
+                        { key: 'paidAmount', label: 'Paid' },
+                        { key: 'amountOwed', label: 'Remaining Owed' },
+                        { key: 'status', label: 'Status' }
+                      ]}
+                      data={previewData.customDebtDetails}
+                      emptyMessage="No associated debt records for selected filters."
+                      renderRow={(d) => (
+                        <tr key={d.id} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 text-xs">
+                          <td className="px-6 py-2.5 font-mono font-medium text-navy-600 dark:text-navy-400">{d.code}</td>
+                          <td className="px-6 py-2.5 font-semibold">{d.name}</td>
+                          <td className="px-6 py-2.5 font-mono">LKR {d.originalAmount?.toLocaleString()}</td>
+                          <td className="px-6 py-2.5 font-mono text-emerald-600">LKR {d.paidAmount?.toLocaleString()}</td>
+                          <td className="px-6 py-2.5 font-bold font-mono text-rose-600 dark:text-rose-400">LKR {d.amountOwed?.toLocaleString()}</td>
+                          <td className="px-6 py-2.5"><Badge type={d.status} /></td>
                         </tr>
                       )}
                     />
