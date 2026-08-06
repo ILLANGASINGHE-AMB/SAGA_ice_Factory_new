@@ -124,23 +124,23 @@ function App() {
               }
             />
             <Route
-              path="/reports"
+              path="/settings"
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <ReportsPage />
+                    <SettingsPage />
                   </AppShell>
                 </ProtectedRoute>
               }
             />
 
-            {/* Admin-Only Settings Route */}
+            {/* Admin-Only Routes */}
             <Route
-              path="/settings"
+              path="/reports"
               element={
                 <AdminRoute>
                   <AppShell>
-                    <SettingsPage />
+                    <ReportsPage />
                   </AppShell>
                 </AdminRoute>
               }

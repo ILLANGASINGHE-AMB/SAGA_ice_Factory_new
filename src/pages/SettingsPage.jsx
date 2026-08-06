@@ -346,6 +346,86 @@ export function SettingsPage() {
     );
   }
 
+  // --- Limited Access View for Non-Admin Staff Users ---
+  if (!isAdmin) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6">
+        {/* Info banner */}
+        <div className="p-4 bg-navy-50 dark:bg-navy-950/40 border border-navy-200 dark:border-navy-800 rounded-2xl flex items-start space-x-3 text-xs text-navy-800 dark:text-navy-300">
+          <Palette className="text-navy-600 dark:text-navy-400 shrink-0 mt-0.5" size={18} />
+          <div>
+            <span className="font-bold block text-sm mb-0.5">Staff Personal Preferences</span>
+            <span>You have access to personal interface preferences (Theme mode & Font scale). Company branding, database backup, and SAGA AI configuration are reserved for System Administrators.</span>
+          </div>
+        </div>
+
+        {/* Style & Themes Card */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 space-y-4">
+          <div className="flex items-center space-x-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+            <Palette className="text-navy-500" size={20} />
+            <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100">
+              Style & Appearance
+            </h3>
+          </div>
+
+          {/* Theme selection */}
+          <div className="space-y-2">
+            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+              Theme Mode
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => toggleTheme(false)}
+                className={`py-2.5 text-xs font-semibold rounded-xl border transition ${
+                  !isDark 
+                    ? 'bg-navy-50 dark:bg-navy-950/20 border-navy-500 text-navy-600 dark:text-navy-400' 
+                    : 'border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400'
+                }`}
+              >
+                Light Theme
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleTheme(true)}
+                className={`py-2.5 text-xs font-semibold rounded-xl border transition ${
+                  isDark 
+                    ? 'bg-navy-50 dark:bg-navy-950/20 border-navy-500 text-navy-600 dark:text-navy-400' 
+                    : 'border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400'
+                }`}
+              >
+                Dark Theme
+              </button>
+            </div>
+          </div>
+
+          {/* Text scale selectors */}
+          <div className="space-y-2">
+            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+              Font Sizing Scale
+            </span>
+            <div className="grid grid-cols-3 gap-2">
+              {['small', 'medium', 'large'].map((size) => (
+                <button
+                  key={size}
+                  type="button"
+                  onClick={() => changeTextSize(size)}
+                  className={`py-2.5 text-xs font-semibold capitalize rounded-xl border transition ${
+                    textSize === size 
+                      ? 'bg-navy-50 dark:bg-navy-950/20 border-navy-500 text-navy-600 dark:text-navy-400' 
+                      : 'border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400'
+                  }`}
+                >
+                  {size}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       
