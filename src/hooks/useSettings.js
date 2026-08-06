@@ -46,7 +46,8 @@ export function useSettings() {
     company_email,
     logo_url,
     favicon_url,
-    gemini_api_key
+    gemini_api_key,
+    ai_enabled
   }) => {
     const { data: current, error: getErr } = await supabase
       .from('settings')
@@ -74,6 +75,12 @@ export function useSettings() {
       } else {
         localStorage.removeItem('saga_gemini_api_key');
       }
+    }
+
+    if (ai_enabled !== undefined) {
+      settingsData.ai_enabled = ai_enabled;
+      localStorage.setItem('saga_ai_enabled', ai_enabled ? 'true' : 'false');
+      window.dispatchEvent(new Event('ai-enabled-changed'));
     }
 
     if (!current || current.length === 0) {

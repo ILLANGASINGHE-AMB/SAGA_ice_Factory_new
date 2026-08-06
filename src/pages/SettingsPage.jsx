@@ -37,6 +37,7 @@ export function SettingsPage() {
   const [logoBase64, setLogoBase64] = useState(null);
   const [faviconBase64, setFaviconBase64] = useState(null);
   const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [aiEnabled, setAiEnabled] = useState(true);
   const [showApiKey, setShowApiKey] = useState(false);
   const [testingAi, setTestingAi] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
@@ -79,6 +80,8 @@ export function SettingsPage() {
       setFaviconBase64(settings.favicon_url || null);
       const savedKey = settings.gemini_api_key || localStorage.getItem('saga_gemini_api_key') || '';
       setGeminiApiKey(savedKey);
+      const isEnabled = settings.ai_enabled !== undefined ? settings.ai_enabled : (localStorage.getItem('saga_ai_enabled') !== 'false');
+      setAiEnabled(isEnabled);
     }
   }, [settings]);
 
@@ -155,7 +158,8 @@ export function SettingsPage() {
         company_email: email.trim(),
         logo_url: logoBase64,
         favicon_url: faviconBase64,
-        gemini_api_key: geminiApiKey.trim()
+        gemini_api_key: geminiApiKey.trim(),
+        ai_enabled: aiEnabled
       });
       toast.success("Settings & SAGA AI configuration saved successfully!");
     } catch (err) {
@@ -535,6 +539,31 @@ export function SettingsPage() {
                   </button>
                 </div>
               </div>
+            </div>
+
+            {/* Toggle ON/OFF Switch */}
+            <div className="flex items-center justify-between p-3.5 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800">
+              <div>
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                  Enable SAGA AI Assistant
+                </span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {aiEnabled ? 'SAGA AI floating button is ON across the system' : 'SAGA AI assistant is OFF and hidden'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAiEnabled(!aiEnabled)}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  aiEnabled ? 'bg-navy-600' : 'bg-slate-300 dark:bg-slate-700'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                    aiEnabled ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
             </div>
           </div>
 

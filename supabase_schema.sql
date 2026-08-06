@@ -79,6 +79,7 @@ create table public.settings (
   logo_url text,
   favicon_url text,
   gemini_api_key text default '',
+  ai_enabled boolean default true,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 

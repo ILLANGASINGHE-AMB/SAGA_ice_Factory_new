@@ -29,10 +29,21 @@ export function AppShell({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // SAGA AI Drawer open state
+  // SAGA AI Drawer open state & toggle state
   const [isAiOpen, setIsAiOpen] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(
+    settings?.ai_enabled !== undefined 
+      ? settings.ai_enabled 
+      : (localStorage.getItem('saga_ai_enabled') !== 'false')
+  );
+
+  useEffect(() => {
+    if (settings?.ai_enabled !== undefined) {
+      setAiEnabled(settings.ai_enabled);
+    }
+  }, [settings]);
   
-  // Theme & Font Sizing states
+  // Theme & Font Sizing & AI Toggle states
   const [isDarkMode, setIsDarkMode] = useState(
     localStorage.getItem('saga_ice_theme') === 'dark' ||
     (!localStorage.getItem('saga_ice_theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)
@@ -66,7 +77,7 @@ export function AppShell({ children }) {
     localStorage.setItem('saga_ice_text_size', textSize);
   }, [textSize]);
 
-  // Sync settings theme preferences with settings page changes
+  // Sync settings preferences with settings page changes
   useEffect(() => {
     const handleStorageChange = () => {
       const savedTheme = localStorage.getItem('saga_ice_theme');
@@ -74,13 +85,18 @@ export function AppShell({ children }) {
 
       const savedTextSize = localStorage.getItem('saga_ice_text_size');
       if (savedTextSize) setTextSize(savedTextSize);
+
+      const savedAiEnabled = localStorage.getItem('saga_ai_enabled');
+      if (savedAiEnabled !== null) setAiEnabled(savedAiEnabled !== 'false');
     };
+
     window.addEventListener('storage', handleStorageChange);
-    // Poll theme changes or dispatch custom event for local settings page triggers
     window.addEventListener('theme-changed', handleStorageChange);
+    window.addEventListener('ai-enabled-changed', handleStorageChange);
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('theme-changed', handleStorageChange);
+      window.removeEventListener('ai-enabled-changed', handleStorageChange);
     };
   }, []);
 
@@ -268,23 +284,26 @@ export function AppShell({ children }) {
         )}
       </nav>
 
-      {/* Floating SAGA AI Assistant Button (Bottom-Right) */}
-      <div className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-50">
-        <button
-          type="button"
-          onClick={() => setIsAiOpen(!isAiOpen)}
-          className="flex items-center space-x-2.5 px-4 py-3 rounded-full bg-navy-600 hover:bg-navy-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 border border-navy-500/20 active:scale-95"
-          title="Open SAGA AI Assistant"
-        >
-          <Sparkles size={18} className="text-white" />
-          <span className="font-heading font-bold text-xs tracking-wide">
-            SAGA AI
-          </span>
-        </button>
-      </div>
+      {/* Floating SAGA AI Assistant Button & Drawer (Only if AI is enabled) */}
+      {aiEnabled && (
+        <>
+          <div className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-50">
+            <button
+              type="button"
+              onClick={() => setIsAiOpen(!isAiOpen)}
+              className="flex items-center space-x-2.5 px-4 py-3 rounded-full bg-navy-600 hover:bg-navy-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 border border-navy-500/20 active:scale-95"
+              title="Open SAGA AI Assistant"
+            >
+              <Sparkles size={18} className="text-white" />
+              <span className="font-heading font-bold text-xs tracking-wide">
+                SAGA AI
+              </span>
+            </button>
+          </div>
 
-      {/* SAGA AI Assistant Floating Drawer */}
-      <SagaAiDrawer isOpen={isAiOpen} onClose={() => setIsAiOpen(false)} />
+          <SagaAiDrawer isOpen={isAiOpen} onClose={() => setIsAiOpen(false)} />
+        </>
+      )}
     </div>
   );
 }
