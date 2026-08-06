@@ -119,6 +119,59 @@ GUIDELINES FOR SAGA AI:
 }
 
 /**
+ * Dynamically find an active Gemini model supported by the user's API Key
+ */
+export async function getAvailableGeminiModel(cleanKey) {
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
+    if (response.ok) {
+      const data = await response.json();
+      const models = data.models || [];
+      
+      // Filter models that support generateContent
+      const validModels = models
+        .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+        .map(m => m.name ? m.name.replace(/^models\//, '') : '');
+
+      const priorityOrder = [
+        'gemini-2.0-flash',
+        'gemini-2.5-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-1.5-flash',
+        'gemini-2.0-flash-lite',
+        'gemini-1.5-pro-latest',
+        'gemini-1.5-pro',
+        'gemini-1.0-pro'
+      ];
+
+      for (const modelName of priorityOrder) {
+        if (validModels.includes(modelName)) {
+          return modelName;
+        }
+      }
+
+      const anyFlash = validModels.find(m => m.includes('flash'));
+      if (anyFlash) return anyFlash;
+      if (validModels.length > 0) return validModels[0];
+    }
+  } catch (e) {
+    console.warn("Could not list Gemini models dynamically:", e);
+  }
+  return null;
+}
+
+const FALLBACK_MODELS = [
+  'gemini-2.0-flash',
+  'gemini-2.5-flash',
+  'gemini-1.5-flash-latest',
+  'gemini-1.5-flash',
+  'gemini-2.0-flash-lite',
+  'gemini-1.5-pro-latest',
+  'gemini-1.5-pro',
+  'gemini-1.0-pro'
+];
+
+/**
  * Test Gemini API Key validity
  */
 export async function testGeminiApiKey(apiKey) {
@@ -127,11 +180,12 @@ export async function testGeminiApiKey(apiKey) {
   }
 
   const cleanKey = apiKey.trim();
-  const modelsToTry = [
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash'
-  ];
+
+  // Try dynamic discovery first
+  const discoveredModel = await getAvailableGeminiModel(cleanKey);
+  const modelsToTry = discoveredModel 
+    ? [discoveredModel, ...FALLBACK_MODELS.filter(m => m !== discoveredModel)]
+    : FALLBACK_MODELS;
 
   let lastError = null;
 
@@ -186,11 +240,11 @@ export async function sendSagaAiMessage(messages, apiKey) {
     parts: [{ text: msg.content }]
   }));
 
-  const modelsToTry = [
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash'
-  ];
+  // Try dynamic discovery first
+  const discoveredModel = await getAvailableGeminiModel(cleanKey);
+  const modelsToTry = discoveredModel 
+    ? [discoveredModel, ...FALLBACK_MODELS.filter(m => m !== discoveredModel)]
+    : FALLBACK_MODELS;
 
   let lastError = null;
 
