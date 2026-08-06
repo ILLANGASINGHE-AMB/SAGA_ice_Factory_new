@@ -85,23 +85,23 @@ export function DashboardPage() {
       
       {/* Downtime & Maintenance Alert Banner */}
       {alertItems.length > 0 && (
-        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 flex items-center justify-between shadow-sm">
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-amber-500/10 dark:bg-slate-900/90 border border-amber-200 dark:border-amber-500/30 flex items-center justify-between shadow-sm dark:shadow-[0_0_25px_-5px_rgba(245,158,11,0.15)] backdrop-blur-md">
           <div className="flex items-center space-x-3">
-            <div className="p-2 rounded-xl bg-amber-500 text-white">
-              <ShieldAlert size={18} />
+            <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-500 border border-amber-500/30">
+              <ShieldAlert size={20} />
             </div>
             <div>
-              <h4 className="text-xs font-bold text-amber-900 dark:text-amber-300 uppercase">
+              <h4 className="text-xs font-bold text-amber-900 dark:text-amber-300 uppercase tracking-wider">
                 Machinery Alerts ({alertItems.length})
               </h4>
-              <p className="text-xs text-amber-700 dark:text-amber-400">
+              <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
                 {alertItems.map(i => `${i.equipment_name} (${i.status === 'offline' ? 'OFFLINE' : 'Service Due'})`).join(' • ')}
               </p>
             </div>
           </div>
           <button
             onClick={() => navigate('/production')}
-            className="px-3 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition"
+            className="px-4 py-2 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl transition-all shadow-sm hover:shadow-md"
           >
             Manage Machinery
           </button>
@@ -113,13 +113,13 @@ export function DashboardPage() {
         {cardItems.map((card, idx) => (
           <div 
             key={idx} 
-            className={`p-6 rounded-2xl border bg-white dark:bg-slate-900 shadow-sm flex items-center space-x-4 hover:shadow-md transition-shadow`}
+            className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 shadow-sm dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] backdrop-blur-md flex items-center space-x-4 hover:-translate-y-0.5 transition-all duration-200"
           >
-            <div className={`p-3 rounded-xl ${card.bg.split(' ')[0]} ${card.bg.split(' ')[1]}`}>
+            <div className={`p-3.5 rounded-2xl ${card.bg.split(' ')[0]} ${card.bg.split(' ')[1]}`}>
               {card.icon}
             </div>
             <div>
-              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                 {card.title}
               </p>
               <h3 className="text-xl font-bold font-heading text-slate-900 dark:text-slate-50 mt-1">
@@ -134,12 +134,12 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         
         {/* Weekly Sales & Monthly Revenue Tabs */}
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm lg:col-span-2 space-y-4">
+        <div className="bg-white dark:bg-slate-900/90 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] backdrop-blur-md lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
             <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100">
               Weekly Cube Production Sales
             </h3>
-            <span className="text-xs font-medium text-slate-400">
+            <span className="text-xs font-semibold text-slate-400 dark:text-slate-400">
               Last 7 Days
             </span>
           </div>
@@ -147,12 +147,12 @@ export function DashboardPage() {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={charts.weekly} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" className="dark:hidden" />
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" className="hidden dark:block" />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.06)" className="hidden dark:block" />
                 <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
                 <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
                 <Tooltip 
-                  contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: 'none', borderRadius: '8px', color: '#fff' }}
-                  labelStyle={{ fontWeight: 'bold' }}
+                  contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)' }}
+                  labelStyle={{ fontWeight: 'bold', color: '#38bdf8' }}
                 />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
                 <Bar dataKey="Manufactured" fill={COLORS.manufactured} radius={[4, 4, 0, 0]} />
@@ -163,12 +163,12 @@ export function DashboardPage() {
         </div>
 
         {/* Debt vs Cash sales (Pie Chart) */}
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4 flex flex-col justify-between">
+        <div className="bg-white dark:bg-slate-900/90 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] backdrop-blur-md space-y-4 flex flex-col justify-between">
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
             <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100">
               Sales Distribution
             </h3>
-            <span className="text-xs font-medium text-slate-400">
+            <span className="text-xs font-semibold text-slate-400 dark:text-slate-400">
               Cash vs Credit
             </span>
           </div>
@@ -189,7 +189,7 @@ export function DashboardPage() {
                 </Pie>
                 <Tooltip 
                   formatter={(value) => `LKR ${value.toLocaleString()}`}
-                  contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: 'none', borderRadius: '8px', color: '#fff' }}
+                  contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)' }}
                 />
               </PieChart>
             </ResponsiveContainer>
@@ -216,12 +216,12 @@ export function DashboardPage() {
       </div>
 
       {/* Monthly Revenue Timeline */}
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+      <div className="bg-white dark:bg-slate-900/90 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] backdrop-blur-md">
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 mb-4">
           <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100">
             Monthly Revenue Trend (Daily)
           </h3>
-          <span className="text-xs font-medium text-slate-400">
+          <span className="text-xs font-semibold text-slate-400 dark:text-slate-400">
             Last 30 Days
           </span>
         </div>
@@ -229,12 +229,12 @@ export function DashboardPage() {
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={charts.monthly} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" className="dark:hidden" />
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" className="hidden dark:block" />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.06)" className="hidden dark:block" />
               <XAxis dataKey="date" stroke="#94a3b8" fontSize={10} tickLine={false} />
               <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} />
               <Tooltip 
                 formatter={(value) => [`LKR ${value.toLocaleString()}`, 'Revenue']}
-                contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: 'none', borderRadius: '8px', color: '#fff' }}
+                contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)' }}
               />
               <Line type="monotone" dataKey="Revenue" stroke="#0ea5e9" strokeWidth={2.5} dot={false} activeDot={{ r: 6 }} />
             </LineChart>

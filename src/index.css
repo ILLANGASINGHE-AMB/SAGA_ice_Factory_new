@@ -6,9 +6,12 @@
   --font-sans: "DM Sans", system-ui, -apple-system, sans-serif;
   --font-heading: "Space Grotesk", system-ui, -apple-system, sans-serif;
 
-  /* Premium Industrial Color Scheme - Navy Slate Base + Icy Blue Accents */
-  --color-slate-900: #0b0f19;
-  --color-slate-950: #05070c;
+  /* Refined Modern Dark Slate/Navy Palette - Deep, Premium, Soft Contrast */
+  --color-slate-800: #1e293b;
+  --color-slate-850: #131c31;
+  --color-slate-900: #0f172a;
+  --color-slate-950: #0a0f1d;
+  
   --color-navy-50: #f0f9ff;
   --color-navy-100: #e0f2fe;
   --color-navy-200: #bae6fd;
@@ -36,7 +39,7 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading);
 }
 
-/* Custom Scrollbar for sleek industrial feel */
+/* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -52,7 +55,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #1e293b;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -60,18 +63,33 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #334155;
 }
 
-/* Glassmorphism utility */
+/* Glassmorphism & Card Glow Effects */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.75);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(226, 232, 240, 0.8);
 }
 
 .dark .glass-panel {
-  background: rgba(11, 15, 25, 0.6);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+}
+
+/* Premium Card Shadows in Dark Mode */
+.dark .card-glow {
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Subtle glowing accent backgrounds */
+.dark .glow-cyan {
+  box-shadow: 0 0 25px -5px rgba(14, 165, 233, 0.15);
+}
+
+.dark .glow-amber {
+  box-shadow: 0 0 25px -5px rgba(245, 158, 11, 0.15);
 }
