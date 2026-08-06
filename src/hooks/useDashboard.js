@@ -11,23 +11,27 @@ export function useDashboard() {
         { data: sales, error: salesErr },
         { data: debts, error: debtsErr },
         { data: settlements, error: settlementsErr },
-        { data: customers, error: customersErr }
+        { data: customers, error: customersErr },
+        { data: inventory, error: inventoryErr }
       ] = await Promise.all([
         supabase.from('sales').select('*'),
         supabase.from('debts').select('*'),
         supabase.from('debt_settlements').select('*'),
-        supabase.from('customers').select('*')
+        supabase.from('customers').select('*'),
+        supabase.from('inventory').select('*')
       ]);
 
       if (salesErr) throw salesErr;
       if (debtsErr) throw debtsErr;
       if (settlementsErr) throw settlementsErr;
       if (customersErr) throw customersErr;
+      if (inventoryErr) throw inventoryErr;
 
       const salesList = sales || [];
       const debtsList = debts || [];
       const settlementsList = settlements || [];
       const customersList = customers || [];
+      const inventoryList = inventory || [];
 
       const startOfToday = new Date();
       startOfToday.setHours(0, 0, 0, 0);
@@ -38,8 +42,12 @@ export function useDashboard() {
       let mfcSoldToday = 0;
       let rscSoldToday = 0;
       let revenueToday = 0;
+      let totalRevenue = 0;
 
       salesList.forEach(sale => {
+        const amt = Number(sale.total_amount) || 0;
+        totalRevenue += amt;
+
         const saleDate = new Date(sale.sale_date);
         if (saleDate >= startOfToday) {
           if (sale.cube_type === 'manufactured') {
@@ -47,9 +55,12 @@ export function useDashboard() {
           } else if (sale.cube_type === 'resell') {
             rscSoldToday += sale.quantity;
           }
-          revenueToday += Number(sale.total_amount);
+          revenueToday += amt;
         }
       });
+
+      const totalCubesSoldToday = mfcSoldToday + rscSoldToday;
+      const totalInventory = inventoryList.reduce((sum, item) => sum + (item.quantity || 0), 0);
 
       const pendingDebtsCount = debtsList.filter(d => d.status === 'pending' || d.status === 'partial').length;
 
@@ -165,7 +176,10 @@ export function useDashboard() {
         stats: {
           mfcSoldToday,
           rscSoldToday,
+          totalCubesSoldToday,
+          totalInventory,
           revenueToday,
+          totalRevenue,
           pendingDebtsCount
         },
         charts: {
@@ -195,6 +209,7 @@ export function useDashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'debts' }, () => fetchDashboardData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'debt_settlements' }, () => fetchDashboardData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => fetchDashboardData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => fetchDashboardData())
       .subscribe();
 
     return () => {
