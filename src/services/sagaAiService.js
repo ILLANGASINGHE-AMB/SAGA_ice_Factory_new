@@ -180,12 +180,12 @@ export async function testGeminiApiKey(apiKey) {
   }
 
   const cleanKey = apiKey.trim();
-
-  // Try dynamic discovery first
-  const discoveredModel = await getAvailableGeminiModel(cleanKey);
-  const modelsToTry = discoveredModel 
-    ? [discoveredModel, ...FALLBACK_MODELS.filter(m => m !== discoveredModel)]
-    : FALLBACK_MODELS;
+  const modelsToTry = [
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-pro'
+  ];
 
   let lastError = null;
 
@@ -200,22 +200,40 @@ export async function testGeminiApiKey(apiKey) {
             contents: [
               {
                 role: 'user',
-                parts: [{ text: 'Hello, confirm with the exact text SAGA_AI_ONLINE.' }]
+                parts: [{ text: 'Hello, confirm with exact text SAGA_AI_ONLINE.' }]
               }
             ]
           })
         }
       );
 
+      const data = await response.json().catch(() => ({}));
+
       if (response.ok) {
-        const data = await response.json();
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
         return { success: true, modelUsed: model, text };
       } else {
-        const errJson = await response.json().catch(() => ({}));
-        lastError = errJson?.error?.message || `HTTP ${response.status} ${response.statusText}`;
+        const errorMsg = data?.error?.message || `HTTP ${response.status} ${response.statusText}`;
+        const lowerErr = errorMsg.toLowerCase();
+        if (
+          lowerErr.includes('api key') || 
+          lowerErr.includes('quota') || 
+          lowerErr.includes('permission') ||
+          lowerErr.includes('disabled') ||
+          lowerErr.includes('billing')
+        ) {
+          throw new Error(errorMsg);
+        }
+        lastError = errorMsg;
       }
     } catch (err) {
+      if (
+        err.message.toLowerCase().includes('api key') ||
+        err.message.toLowerCase().includes('quota') ||
+        err.message.toLowerCase().includes('disabled')
+      ) {
+        throw err;
+      }
       lastError = err.message;
     }
   }
@@ -234,17 +252,19 @@ export async function sendSagaAiMessage(messages, apiKey) {
   const cleanKey = apiKey.trim();
   const systemContextPrompt = await fetchFullSystemContext();
 
-  // Format messages into Gemini API format
-  const formattedContents = messages.map(msg => ({
-    role: msg.role === 'user' ? 'user' : 'model',
-    parts: [{ text: msg.content }]
-  }));
+  // Combine system prompt and message history into a universal prompt payload
+  const conversationHistoryText = messages.map(msg => 
+    `${msg.role === 'user' ? 'USER' : 'SAGA AI'}: ${msg.content}`
+  ).join('\n\n');
 
-  // Try dynamic discovery first
-  const discoveredModel = await getAvailableGeminiModel(cleanKey);
-  const modelsToTry = discoveredModel 
-    ? [discoveredModel, ...FALLBACK_MODELS.filter(m => m !== discoveredModel)]
-    : FALLBACK_MODELS;
+  const fullPromptText = `${systemContextPrompt}\n\n=== CONVERSATION HISTORY ===\n${conversationHistoryText}\n\nSAGA AI RESPONSE:`;
+
+  const modelsToTry = [
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-pro'
+  ];
 
   let lastError = null;
 
@@ -256,10 +276,12 @@ export async function sendSagaAiMessage(messages, apiKey) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: formattedContents,
-            systemInstruction: {
-              parts: [{ text: systemContextPrompt }]
-            },
+            contents: [
+              {
+                role: 'user',
+                parts: [{ text: fullPromptText }]
+              }
+            ],
             generationConfig: {
               temperature: 0.4,
               maxOutputTokens: 2048
@@ -268,8 +290,9 @@ export async function sendSagaAiMessage(messages, apiKey) {
         }
       );
 
+      const data = await response.json().catch(() => ({}));
+
       if (response.ok) {
-        const data = await response.json();
         const replyText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (replyText) {
           return replyText;
@@ -277,14 +300,29 @@ export async function sendSagaAiMessage(messages, apiKey) {
           throw new Error("Received empty response from Gemini API.");
         }
       } else {
-        const errJson = await response.json().catch(() => ({}));
-        lastError = errJson?.error?.message || `HTTP ${response.status} ${response.statusText}`;
+        const errorMsg = data?.error?.message || `HTTP ${response.status} ${response.statusText}`;
+        const lowerErr = errorMsg.toLowerCase();
+        
+        // Stop immediately on authentication, quota, or key errors
+        if (
+          lowerErr.includes('api key') || 
+          lowerErr.includes('quota') || 
+          lowerErr.includes('permission') ||
+          lowerErr.includes('disabled') ||
+          lowerErr.includes('billing')
+        ) {
+          throw new Error(`Gemini API Error: ${errorMsg}`);
+        }
+
+        lastError = errorMsg;
       }
     } catch (err) {
-      console.warn(`Model ${model} request failed:`, err);
+      if (err.message.startsWith('Gemini API Error:')) {
+        throw err;
+      }
       lastError = err.message;
     }
   }
 
-  throw new Error(lastError || "Failed to get response from SAGA AI.");
+  throw new Error(`SAGA AI Error: ${lastError || 'Unable to connect to Gemini API.'}`);
 }
