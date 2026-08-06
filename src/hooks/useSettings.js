@@ -45,7 +45,8 @@ export function useSettings() {
     company_phone,
     company_email,
     logo_url,
-    favicon_url
+    favicon_url,
+    gemini_api_key
   }) => {
     const { data: current, error: getErr } = await supabase
       .from('settings')
@@ -64,6 +65,16 @@ export function useSettings() {
       favicon_url,
       updated_at: new Date().toISOString()
     };
+
+    if (gemini_api_key !== undefined) {
+      settingsData.gemini_api_key = gemini_api_key;
+      // Also cache in localStorage for instant access
+      if (gemini_api_key) {
+        localStorage.setItem('saga_gemini_api_key', gemini_api_key);
+      } else {
+        localStorage.removeItem('saga_gemini_api_key');
+      }
+    }
 
     if (!current || current.length === 0) {
       const { error: insertErr } = await supabase

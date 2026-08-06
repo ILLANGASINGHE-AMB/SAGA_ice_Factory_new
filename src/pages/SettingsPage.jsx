@@ -6,7 +6,23 @@ import { Button } from '../components/Button';
 import { Input, TextArea } from '../components/FormFields';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { supabase } from '../lib/supabase';
-import { Building, Upload, Palette, ShieldAlert, Download, FolderSync, Trash2, AlertOctagon } from 'lucide-react';
+import { testGeminiApiKey } from '../services/sagaAiService';
+import { 
+  Building, 
+  Upload, 
+  Palette, 
+  ShieldAlert, 
+  Download, 
+  FolderSync, 
+  Trash2, 
+  AlertOctagon, 
+  Cpu, 
+  Key, 
+  Eye, 
+  EyeOff, 
+  Sparkles, 
+  CheckCircle2 
+} from 'lucide-react';
 
 export function SettingsPage() {
   const { settings, isLoading, updateSettings } = useSettings();
@@ -20,6 +36,9 @@ export function SettingsPage() {
   const [email, setEmail] = useState('');
   const [logoBase64, setLogoBase64] = useState(null);
   const [faviconBase64, setFaviconBase64] = useState(null);
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [testingAi, setTestingAi] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
 
   // Appearance states (synced with AppShell localStorage triggers)
@@ -58,6 +77,8 @@ export function SettingsPage() {
       setEmail(settings.company_email || '');
       setLogoBase64(settings.logo_url || null);
       setFaviconBase64(settings.favicon_url || null);
+      const savedKey = settings.gemini_api_key || localStorage.getItem('saga_gemini_api_key') || '';
+      setGeminiApiKey(savedKey);
     }
   }, [settings]);
 
@@ -99,7 +120,25 @@ export function SettingsPage() {
     reader.readAsDataURL(file);
   };
 
-  // Save branding settings
+  // Test SAGA AI Gemini API Key Connection
+  const handleTestAiConnection = async () => {
+    if (!geminiApiKey.trim()) {
+      toast.error("Please enter a Gemini API Key to test");
+      return;
+    }
+
+    setTestingAi(true);
+    try {
+      const res = await testGeminiApiKey(geminiApiKey.trim());
+      toast.success(`SAGA AI Connected! Model: ${res.modelUsed}`);
+    } catch (err) {
+      toast.error(`Connection Test Failed: ${err.message}`);
+    } finally {
+      setTestingAi(false);
+    }
+  };
+
+  // Save branding & SAGA AI settings
   const handleSaveBranding = async (e) => {
     e.preventDefault();
     if (!companyName.trim()) {
@@ -115,9 +154,10 @@ export function SettingsPage() {
         company_phone: phone.trim(),
         company_email: email.trim(),
         logo_url: logoBase64,
-        favicon_url: faviconBase64
+        favicon_url: faviconBase64,
+        gemini_api_key: geminiApiKey.trim()
       });
-      toast.success("Branding settings saved successfully!");
+      toast.success("Settings & SAGA AI configuration saved successfully!");
     } catch (err) {
       toast.error(err.message || "Failed to save settings");
     } finally {
@@ -441,9 +481,66 @@ export function SettingsPage() {
             onChange={(e) => setAddress(e.target.value)}
           />
 
-          <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
+          {/* SAGA AI Integration Configuration (Admin & Authorized Users) */}
+          <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Cpu className="text-cyan-500" size={20} />
+                <h4 className="text-sm font-bold font-heading text-slate-800 dark:text-slate-100">
+                  SAGA AI (Gemini Integration)
+                </h4>
+              </div>
+              <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border ${
+                geminiApiKey 
+                  ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800' 
+                  : 'bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800'
+              }`}>
+                {geminiApiKey ? 'SAGA AI Active' : 'Key Required'}
+              </span>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              Configure your Google Gemini API key to enable <strong>SAGA AI</strong> system intelligence. Once configured, SAGA AI can perform real-time analysis across all inventory, customer debts, production energy costs, operating expenses, and machinery maintenance records.
+            </p>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                Google Gemini API Key
+              </label>
+              <div className="relative flex items-center">
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  value={geminiApiKey}
+                  onChange={(e) => setGeminiApiKey(e.target.value)}
+                  placeholder="e.g. AIzaSy..."
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-36 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:border-navy-500 dark:focus:border-cyan-500 transition"
+                />
+                <Key size={14} className="absolute left-3 text-slate-400" />
+                <div className="absolute right-2 flex items-center space-x-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
+                    title={showApiKey ? 'Hide Key' : 'Show Key'}
+                  >
+                    {showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleTestAiConnection}
+                    disabled={testingAi || !geminiApiKey.trim()}
+                    className="px-2.5 py-1 bg-cyan-50 dark:bg-cyan-950/40 hover:bg-cyan-100 dark:hover:bg-cyan-900/60 text-cyan-600 dark:text-cyan-400 text-[11px] font-bold rounded-lg transition border border-cyan-200 dark:border-cyan-800 disabled:opacity-40"
+                  >
+                    {testingAi ? 'Testing...' : 'Test Connection'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-3 border-t border-slate-100 dark:border-slate-800">
             <Button variant="primary" type="submit" isLoading={saveLoading} className="rounded-xl px-5">
-              Save Branding Configuration
+              Save Settings & SAGA AI Config
             </Button>
           </div>
         </form>

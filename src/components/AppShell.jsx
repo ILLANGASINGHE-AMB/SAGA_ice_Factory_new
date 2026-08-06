@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../hooks/useSettings';
+import { SagaAiDrawer } from './SagaAiDrawer';
 import { 
   LayoutDashboard, 
   Package, 
@@ -16,7 +17,10 @@ import {
   Moon,
   Type,
   Zap,
-  Receipt
+  Receipt,
+  Sparkles,
+  Cpu,
+  Bot
 } from 'lucide-react';
 
 export function AppShell({ children }) {
@@ -24,6 +28,9 @@ export function AppShell({ children }) {
   const { settings } = useSettings();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // SAGA AI Drawer open state
+  const [isAiOpen, setIsAiOpen] = useState(false);
   
   // Theme & Font Sizing states
   const [isDarkMode, setIsDarkMode] = useState(
@@ -260,6 +267,29 @@ export function AppShell({ children }) {
           </NavLink>
         )}
       </nav>
+
+      {/* Floating SAGA AI Assistant Button (Bottom-Right) */}
+      <div className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-50">
+        <button
+          type="button"
+          onClick={() => setIsAiOpen(!isAiOpen)}
+          className="group relative flex items-center justify-center p-3.5 sm:p-4 rounded-full bg-gradient-to-tr from-navy-900 via-slate-900 to-navy-950 text-white shadow-2xl hover:shadow-cyan-500/20 hover:scale-105 active:scale-95 transition-all duration-300 border border-cyan-500/30"
+          title="Open SAGA AI Assistant"
+        >
+          {/* Glowing Pulse Ring */}
+          <span className="absolute inset-0 rounded-full bg-cyan-400/20 animate-ping opacity-75" />
+          <span className="relative flex items-center space-x-2">
+            <Cpu className="w-5 h-5 text-cyan-400 group-hover:rotate-12 transition-transform duration-300" />
+            <span className="hidden sm:inline-block font-heading font-extrabold text-xs tracking-wider bg-gradient-to-r from-white to-cyan-200 bg-clip-text text-transparent pr-0.5">
+              SAGA AI
+            </span>
+            <Sparkles className="w-3.5 h-3.5 text-cyan-300 animate-pulse" />
+          </span>
+        </button>
+      </div>
+
+      {/* SAGA AI Assistant Floating Drawer */}
+      <SagaAiDrawer isOpen={isAiOpen} onClose={() => setIsAiOpen(false)} />
     </div>
   );
 }
