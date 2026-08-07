@@ -83,6 +83,12 @@ create table public.settings (
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+-- Code Counters (Atomic Sequential Code Generator)
+create table if not exists public.code_counters (
+  entity text primary key,
+  last_value bigint not null default 0
+);
+
 -- ==========================================
 -- 2. Seed Initial Data
 -- ==========================================
@@ -97,6 +103,12 @@ insert into public.settings (company_name, company_address, company_phone, compa
 ('Sagacious Ice Factory', '102 Industrial Zone, Colombo, Sri Lanka', '0771234567', 'info@sagaciousice.com')
 on conflict do nothing;
 
+insert into public.code_counters (entity, last_value) values
+('sale', 0),
+('customer', 0),
+('settlement', 0)
+on conflict (entity) do nothing;
+
 -- ==========================================
 -- 3. Enable Row Level Security (RLS)
 -- ==========================================
@@ -108,9 +120,10 @@ alter table public.sales enable row level security;
 alter table public.debts enable row level security;
 alter table public.debt_settlements enable row level security;
 alter table public.settings enable row level security;
+alter table public.code_counters enable row level security;
 
 -- ==========================================
--- 4. Create Helper Functions for Policies
+-- 4. Create Helper & Atomic RPC Functions
 -- ==========================================
 
 -- Check if current user is an admin
@@ -124,8 +137,124 @@ begin
 end;
 $$ language plpgsql security definer;
 
+-- Atomic Sequential Code Generator
+create or replace function public.get_next_code(p_entity text, p_prefix text)
+returns text as $$
+declare
+  v_next bigint;
+  v_date_suffix text;
+begin
+  insert into public.code_counters (entity, last_value)
+  values (p_entity, 1)
+  on conflict (entity) do update set last_value = public.code_counters.last_value + 1
+  returning last_value into v_next;
+
+  if p_entity = 'customer' then
+    return p_prefix || '-' || lpad(v_next::text, 4, '0');
+  else
+    v_date_suffix := to_char(now(), 'DDMMYY');
+    return p_prefix || '-' || v_next::text || '-' || v_date_suffix;
+  end if;
+end;
+$$ language plpgsql security definer;
+
+-- Atomic Inventory Add Stock
+create or replace function public.add_inventory_stock(p_id bigint, p_amount integer)
+returns void as $$
+begin
+  if p_amount <= 0 then
+    raise exception 'Amount must be a positive integer';
+  end if;
+  
+  update public.inventory
+  set quantity = quantity + p_amount,
+      updated_at = timezone('utc'::text, now())
+  where id = p_id;
+end;
+$$ language plpgsql security definer;
+
+-- Atomic Inventory Deduct Stock (By Item ID)
+create or replace function public.deduct_inventory_stock(p_id bigint, p_amount integer)
+returns void as $$
+declare
+  v_current_qty integer;
+begin
+  if p_amount <= 0 then
+    raise exception 'Amount must be a positive integer';
+  end if;
+
+  select quantity into v_current_qty
+  from public.inventory
+  where id = p_id
+  for update;
+
+  if not found then
+    raise exception 'Inventory item not found';
+  end if;
+
+  if v_current_qty < p_amount then
+    raise exception 'Insufficient stock. Available: %', v_current_qty;
+  end if;
+
+  update public.inventory
+  set quantity = quantity - p_amount,
+      updated_at = timezone('utc'::text, now())
+  where id = p_id;
+end;
+$$ language plpgsql security definer;
+
+-- Atomic Inventory Deduct Stock (By Cube Type)
+create or replace function public.deduct_inventory_stock_by_type(p_cube_type text, p_amount integer)
+returns void as $$
+declare
+  v_item_id bigint;
+  v_current_qty integer;
+begin
+  if p_amount <= 0 then
+    raise exception 'Amount must be a positive integer';
+  end if;
+
+  select id, quantity into v_item_id, v_current_qty
+  from public.inventory
+  where type = p_cube_type
+  for update;
+
+  if not found then
+    raise exception 'Inventory item for % not found', p_cube_type;
+  end if;
+
+  if v_current_qty < p_amount then
+    raise exception 'Insufficient stock. Available: %', v_current_qty;
+  end if;
+
+  update public.inventory
+  set quantity = quantity - p_amount,
+      updated_at = timezone('utc'::text, now())
+  where id = v_item_id;
+end;
+$$ language plpgsql security definer;
+
+-- Atomic Inventory Update Price
+create or replace function public.update_inventory_price(p_id bigint, p_price numeric)
+returns void as $$
+begin
+  if not public.is_admin() then
+    raise exception 'Only administrators can update inventory prices';
+  end if;
+  
+  if p_price < 0 then
+    raise exception 'Price must be non-negative';
+  end if;
+
+  update public.inventory
+  set price_per_cube = p_price,
+      updated_at = timezone('utc'::text, now())
+  where id = p_id;
+end;
+$$ language plpgsql security definer;
+
 -- ==========================================
--- 5. RLS Policies Definition
+-- 5. Tightened RLS Policies Definition
 -- ==========================================
 
 -- Profiles policies
@@ -139,43 +268,71 @@ create policy "Allow update profiles for admins" on public.profiles
 create policy "Allow read inventory for authenticated" on public.inventory
   for select to authenticated using (true);
 
-create policy "Allow write inventory for admins" on public.inventory
+create policy "Allow admin write inventory" on public.inventory
   for all to authenticated using (public.is_admin());
 
--- Settings policies
-create policy "Allow read settings for public" on public.settings
-  for select using (true);
+-- Settings policies (authenticated read only, admin write)
+create policy "Allow read settings for authenticated" on public.settings
+  for select to authenticated using (true);
 
 create policy "Allow write settings for admins" on public.settings
   for all to authenticated using (public.is_admin());
 
--- Customers policies
-create policy "Allow read customers for public" on public.customers
-  for select using (true);
+-- Code Counters policies
+create policy "Allow read code_counters for authenticated" on public.code_counters
+  for select to authenticated using (true);
 
-create policy "Allow write customers for authenticated" on public.customers
+create policy "Allow update code_counters for authenticated" on public.code_counters
   for all to authenticated using (true);
+
+-- Customers policies
+create policy "Allow read customers for authenticated" on public.customers
+  for select to authenticated using (true);
+
+create policy "Allow insert customers for authenticated" on public.customers
+  for insert to authenticated with check (true);
+
+create policy "Allow update customers for admins" on public.customers
+  for update to authenticated using (public.is_admin());
+
+create policy "Allow delete customers for admins" on public.customers
+  for delete to authenticated using (public.is_admin());
 
 -- Sales policies
-create policy "Allow read sales for public" on public.sales
-  for select using (true);
+create policy "Allow read sales for authenticated" on public.sales
+  for select to authenticated using (true);
 
-create policy "Allow write sales for authenticated" on public.sales
-  for all to authenticated using (true);
+create policy "Allow insert sales for authenticated" on public.sales
+  for insert to authenticated with check (true);
+
+create policy "Allow update sales for admins" on public.sales
+  for update to authenticated using (public.is_admin());
+
+create policy "Allow delete sales for admins" on public.sales
+  for delete to authenticated using (public.is_admin());
 
 -- Debts policies
 create policy "Allow read debts for authenticated" on public.debts
   for select to authenticated using (true);
 
-create policy "Allow write debts for authenticated" on public.debts
-  for all to authenticated using (true);
+create policy "Allow insert debts for authenticated" on public.debts
+  for insert to authenticated with check (true);
+
+create policy "Allow update debts for authenticated" on public.debts
+  for update to authenticated using (true);
+
+create policy "Allow delete debts for admins" on public.debts
+  for delete to authenticated using (public.is_admin());
 
 -- Debt Settlements policies
 create policy "Allow read settlements for authenticated" on public.debt_settlements
   for select to authenticated using (true);
 
-create policy "Allow write settlements for authenticated" on public.debt_settlements
-  for all to authenticated using (true);
+create policy "Allow insert settlements for authenticated" on public.debt_settlements
+  for insert to authenticated with check (true);
+
+create policy "Allow delete settlements for admins" on public.debt_settlements
+  for delete to authenticated using (public.is_admin());
 
 -- ==========================================
 -- 6. Trigger to Create Profile on User Signup
@@ -199,7 +356,7 @@ create or replace trigger on_auth_user_created
   for each row execute procedure public.handle_new_user();
 
 -- Production Batches (Freezing & Energy Consumption)
-create table public.production_batches (
+create table if not exists public.production_batches (
   id bigint generated by default as identity primary key,
   batch_code text not null unique,
   cubes_produced integer not null default 0,
@@ -215,7 +372,7 @@ create table public.production_batches (
 );
 
 -- Equipment Maintenance & Downtime
-create table public.equipment_maintenance (
+create table if not exists public.equipment_maintenance (
   id bigint generated by default as identity primary key,
   equipment_name text not null,
   equipment_type text not null default 'Machinery',
@@ -229,7 +386,7 @@ create table public.equipment_maintenance (
 );
 
 -- Operating Expenses Ledger
-create table public.operating_expenses (
+create table if not exists public.operating_expenses (
   id bigint generated by default as identity primary key,
   expense_code text not null unique,
   category text not null check (category in ('electricity', 'diesel', 'maintenance', 'salaries', 'water_utilities', 'packaging', 'other')),
@@ -274,23 +431,27 @@ create policy "Allow read operating_expenses" on public.operating_expenses for s
 create policy "Allow write operating_expenses" on public.operating_expenses for all to authenticated using (true);
 
 -- ==========================================
--- 8. Supabase Storage Bucket & 24-Hour PDF Bills Cleanup
+-- 8. Supabase Storage Bucket & Private Bills Storage Setup
 -- ==========================================
 
--- Create storage bucket 'bills' if not exists
+-- Create private storage bucket 'bills' (public = false)
 insert into storage.buckets (id, name, public)
-values ('bills', 'bills', true)
-on conflict (id) do update set public = true;
+values ('bills', 'bills', false)
+on conflict (id) do update set public = false;
 
--- Storage policies for bucket 'bills'
-create policy "Public Access to Bills" on storage.objects
-  for select using (bucket_id = 'bills');
+-- Storage policies for private bucket 'bills' (Authenticated only)
+drop policy if exists "Public Access to Bills" on storage.objects;
+drop policy if exists "Authenticated Access to Bills" on storage.objects;
+create policy "Authenticated Access to Bills" on storage.objects
+  for select to authenticated using (bucket_id = 'bills');
 
-create policy "Allow Insert Bills for Authenticated & Public" on storage.objects
-  for insert with check (bucket_id = 'bills');
+drop policy if exists "Allow Insert Bills for Authenticated & Public" on storage.objects;
+create policy "Allow Insert Bills for Authenticated" on storage.objects
+  for insert to authenticated with check (bucket_id = 'bills');
 
+drop policy if exists "Allow Delete Bills for Authenticated" on storage.objects;
 create policy "Allow Delete Bills for Authenticated" on storage.objects
-  for delete using (bucket_id = 'bills');
+  for delete to authenticated using (bucket_id = 'bills');
 
 -- Function to purge PDF bills created > 24 hours ago
 create or replace function public.purge_expired_pdf_bills()
@@ -308,6 +469,7 @@ begin
     and bill_pdf_url is not null;
 end;
 $$ language plpgsql security definer;
+
 
 
 

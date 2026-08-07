@@ -42,46 +42,64 @@ export function useInventory() {
   const addStock = async (id, amount) => {
     if (!amount || amount <= 0) throw new Error("Amount must be a positive number");
     
-    const { data: item, error: getErr } = await supabase
-      .from('inventory')
-      .select('*')
-      .eq('id', id)
-      .single();
-    
-    if (getErr || !item) throw new Error("Item not found");
+    // Call atomic PostgreSQL RPC function
+    const { error: rpcErr } = await supabase.rpc('add_inventory_stock', {
+      p_id: id,
+      p_amount: amount
+    });
 
-    const { error: updateErr } = await supabase
-      .from('inventory')
-      .update({
-        quantity: item.quantity + amount,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id);
+    if (rpcErr) {
+      // Fallback if RPC not created yet
+      const { data: item, error: getErr } = await supabase
+        .from('inventory')
+        .select('*')
+        .eq('id', id)
+        .single();
+      
+      if (getErr || !item) throw new Error("Item not found");
 
-    if (updateErr) throw new Error(updateErr.message);
+      const { error: updateErr } = await supabase
+        .from('inventory')
+        .update({
+          quantity: item.quantity + amount,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+
+      if (updateErr) throw new Error(updateErr.message);
+    }
   };
 
   const removeStock = async (id, amount) => {
     if (!amount || amount <= 0) throw new Error("Amount must be a positive number");
 
-    const { data: item, error: getErr } = await supabase
-      .from('inventory')
-      .select('*')
-      .eq('id', id)
-      .single();
+    // Call atomic PostgreSQL RPC function with row locking
+    const { error: rpcErr } = await supabase.rpc('deduct_inventory_stock', {
+      p_id: id,
+      p_amount: amount
+    });
 
-    if (getErr || !item) throw new Error("Item not found");
-    if (item.quantity - amount < 0) throw new Error("Insufficient stock");
+    if (rpcErr) {
+      // Fallback if RPC not created yet
+      const { data: item, error: getErr } = await supabase
+        .from('inventory')
+        .select('*')
+        .eq('id', id)
+        .single();
 
-    const { error: updateErr } = await supabase
-      .from('inventory')
-      .update({
-        quantity: item.quantity - amount,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id);
+      if (getErr || !item) throw new Error("Item not found");
+      if (item.quantity - amount < 0) throw new Error("Insufficient stock");
 
-    if (updateErr) throw new Error(updateErr.message);
+      const { error: updateErr } = await supabase
+        .from('inventory')
+        .update({
+          quantity: item.quantity - amount,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+
+      if (updateErr) throw new Error(updateErr.message);
+    }
   };
 
   const updatePrice = async (id, price) => {
@@ -89,23 +107,24 @@ export function useInventory() {
       throw new Error("Price must be a non-negative decimal value");
     }
 
-    const { data: item, error: getErr } = await supabase
-      .from('inventory')
-      .select('*')
-      .eq('id', id)
-      .single();
+    // Call atomic PostgreSQL RPC function
+    const { error: rpcErr } = await supabase.rpc('update_inventory_price', {
+      p_id: id,
+      p_price: price
+    });
 
-    if (getErr || !item) throw new Error("Item not found");
+    if (rpcErr) {
+      // Fallback if RPC not created yet
+      const { error: updateErr } = await supabase
+        .from('inventory')
+        .update({
+          price_per_cube: price,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
 
-    const { error: updateErr } = await supabase
-      .from('inventory')
-      .update({
-        price_per_cube: price,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id);
-
-    if (updateErr) throw new Error(updateErr.message);
+      if (updateErr) throw new Error(updateErr.message);
+    }
   };
 
   return {

@@ -245,20 +245,33 @@ export async function testGeminiApiKey(apiKey) {
  * Send chat conversation to Gemini API with full system context
  */
 export async function sendSagaAiMessage(messages, apiKey) {
-  if (!apiKey || !apiKey.trim()) {
-    throw new Error("Gemini API Key is not configured. Please add your API key in Admin Settings.");
-  }
-
-  const cleanKey = apiKey.trim();
   const systemContextPrompt = await fetchFullSystemContext();
 
-  // Combine system prompt and message history into a universal prompt payload
   const conversationHistoryText = messages.map(msg => 
     `${msg.role === 'user' ? 'USER' : 'SAGA AI'}: ${msg.content}`
   ).join('\n\n');
 
   const fullPromptText = `${systemContextPrompt}\n\n=== CONVERSATION HISTORY ===\n${conversationHistoryText}\n\nSAGA AI RESPONSE:`;
 
+  // 1. Attempt server-side Edge Function proxy call first
+  try {
+    const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('saga-ai-proxy', {
+      body: { prompt: fullPromptText, apiKey: apiKey ? apiKey.trim() : undefined }
+    });
+
+    if (!edgeErr && edgeData && edgeData.reply) {
+      return edgeData.reply;
+    }
+  } catch (proxyErr) {
+    console.warn("Edge function proxy bypass, attempting direct API connection:", proxyErr);
+  }
+
+  // 2. Direct client connection fallback if API key is provided
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error("Gemini API Key is not configured. Please add your API key in Admin Settings or deploy Edge Function.");
+  }
+
+  const cleanKey = apiKey.trim();
   const modelsToTry = [
     'gemini-2.0-flash',
     'gemini-1.5-flash',
@@ -303,7 +316,6 @@ export async function sendSagaAiMessage(messages, apiKey) {
         const errorMsg = data?.error?.message || `HTTP ${response.status} ${response.statusText}`;
         const lowerErr = errorMsg.toLowerCase();
         
-        // Stop immediately on authentication, quota, or key errors
         if (
           lowerErr.includes('api key') || 
           lowerErr.includes('quota') || 

@@ -58,15 +58,22 @@ export function useCustomers() {
       throw new Error("A customer with this WhatsApp number already exists");
     }
 
-    // Auto-generate customer_code
-    const { count, error: countErr } = await supabase
-      .from('customers')
-      .select('*', { count: 'exact', head: true });
+    // Auto-generate atomic customer_code
+    let customer_code = null;
+    const { data: codeData, error: codeErr } = await supabase.rpc('get_next_code', {
+      p_entity: 'customer',
+      p_prefix: 'CUST'
+    });
 
-    if (countErr) throw new Error(countErr.message);
-
-    const newCount = count !== null ? count : 0;
-    const customer_code = `CUST-${String(newCount + 1).padStart(4, '0')}`;
+    if (!codeErr && codeData) {
+      customer_code = codeData;
+    } else {
+      const { count } = await supabase
+        .from('customers')
+        .select('*', { count: 'exact', head: true });
+      const newCount = count !== null ? count : 0;
+      customer_code = `CUST-${String(newCount + 1).padStart(4, '0')}`;
+    }
 
     const { data, error: insertErr } = await supabase
       .from('customers')

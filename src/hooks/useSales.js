@@ -61,44 +61,54 @@ export function useSales() {
       throw new Error("Price per cube must be set before placing a sale");
     }
 
-    // 1. Fetch inventory record
-    const { data: inventoryItem, error: invErr } = await supabase
-      .from('inventory')
-      .select('*')
-      .eq('type', cube_type)
-      .single();
+    // 1 & 2. Atomic Stock Deduction (locks row & checks quantity)
+    const { error: deductErr } = await supabase.rpc('deduct_inventory_stock_by_type', {
+      p_cube_type: cube_type,
+      p_amount: quantity
+    });
 
-    if (invErr || !inventoryItem) throw new Error(`Inventory item for ${cube_type} not found`);
-    if (inventoryItem.quantity - quantity < 0) {
-      throw new Error(`Insufficient stock. Available: ${inventoryItem.quantity}`);
+    if (deductErr) {
+      // Fallback if RPC is not deployed yet
+      const { data: inventoryItem, error: invErr } = await supabase
+        .from('inventory')
+        .select('*')
+        .eq('type', cube_type)
+        .single();
+
+      if (invErr || !inventoryItem) throw new Error(`Inventory item for ${cube_type} not found`);
+      if (inventoryItem.quantity - quantity < 0) {
+        throw new Error(`Insufficient stock. Available: ${inventoryItem.quantity}`);
+      }
+
+      const { error: updateInvErr } = await supabase
+        .from('inventory')
+        .update({
+          quantity: inventoryItem.quantity - quantity,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', inventoryItem.id);
+
+      if (updateInvErr) throw new Error(updateInvErr.message);
     }
 
-    // 2. Deduct stock
-    const { error: updateInvErr } = await supabase
-      .from('inventory')
-      .update({
-        quantity: inventoryItem.quantity - quantity,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', inventoryItem.id);
+    // 3. Generate Atomic Sale Code
+    let sale_code = null;
+    const { data: codeData, error: codeErr } = await supabase.rpc('get_next_code', {
+      p_entity: 'sale',
+      p_prefix: 'S'
+    });
 
-    if (updateInvErr) throw new Error(updateInvErr.message);
+    if (!codeErr && codeData) {
+      sale_code = codeData;
+    } else {
+      const { count } = await supabase
+        .from('sales')
+        .select('*', { count: 'exact', head: true });
+      const newCount = count !== null ? count : 0;
+      const dateSuffix = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getFullYear()).slice(-2)}`;
+      sale_code = `S-${newCount + 1}-${dateSuffix}`;
+    }
 
-    // 3. Generate Sale Code
-    const { count, error: countErr } = await supabase
-      .from('sales')
-      .select('*', { count: 'exact', head: true });
-
-    if (countErr) throw new Error(countErr.message);
-    const newCount = count !== null ? count : 0;
-    
-    const now = new Date();
-    const dd = String(now.getDate()).padStart(2, '0');
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const yy = String(now.getFullYear()).slice(-2);
-    const dateSuffix = `${dd}${mm}${yy}`;
-    
-    const sale_code = `S-${newCount + 1}-${dateSuffix}`;
     const total_amount = price_per_cube * quantity;
 
     // Fetch customer & settings for PDF Bill generation
@@ -116,7 +126,7 @@ export function useSales() {
 
     let bill_pdf_url = null;
 
-    // Generate PDF Blob and upload to Supabase Storage 'bills' bucket
+    // Generate PDF Blob and upload to private Supabase Storage 'bills' bucket
     try {
       const saleObj = {
         sale_code,
@@ -141,11 +151,19 @@ export function useSales() {
         });
 
       if (!uploadErr && uploadData) {
-        const { data: publicUrlData } = supabase.storage
+        // Create 24-hour signed URL for private bucket access
+        const { data: signedUrlData } = await supabase.storage
           .from('bills')
-          .getPublicUrl(fileName);
-        
-        bill_pdf_url = publicUrlData?.publicUrl || null;
+          .createSignedUrl(fileName, 60 * 60 * 24);
+
+        if (signedUrlData?.signedUrl) {
+          bill_pdf_url = signedUrlData.signedUrl;
+        } else {
+          const { data: publicUrlData } = supabase.storage
+            .from('bills')
+            .getPublicUrl(fileName);
+          bill_pdf_url = publicUrlData?.publicUrl || null;
+        }
       }
     } catch (pdfErr) {
       console.warn("PDF generation / storage upload skipped:", pdfErr);

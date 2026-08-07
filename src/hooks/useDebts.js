@@ -85,20 +85,24 @@ export function useDebts() {
 
     if (updateErr) throw new Error(updateErr.message);
 
-    const { count, error: countErr } = await supabase
-      .from('debt_settlements')
-      .select('*', { count: 'exact', head: true });
+    // Auto-generate atomic settlement_code
+    let settlement_code = null;
+    const { data: codeData, error: codeErr } = await supabase.rpc('get_next_code', {
+      p_entity: 'settlement',
+      p_prefix: 'D'
+    });
 
-    if (countErr) throw new Error(countErr.message);
-    const newCount = count !== null ? count : 0;
-    
-    const now = new Date();
-    const dd = String(now.getDate()).padStart(2, '0');
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const yy = String(now.getFullYear()).slice(-2);
-    const dateSuffix = `${dd}${mm}${yy}`;
-    
-    const settlement_code = `D-${newCount + 1}-${dateSuffix}`;
+    if (!codeErr && codeData) {
+      settlement_code = codeData;
+    } else {
+      const { count } = await supabase
+        .from('debt_settlements')
+        .select('*', { count: 'exact', head: true });
+      const newCount = count !== null ? count : 0;
+      const now = new Date();
+      const dateSuffix = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getFullYear()).slice(-2)}`;
+      settlement_code = `D-${newCount + 1}-${dateSuffix}`;
+    }
 
     const { data: newSettlement, error: insertErr } = await supabase
       .from('debt_settlements')
