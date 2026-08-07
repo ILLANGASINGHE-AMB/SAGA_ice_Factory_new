@@ -134,14 +134,13 @@ export async function getAvailableGeminiModel(cleanKey) {
         .map(m => m.name ? m.name.replace(/^models\//, '') : '');
 
       const priorityOrder = [
-        'gemini-2.0-flash',
         'gemini-2.5-flash',
-        'gemini-1.5-flash-latest',
+        'gemini-2.5-flash-lite',
+        'gemini-3.6-flash',
+        'gemini-3-flash',
         'gemini-1.5-flash',
         'gemini-2.0-flash-lite',
-        'gemini-1.5-pro-latest',
-        'gemini-1.5-pro',
-        'gemini-1.0-pro'
+        'gemini-2.0-flash'
       ];
 
       for (const modelName of priorityOrder) {
@@ -161,14 +160,12 @@ export async function getAvailableGeminiModel(cleanKey) {
 }
 
 const FALLBACK_MODELS = [
-  'gemini-2.0-flash',
   'gemini-2.5-flash',
-  'gemini-1.5-flash-latest',
+  'gemini-2.5-flash-lite',
+  'gemini-3.6-flash',
+  'gemini-3-flash',
   'gemini-1.5-flash',
-  'gemini-2.0-flash-lite',
-  'gemini-1.5-pro-latest',
-  'gemini-1.5-pro',
-  'gemini-1.0-pro'
+  'gemini-2.0-flash-lite'
 ];
 
 /**
@@ -184,7 +181,7 @@ export async function testGeminiApiKey(apiKey) {
     });
 
     if (!edgeErr && edgeData && edgeData.success) {
-      return { success: true, modelUsed: edgeData.modelUsed || 'gemini-flash', text: edgeData.text };
+      return { success: true, modelUsed: edgeData.modelUsed || 'gemini-2.5-flash', text: edgeData.text };
     } else if (edgeErr || edgeData?.error) {
       const errMsg = edgeData?.error || edgeErr?.message;
       if (errMsg && !errMsg.includes('Failed to send a request') && !errMsg.includes('FunctionsFetchError')) {
@@ -206,8 +203,8 @@ export async function testGeminiApiKey(apiKey) {
   // Dynamically fetch models supported by this specific API Key
   const dynamicModel = await getAvailableGeminiModel(cleanKey);
   const modelsToTry = dynamicModel 
-    ? [dynamicModel, 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite']
-    : ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
+    ? [dynamicModel, 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.6-flash', 'gemini-1.5-flash']
+    : ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.6-flash', 'gemini-1.5-flash'];
 
   const errorDetails = [];
 
@@ -285,13 +282,11 @@ export async function sendSagaAiMessage(messages, apiKey) {
     throw new Error("Gemini API Key is not configured. Please configure your API key in Admin Settings or set GEMINI_API_KEY on the Edge Function server.");
   }
 
-  const modelsToTry = [
-    'gemini-1.5-flash',
-    'gemini-2.0-flash',
-    'gemini-2.0-flash-lite',
-    'gemini-1.5-flash-8b',
-    'gemini-1.5-pro'
-  ];
+  // Dynamically fetch model for this key
+  const dynamicModel = await getAvailableGeminiModel(cleanKey);
+  const modelsToTry = dynamicModel 
+    ? [dynamicModel, 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.6-flash', 'gemini-1.5-flash']
+    : ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.6-flash', 'gemini-1.5-flash'];
 
   let lastError = null;
 
