@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { generateSettlementReceiptPDF } from '../utils/pdfGenerator';
 
 export function useDebts() {
   const [debts, setDebts] = useState([]);
@@ -104,21 +105,6 @@ export function useDebts() {
       settlement_code = `D-${newCount + 1}-${dateSuffix}`;
     }
 
-    const { data: newSettlement, error: insertErr } = await supabase
-      .from('debt_settlements')
-      .insert({
-        debt_id: debtId,
-        customer_id: debt.customer_id,
-        amount_paid: amountPaid,
-        settlement_date: new Date().toISOString(),
-        bill_pdf_url: null,
-        created_by: createdBy
-      })
-      .select('*')
-      .single();
-
-    if (insertErr) throw new Error(insertErr.message);
-
     const { data: customer } = await supabase
       .from('customers')
       .select('*')
@@ -131,6 +117,67 @@ export function useDebts() {
       .eq('id', debt.sale_id)
       .single();
 
+    const { data: settings } = await supabase
+      .from('settings')
+      .select('*')
+      .limit(1)
+      .single();
+
+    let bill_pdf_url = null;
+
+    // Generate settlement receipt PDF and upload to private storage bucket
+    try {
+      const settlementObj = {
+        settlement_code,
+        debt_id: debtId,
+        customer,
+        sale,
+        amount_paid: amountPaid,
+        remaining_amount: newRemaining,
+        status: newStatus,
+        settlement_date: new Date().toISOString(),
+        created_by: createdBy
+      };
+
+      const doc = generateSettlementReceiptPDF(settlementObj, settings || {});
+      const pdfBlob = doc.output('blob');
+      const fileName = `SETTLEMENT_${settlement_code}_${Date.now()}.pdf`;
+
+      const { data: uploadData, error: uploadErr } = await supabase.storage
+        .from('bills')
+        .upload(fileName, pdfBlob, {
+          contentType: 'application/pdf',
+          upsert: true
+        });
+
+      if (!uploadErr && uploadData) {
+        const { data: signedData } = await supabase.storage
+          .from('bills')
+          .createSignedUrl(fileName, 60 * 60 * 24);
+
+        if (signedData?.signedUrl) {
+          bill_pdf_url = signedData.signedUrl;
+        }
+      }
+    } catch (pdfErr) {
+      console.warn("Settlement PDF generation skipped:", pdfErr);
+    }
+
+    const { data: newSettlement, error: insertErr } = await supabase
+      .from('debt_settlements')
+      .insert({
+        debt_id: debtId,
+        customer_id: debt.customer_id,
+        amount_paid: amountPaid,
+        settlement_date: new Date().toISOString(),
+        bill_pdf_url,
+        created_by: createdBy
+      })
+      .select('*')
+      .single();
+
+    if (insertErr) throw new Error(insertErr.message);
+
     return {
       id: newSettlement.id,
       settlement_code,
@@ -138,6 +185,7 @@ export function useDebts() {
       amount_paid: amountPaid,
       remaining_amount: newRemaining,
       status: newStatus,
+      bill_pdf_url,
       customer,
       sale
     };

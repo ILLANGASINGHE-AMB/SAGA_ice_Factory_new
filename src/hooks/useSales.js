@@ -61,57 +61,115 @@ export function useSales() {
       throw new Error("Price per cube must be set before placing a sale");
     }
 
-    // 1 & 2. Atomic Stock Deduction (locks row & checks quantity)
-    const { error: deductErr } = await supabase.rpc('deduct_inventory_stock_by_type', {
+    // 1. Try atomic PostgreSQL single-transaction RPC execution
+    let txnResult = null;
+    let sale_code = null;
+    let total_amount = price_per_cube * quantity;
+    let sale_date = new Date().toISOString();
+    let debtId = null;
+    let saleId = null;
+
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('place_order_transaction', {
+      p_customer_id: customer_id,
       p_cube_type: cube_type,
-      p_amount: quantity
+      p_quantity: quantity,
+      p_price_per_cube: price_per_cube,
+      p_payment_type: payment_type,
+      p_created_by: created_by
     });
 
-    if (deductErr) {
+    if (!rpcErr && rpcData) {
+      txnResult = rpcData;
+      saleId = rpcData.id;
+      sale_code = rpcData.sale_code;
+      total_amount = rpcData.total_amount;
+      sale_date = rpcData.sale_date;
+      debtId = rpcData.debt_id;
+    } else {
       // Fallback if RPC is not deployed yet
-      const { data: inventoryItem, error: invErr } = await supabase
-        .from('inventory')
-        .select('*')
-        .eq('type', cube_type)
-        .single();
+      const { error: deductErr } = await supabase.rpc('deduct_inventory_stock_by_type', {
+        p_cube_type: cube_type,
+        p_amount: quantity
+      });
 
-      if (invErr || !inventoryItem) throw new Error(`Inventory item for ${cube_type} not found`);
-      if (inventoryItem.quantity - quantity < 0) {
-        throw new Error(`Insufficient stock. Available: ${inventoryItem.quantity}`);
+      if (deductErr) {
+        const { data: inventoryItem, error: invErr } = await supabase
+          .from('inventory')
+          .select('*')
+          .eq('type', cube_type)
+          .single();
+
+        if (invErr || !inventoryItem) throw new Error(`Inventory item for ${cube_type} not found`);
+        if (inventoryItem.quantity - quantity < 0) {
+          throw new Error(`Insufficient stock. Available: ${inventoryItem.quantity}`);
+        }
+
+        const { error: updateInvErr } = await supabase
+          .from('inventory')
+          .update({
+            quantity: inventoryItem.quantity - quantity,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', inventoryItem.id);
+
+        if (updateInvErr) throw new Error(updateInvErr.message);
       }
 
-      const { error: updateInvErr } = await supabase
-        .from('inventory')
-        .update({
-          quantity: inventoryItem.quantity - quantity,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', inventoryItem.id);
+      const { data: codeData } = await supabase.rpc('get_next_code', {
+        p_entity: 'sale',
+        p_prefix: 'S'
+      });
 
-      if (updateInvErr) throw new Error(updateInvErr.message);
-    }
+      if (codeData) {
+        sale_code = codeData;
+      } else {
+        const { count } = await supabase.from('sales').select('*', { count: 'exact', head: true });
+        const newCount = count !== null ? count : 0;
+        const now = new Date();
+        const dateSuffix = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getFullYear()).slice(-2)}`;
+        sale_code = `S-${newCount + 1}-${dateSuffix}`;
+      }
 
-    // 3. Generate Atomic Sale Code
-    let sale_code = null;
-    const { data: codeData, error: codeErr } = await supabase.rpc('get_next_code', {
-      p_entity: 'sale',
-      p_prefix: 'S'
-    });
-
-    if (!codeErr && codeData) {
-      sale_code = codeData;
-    } else {
-      const { count } = await supabase
+      const { data: newSale, error: saleErr } = await supabase
         .from('sales')
-        .select('*', { count: 'exact', head: true });
-      const newCount = count !== null ? count : 0;
-      const dateSuffix = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getFullYear()).slice(-2)}`;
-      sale_code = `S-${newCount + 1}-${dateSuffix}`;
+        .insert({
+          sale_code,
+          customer_id,
+          cube_type,
+          quantity,
+          price_per_cube,
+          total_amount,
+          payment_type,
+          sale_date,
+          created_by
+        })
+        .select('*')
+        .single();
+
+      if (saleErr) throw new Error(saleErr.message);
+      saleId = newSale.id;
+
+      if (payment_type === 'debt') {
+        const { data: newDebt, error: debtErr } = await supabase
+          .from('debts')
+          .insert({
+            sale_id: saleId,
+            customer_id,
+            total_amount,
+            paid_amount: 0,
+            remaining_amount: total_amount,
+            status: 'pending',
+            created_at: new Date().toISOString()
+          })
+          .select('id')
+          .single();
+
+        if (debtErr) throw new Error(debtErr.message);
+        debtId = newDebt.id;
+      }
     }
 
-    const total_amount = price_per_cube * quantity;
-
-    // Fetch customer & settings for PDF Bill generation
+    // 2. Fetch customer & settings for PDF Bill generation
     const { data: customer } = await supabase
       .from('customers')
       .select('*')
@@ -136,7 +194,7 @@ export function useSales() {
         price_per_cube,
         total_amount,
         payment_type,
-        sale_date: now.toISOString(),
+        sale_date,
         created_by
       };
 
@@ -151,67 +209,21 @@ export function useSales() {
         });
 
       if (!uploadErr && uploadData) {
-        // Create 24-hour signed URL for private bucket access
         const { data: signedUrlData } = await supabase.storage
           .from('bills')
           .createSignedUrl(fileName, 60 * 60 * 24);
 
         if (signedUrlData?.signedUrl) {
           bill_pdf_url = signedUrlData.signedUrl;
-        } else {
-          const { data: publicUrlData } = supabase.storage
-            .from('bills')
-            .getPublicUrl(fileName);
-          bill_pdf_url = publicUrlData?.publicUrl || null;
+          await supabase.from('sales').update({ bill_pdf_url }).eq('id', saleId);
         }
       }
     } catch (pdfErr) {
       console.warn("PDF generation / storage upload skipped:", pdfErr);
     }
 
-    // 4. Create Sale Record
-    const { data: newSale, error: saleErr } = await supabase
-      .from('sales')
-      .insert({
-        sale_code,
-        customer_id,
-        cube_type,
-        quantity,
-        price_per_cube,
-        total_amount,
-        payment_type,
-        bill_pdf_url,
-        sale_date: now.toISOString(),
-        created_by
-      })
-      .select('*')
-      .single();
-
-    if (saleErr) throw new Error(saleErr.message);
-
-    // 5. If debt, create debt record
-    let debtId = null;
-    if (payment_type === 'debt') {
-      const { data: newDebt, error: debtErr } = await supabase
-        .from('debts')
-        .insert({
-          sale_id: newSale.id,
-          customer_id,
-          total_amount,
-          paid_amount: 0,
-          remaining_amount: total_amount,
-          status: 'pending',
-          created_at: new Date().toISOString()
-        })
-        .select('id')
-        .single();
-
-      if (debtErr) throw new Error(debtErr.message);
-      debtId = newDebt.id;
-    }
-
     return {
-      id: newSale.id,
+      id: saleId,
       sale_code,
       customer_id,
       cube_type,
@@ -220,7 +232,7 @@ export function useSales() {
       total_amount,
       payment_type,
       bill_pdf_url,
-      sale_date: newSale.sale_date,
+      sale_date,
       created_by,
       customer,
       debtId

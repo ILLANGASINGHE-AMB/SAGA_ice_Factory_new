@@ -29,8 +29,9 @@ export function AppShell({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // SAGA AI Drawer open state & toggle state
+  // SAGA AI Drawer & Mobile Menu states
   const [isAiOpen, setIsAiOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(
     settings?.ai_enabled !== undefined 
       ? settings.ai_enabled 
@@ -248,16 +249,16 @@ export function AppShell({ children }) {
         </main>
       </div>
 
-      {/* Bottom Nav Bar - Mobile (Collapses sidebar on desktop) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-around z-40 px-2 shadow-lg">
-        {visibleNavItems.slice(0, 5).map((item) => (
+      {/* Bottom Nav Bar - Mobile (Scrollable / With More Drawer) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-around z-40 px-1 shadow-lg">
+        {visibleNavItems.slice(0, 4).map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
             className={({ isActive }) => 
               `flex flex-col items-center justify-center flex-1 py-1 transition-all ${
                 isActive 
-                  ? 'text-navy-600 dark:text-navy-400 font-semibold' 
+                  ? 'text-navy-600 dark:text-sky-400 font-semibold' 
                   : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-400'
               }`
             }
@@ -266,23 +267,54 @@ export function AppShell({ children }) {
             <span className="text-[10px] mt-0.5">{item.name}</span>
           </NavLink>
         ))}
-        {/* Render indicator for settings or reports on mobile if they are admin */}
-        {isAdmin && visibleNavItems.length > 5 && (
-          <NavLink
-            to="/settings"
-            className={({ isActive }) => 
-              `flex flex-col items-center justify-center flex-1 py-1 transition-all ${
-                isActive 
-                  ? 'text-navy-600 dark:text-navy-400 font-semibold' 
-                  : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-400'
-              }`
-            }
-          >
-            <SettingsIcon size={20} />
-            <span className="text-[10px] mt-0.5">Settings</span>
-          </NavLink>
-        )}
+
+        {/* More Menu Trigger */}
+        <button
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className={`flex flex-col items-center justify-center flex-1 py-1 transition-all ${
+            isMobileMenuOpen ? 'text-navy-600 dark:text-sky-400 font-semibold' : 'text-slate-400 dark:text-slate-500'
+          }`}
+        >
+          <Menu size={20} />
+          <span className="text-[10px] mt-0.5">More</span>
+        </button>
       </nav>
+
+      {/* Mobile More Navigation Bottom Sheet */}
+      {isMobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}>
+          <div 
+            className="bg-white dark:bg-slate-900 rounded-t-2xl p-5 border-t border-slate-200 dark:border-slate-800 shadow-2xl max-h-[75vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="font-heading font-bold text-base text-slate-900 dark:text-slate-100">All Modules</h3>
+              <button onClick={() => setIsMobileMenuOpen(false)} className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                ✕
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              {visibleNavItems.map((item) => (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={({ isActive }) => 
+                    `flex items-center space-x-3 p-3 rounded-xl text-xs font-medium transition-all ${
+                      isActive 
+                        ? 'bg-navy-50 dark:bg-sky-500/10 text-navy-600 dark:text-sky-400 font-bold border border-navy-100 dark:border-sky-500/20' 
+                        : 'bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300'
+                    }`
+                  }
+                >
+                  {item.icon}
+                  <span>{item.name}</span>
+                </NavLink>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating SAGA AI Assistant Button & Drawer (Only if AI is enabled) */}
       {aiEnabled && (
