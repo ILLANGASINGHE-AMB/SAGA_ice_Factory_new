@@ -161,7 +161,9 @@ export function SettingsPage() {
         gemini_api_key: geminiApiKey.trim(),
         ai_enabled: aiEnabled
       });
-      toast.success("Settings & SAGA AI configuration saved successfully!");
+      // Clean up legacy client-side localStorage API key to avoid browser exposure
+      localStorage.removeItem('saga_gemini_api_key');
+      toast.success("Settings & SAGA AI configuration saved successfully (Server Edge Proxy Active)!");
     } catch (err) {
       toast.error(err.message || "Failed to save settings");
     } finally {
@@ -584,7 +586,7 @@ export function SettingsPage() {
             </div>
 
             <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-              Configure your Google Gemini API key to enable <strong>SAGA AI</strong> system intelligence. Once configured, SAGA AI can perform real-time analysis across all inventory, customer debts, production energy costs, operating expenses, and machinery maintenance records.
+              Configure your Google Gemini API key to enable <strong>SAGA AI</strong> system intelligence. AI requests are proxied securely via a server-side <strong>Supabase Edge Function</strong> so API keys are never exposed in browser network logs or client storage.
             </p>
 
             <div className="space-y-1">

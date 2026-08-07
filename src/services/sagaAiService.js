@@ -172,18 +172,42 @@ const FALLBACK_MODELS = [
 ];
 
 /**
- * Test Gemini API Key validity
+ * Test Gemini API Key validity securely via Supabase Edge Function proxy
  */
 export async function testGeminiApiKey(apiKey) {
-  if (!apiKey || !apiKey.trim()) {
-    throw new Error("Gemini API Key is missing");
+  const cleanKey = apiKey ? apiKey.trim() : '';
+
+  // 1. Try server-side Edge Function proxy test first
+  try {
+    const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('saga-ai-proxy', {
+      body: { action: 'test', apiKey: cleanKey || undefined }
+    });
+
+    if (!edgeErr && edgeData && edgeData.success) {
+      return { success: true, modelUsed: edgeData.modelUsed || 'gemini-flash', text: edgeData.text };
+    } else if (edgeErr || edgeData?.error) {
+      const errMsg = edgeData?.error || edgeErr?.message;
+      if (errMsg && !errMsg.includes('Failed to send a request') && !errMsg.includes('FunctionsFetchError')) {
+        throw new Error(errMsg);
+      }
+    }
+  } catch (proxyErr) {
+    if (proxyErr.message && !proxyErr.message.includes('FunctionsFetchError')) {
+      throw proxyErr;
+    }
+    console.warn("Edge function proxy test bypass, attempting direct connection:", proxyErr);
   }
 
-  const cleanKey = apiKey.trim();
+  // 2. Direct client verification fallback if key is provided
+  if (!cleanKey) {
+    throw new Error("Gemini API Key is missing. Please provide a key or configure GEMINI_API_KEY environment secret on the Edge Function server.");
+  }
+
   const modelsToTry = [
-    'gemini-2.0-flash',
     'gemini-1.5-flash',
+    'gemini-2.0-flash',
     'gemini-2.0-flash-lite',
+    'gemini-1.5-flash-8b',
     'gemini-1.5-pro'
   ];
 
@@ -200,7 +224,7 @@ export async function testGeminiApiKey(apiKey) {
             contents: [
               {
                 role: 'user',
-                parts: [{ text: 'Hello, confirm with exact text SAGA_AI_ONLINE.' }]
+                parts: [{ text: 'Hello, confirm connection.' }]
               }
             ]
           })
@@ -215,22 +239,23 @@ export async function testGeminiApiKey(apiKey) {
       } else {
         const errorMsg = data?.error?.message || `HTTP ${response.status} ${response.statusText}`;
         const lowerErr = errorMsg.toLowerCase();
+        
+        // Immediate failure only if the key itself is fundamentally invalid
         if (
-          lowerErr.includes('api key') || 
-          lowerErr.includes('quota') || 
-          lowerErr.includes('permission') ||
-          lowerErr.includes('disabled') ||
-          lowerErr.includes('billing')
+          lowerErr.includes('api_key_invalid') || 
+          lowerErr.includes('api key not valid') ||
+          lowerErr.includes('invalid api key')
         ) {
           throw new Error(errorMsg);
         }
+        
         lastError = errorMsg;
       }
     } catch (err) {
       if (
-        err.message.toLowerCase().includes('api key') ||
-        err.message.toLowerCase().includes('quota') ||
-        err.message.toLowerCase().includes('disabled')
+        err.message.toLowerCase().includes('api_key_invalid') ||
+        err.message.toLowerCase().includes('api key not valid') ||
+        err.message.toLowerCase().includes('invalid api key')
       ) {
         throw err;
       }
@@ -238,11 +263,11 @@ export async function testGeminiApiKey(apiKey) {
     }
   }
 
-  throw new Error(`API Key verification failed: ${lastError || 'Invalid API Key or Network issue'}`);
+  throw new Error(`API Key verification failed: ${lastError || 'Invalid API Key or Quota issue'}`);
 }
 
 /**
- * Send chat conversation to Gemini API with full system context
+ * Send chat conversation securely via Supabase Edge Function proxy with full system context
  */
 export async function sendSagaAiMessage(messages, apiKey) {
   const systemContextPrompt = await fetchFullSystemContext();
@@ -252,30 +277,39 @@ export async function sendSagaAiMessage(messages, apiKey) {
   ).join('\n\n');
 
   const fullPromptText = `${systemContextPrompt}\n\n=== CONVERSATION HISTORY ===\n${conversationHistoryText}\n\nSAGA AI RESPONSE:`;
+  const cleanKey = apiKey ? apiKey.trim() : undefined;
 
   // 1. Attempt server-side Edge Function proxy call first
   try {
     const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('saga-ai-proxy', {
-      body: { prompt: fullPromptText, apiKey: apiKey ? apiKey.trim() : undefined }
+      body: { action: 'chat', prompt: fullPromptText, apiKey: cleanKey }
     });
 
     if (!edgeErr && edgeData && edgeData.reply) {
       return edgeData.reply;
+    } else if (edgeErr || edgeData?.error) {
+      const errMsg = edgeData?.error || edgeErr?.message;
+      if (errMsg && !errMsg.includes('Failed to send a request') && !errMsg.includes('FunctionsFetchError')) {
+        throw new Error(`SAGA AI Edge Error: ${errMsg}`);
+      }
     }
   } catch (proxyErr) {
-    console.warn("Edge function proxy bypass, attempting direct API connection:", proxyErr);
+    if (proxyErr.message && proxyErr.message.startsWith('SAGA AI Edge Error:')) {
+      throw proxyErr;
+    }
+    console.warn("Edge function proxy bypass, attempting direct connection:", proxyErr);
   }
 
   // 2. Direct client connection fallback if API key is provided
-  if (!apiKey || !apiKey.trim()) {
-    throw new Error("Gemini API Key is not configured. Please add your API key in Admin Settings or deploy Edge Function.");
+  if (!cleanKey) {
+    throw new Error("Gemini API Key is not configured. Please configure your API key in Admin Settings or set GEMINI_API_KEY on the Edge Function server.");
   }
 
-  const cleanKey = apiKey.trim();
   const modelsToTry = [
-    'gemini-2.0-flash',
     'gemini-1.5-flash',
+    'gemini-2.0-flash',
     'gemini-2.0-flash-lite',
+    'gemini-1.5-flash-8b',
     'gemini-1.5-pro'
   ];
 
@@ -317,11 +351,9 @@ export async function sendSagaAiMessage(messages, apiKey) {
         const lowerErr = errorMsg.toLowerCase();
         
         if (
-          lowerErr.includes('api key') || 
-          lowerErr.includes('quota') || 
-          lowerErr.includes('permission') ||
-          lowerErr.includes('disabled') ||
-          lowerErr.includes('billing')
+          lowerErr.includes('api_key_invalid') || 
+          lowerErr.includes('api key not valid') ||
+          lowerErr.includes('invalid api key')
         ) {
           throw new Error(`Gemini API Error: ${errorMsg}`);
         }
@@ -329,7 +361,11 @@ export async function sendSagaAiMessage(messages, apiKey) {
         lastError = errorMsg;
       }
     } catch (err) {
-      if (err.message.startsWith('Gemini API Error:')) {
+      if (
+        err.message.toLowerCase().includes('api_key_invalid') ||
+        err.message.toLowerCase().includes('api key not valid') ||
+        err.message.toLowerCase().includes('invalid api key')
+      ) {
         throw err;
       }
       lastError = err.message;

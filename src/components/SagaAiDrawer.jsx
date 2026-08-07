@@ -61,27 +61,6 @@ export function SagaAiDrawer({ isOpen, onClose }) {
     const query = textToSend || input.trim();
     if (!query || isLoading) return;
 
-    if (!apiKey) {
-      setMessages(prev => [
-        ...prev,
-        {
-          id: Date.now(),
-          role: 'user',
-          content: query,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        },
-        {
-          id: Date.now() + 1,
-          role: 'model',
-          content: "⚠️ **Gemini API Key missing!** \n\nPlease go to **Admin Settings** page to configure your Gemini API key before using SAGA AI.",
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          isWarning: true
-        }
-      ]);
-      setInput('');
-      return;
-    }
-
     const userMsg = {
       id: Date.now(),
       role: 'user',
@@ -95,31 +74,35 @@ export function SagaAiDrawer({ isOpen, onClose }) {
     setIsLoading(true);
 
     try {
-      // Send chat history (filtering out local system warning messages)
+      // Send chat history via server-side Edge Proxy (filtering out local system warning messages)
       const apiHistory = newHistory
         .filter(m => !m.isWarning)
-        .map(m => ({ role: m.role, content: m.content }));
+        .map(m => ({
+          role: m.role === 'model' ? 'model' : 'user',
+          content: m.content
+        }));
 
-      const replyText = await sendSagaAiMessage(apiHistory, apiKey);
+      const reply = await sendSagaAiMessage(apiHistory, apiKey);
 
       setMessages(prev => [
         ...prev,
         {
           id: Date.now(),
           role: 'model',
-          content: replyText,
+          content: reply,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
     } catch (err) {
+      console.error("SAGA AI Error:", err);
       setMessages(prev => [
         ...prev,
         {
           id: Date.now(),
           role: 'model',
-          content: `❌ **SAGA AI Analysis Error:** ${err.message}`,
+          content: `⚠️ **SAGA AI Connection Issue:**\n${err.message}\n\n*Note: Please configure your Gemini API Key in **Admin Settings** or set the GEMINI_API_KEY environment secret on your Supabase Edge Function server.*`,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          isError: true
+          isWarning: true
         }
       ]);
     } finally {
