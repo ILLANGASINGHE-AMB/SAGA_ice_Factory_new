@@ -26,17 +26,36 @@ serve(async (req) => {
       );
     }
 
-    const modelsToTry = [
-      "gemini-1.5-flash",
-      "gemini-2.0-flash",
-      "gemini-2.0-flash-lite",
-      "gemini-1.5-flash-8b",
-      "gemini-1.5-pro"
-    ];
+    // Helper to dynamically get models supported by activeKey
+    const getDynamicModels = async (key: string) => {
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+        if (res.ok) {
+          const data = await res.json();
+          const models = data.models || [];
+          const valid = models
+            .filter((m: any) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes("generateContent"))
+            .map((m: any) => m.name ? m.name.replace(/^models\//, "") : "")
+            .filter(Boolean);
+          if (valid.length > 0) return valid;
+        }
+      } catch (e) {
+        console.warn("Dynamic model fetch failed:", e);
+      }
+      return [
+        "gemini-1.5-flash",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-flash-8b",
+        "gemini-1.5-pro"
+      ];
+    };
+
+    const modelsToTry = await getDynamicModels(activeKey);
+    const errorDetails: string[] = [];
 
     // Handle API Key Test Action
     if (action === "test") {
-      let lastError = null;
       for (const model of modelsToTry) {
         try {
           const res = await fetch(
@@ -57,20 +76,22 @@ serve(async (req) => {
               { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
             );
           } else {
-            lastError = data?.error?.message || `HTTP ${res.status}`;
+            const msg = data?.error?.message || `HTTP ${res.status}`;
+            errorDetails.push(`[${model}]: ${msg}`);
           }
-        } catch (e) {
-          lastError = e.message;
+        } catch (e: any) {
+          errorDetails.push(`[${model}]: ${e.message}`);
         }
       }
+
+      const summaryError = errorDetails.length > 0 ? errorDetails.join(" | ") : "Invalid API Key or Quota issue";
       return new Response(
-        JSON.stringify({ error: `Verification failed: ${lastError}` }),
+        JSON.stringify({ error: `API Key verification failed: ${summaryError}` }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     // Default Chat Generation Action
-    let lastError = null;
     for (const model of modelsToTry) {
       try {
         const response = await fetch(
@@ -95,18 +116,20 @@ serve(async (req) => {
             );
           }
         } else {
-          lastError = data?.error?.message || `HTTP ${response.status}`;
+          const msg = data?.error?.message || `HTTP ${response.status}`;
+          errorDetails.push(`[${model}]: ${msg}`);
         }
-      } catch (e) {
-        lastError = e.message;
+      } catch (e: any) {
+        errorDetails.push(`[${model}]: ${e.message}`);
       }
     }
 
+    const chatSummaryError = errorDetails.length > 0 ? errorDetails.join(" | ") : "Unable to generate response";
     return new Response(
-      JSON.stringify({ error: `SAGA AI Error: ${lastError || 'Unable to generate response'}` }),
+      JSON.stringify({ error: `SAGA AI Error: ${chatSummaryError}` }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (err) {
+  } catch (err: any) {
     return new Response(
       JSON.stringify({ error: err.message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

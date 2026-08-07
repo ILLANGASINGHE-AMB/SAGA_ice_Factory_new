@@ -203,15 +203,13 @@ export async function testGeminiApiKey(apiKey) {
     throw new Error("Gemini API Key is missing. Please provide a key or configure GEMINI_API_KEY environment secret on the Edge Function server.");
   }
 
-  const modelsToTry = [
-    'gemini-1.5-flash',
-    'gemini-2.0-flash',
-    'gemini-2.0-flash-lite',
-    'gemini-1.5-flash-8b',
-    'gemini-1.5-pro'
-  ];
+  // Dynamically fetch models supported by this specific API Key
+  const dynamicModel = await getAvailableGeminiModel(cleanKey);
+  const modelsToTry = dynamicModel 
+    ? [dynamicModel, 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite']
+    : ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
 
-  let lastError = null;
+  const errorDetails = [];
 
   for (const model of modelsToTry) {
     try {
@@ -238,32 +236,14 @@ export async function testGeminiApiKey(apiKey) {
         return { success: true, modelUsed: model, text };
       } else {
         const errorMsg = data?.error?.message || `HTTP ${response.status} ${response.statusText}`;
-        const lowerErr = errorMsg.toLowerCase();
-        
-        // Immediate failure only if the key itself is fundamentally invalid
-        if (
-          lowerErr.includes('api_key_invalid') || 
-          lowerErr.includes('api key not valid') ||
-          lowerErr.includes('invalid api key')
-        ) {
-          throw new Error(errorMsg);
-        }
-        
-        lastError = errorMsg;
+        errorDetails.push(`[${model}]: ${errorMsg}`);
       }
     } catch (err) {
-      if (
-        err.message.toLowerCase().includes('api_key_invalid') ||
-        err.message.toLowerCase().includes('api key not valid') ||
-        err.message.toLowerCase().includes('invalid api key')
-      ) {
-        throw err;
-      }
-      lastError = err.message;
+      errorDetails.push(`[${model}]: ${err.message}`);
     }
   }
 
-  throw new Error(`API Key verification failed: ${lastError || 'Invalid API Key or Quota issue'}`);
+  throw new Error(`API Key verification failed: ${errorDetails.join(' | ') || 'Invalid API Key'}`);
 }
 
 /**
