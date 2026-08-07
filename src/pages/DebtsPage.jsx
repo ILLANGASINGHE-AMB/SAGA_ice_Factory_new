@@ -109,9 +109,36 @@ export function DebtsPage() {
     setSettlementReceiptRecord(null);
   };
 
+  const [agingFilter, setAgingFilter] = useState('all');
+
+  // Customer Debt Aging (0-30, 31-60, 61-90, 90+ days)
+  const agingSummary = useMemo(() => {
+    if (!debts) return { b0_30: 0, b31_60: 0, b61_90: 0, b90_plus: 0, total: 0, count: 0 };
+    const now = new Date();
+    
+    let b0_30 = 0, b31_60 = 0, b61_90 = 0, b90_plus = 0, total = 0, count = 0;
+
+    debts.forEach(d => {
+      if (d.status === 'settled') return;
+      count++;
+      const debtDate = new Date(d.created_at);
+      const diffDays = Math.floor((now - debtDate) / (1000 * 60 * 60 * 24));
+      
+      total += d.remaining_amount;
+
+      if (diffDays <= 30) b0_30 += d.remaining_amount;
+      else if (diffDays <= 60) b31_60 += d.remaining_amount;
+      else if (diffDays <= 90) b61_90 += d.remaining_amount;
+      else b90_plus += d.remaining_amount;
+    });
+
+    return { b0_30, b31_60, b61_90, b90_plus, total, count };
+  }, [debts]);
+
   // Reset all filters
   const resetFilters = () => {
     setStatusFilter('all');
+    setAgingFilter('all');
     setSearchQuery('');
     setFromDate('');
     setToDate('');
@@ -121,22 +148,36 @@ export function DebtsPage() {
   const filteredDebts = useMemo(() => {
     if (!debts) return [];
     let result = debts.slice();
+    const now = new Date();
 
     // 1. Status Filter
     if (statusFilter !== 'all') {
       result = result.filter(d => d.status === statusFilter);
     }
 
-    // 2. Search Query (Customer Name or Sale Code)
+    // 2. Aging Filter
+    if (agingFilter !== 'all') {
+      result = result.filter(d => {
+        if (d.status === 'settled') return false;
+        const diffDays = Math.floor((now - new Date(d.created_at)) / (1000 * 60 * 60 * 24));
+        if (agingFilter === '0-30') return diffDays <= 30;
+        if (agingFilter === '31-60') return diffDays > 30 && diffDays <= 60;
+        if (agingFilter === '61-90') return diffDays > 60 && diffDays <= 90;
+        if (agingFilter === '90+') return diffDays > 90;
+        return true;
+      });
+    }
+
+    // 3. Search Query (Customer Name or Sale Code)
     const query = searchQuery.toLowerCase().trim();
     if (query) {
       result = result.filter(d => 
-        d.customer.name.toLowerCase().includes(query) ||
+        d.customer?.name?.toLowerCase().includes(query) ||
         d.sale?.sale_code?.toLowerCase().includes(query)
       );
     }
 
-    // 3. Date Range Filter
+    // 4. Date Range Filter
     if (fromDate) {
       const from = new Date(fromDate);
       from.setHours(0, 0, 0, 0);
@@ -149,27 +190,113 @@ export function DebtsPage() {
     }
 
     return result;
-  }, [debts, statusFilter, searchQuery, fromDate, toDate]);
+  }, [debts, statusFilter, agingFilter, searchQuery, fromDate, toDate]);
 
   return (
     <div className="space-y-6">
       
+      {/* --- Debt Aging Summary Cards --- */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div 
+          onClick={() => setAgingFilter(agingFilter === '0-30' ? 'all' : '0-30')}
+          className={`p-4 rounded-2xl border cursor-pointer transition-all ${
+            agingFilter === '0-30' 
+              ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30 shadow-md ring-2 ring-emerald-500/20' 
+              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-300'
+          }`}
+        >
+          <div className="flex justify-between items-center text-xs text-slate-500 font-semibold mb-1">
+            <span>0 - 30 Days (Current)</span>
+            <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 text-[10px]">Normal</span>
+          </div>
+          <p className="text-xl font-extrabold font-heading text-emerald-600 dark:text-emerald-400">
+            LKR {agingSummary.b0_30.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          </p>
+        </div>
+
+        <div 
+          onClick={() => setAgingFilter(agingFilter === '31-60' ? 'all' : '31-60')}
+          className={`p-4 rounded-2xl border cursor-pointer transition-all ${
+            agingFilter === '31-60' 
+              ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/30 shadow-md ring-2 ring-amber-500/20' 
+              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-amber-300'
+          }`}
+        >
+          <div className="flex justify-between items-center text-xs text-slate-500 font-semibold mb-1">
+            <span>31 - 60 Days</span>
+            <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 text-[10px]">Watchlist</span>
+          </div>
+          <p className="text-xl font-extrabold font-heading text-amber-600 dark:text-amber-400">
+            LKR {agingSummary.b31_60.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          </p>
+        </div>
+
+        <div 
+          onClick={() => setAgingFilter(agingFilter === '61-90' ? 'all' : '61-90')}
+          className={`p-4 rounded-2xl border cursor-pointer transition-all ${
+            agingFilter === '61-90' 
+              ? 'border-orange-500 bg-orange-50/50 dark:bg-orange-950/30 shadow-md ring-2 ring-orange-500/20' 
+              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-orange-300'
+          }`}
+        >
+          <div className="flex justify-between items-center text-xs text-slate-500 font-semibold mb-1">
+            <span>61 - 90 Days</span>
+            <span className="px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-400 text-[10px]">Overdue</span>
+          </div>
+          <p className="text-xl font-extrabold font-heading text-orange-600 dark:text-orange-400">
+            LKR {agingSummary.b61_90.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          </p>
+        </div>
+
+        <div 
+          onClick={() => setAgingFilter(agingFilter === '90+' ? 'all' : '90+')}
+          className={`p-4 rounded-2xl border cursor-pointer transition-all ${
+            agingFilter === '90+' 
+              ? 'border-rose-500 bg-rose-50/50 dark:bg-rose-950/30 shadow-md ring-2 ring-rose-500/20' 
+              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-rose-300'
+          }`}
+        >
+          <div className="flex justify-between items-center text-xs text-slate-500 font-semibold mb-1">
+            <span>90+ Days (Critical)</span>
+            <span className="px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 text-[10px]">High Risk</span>
+          </div>
+          <p className="text-xl font-extrabold font-heading text-rose-600 dark:text-rose-400">
+            LKR {agingSummary.b90_plus.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          </p>
+        </div>
+      </div>
+
       {/* Filters Bar */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-4 space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
           
           {/* Status Filter */}
           <Select
             label="Payment Status"
             name="statusFilter"
             options={[
-              { value: 'all', label: 'All Debts' },
+              { value: 'all', label: 'All Statuses' },
               { value: 'pending', label: 'Pending Only' },
               { value: 'partial', label: 'Partially Settled' },
               { value: 'settled', label: 'Settled Ledger' }
             ]}
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
+          />
+
+          {/* Debt Aging Filter */}
+          <Select
+            label="Debt Aging Bracket"
+            name="agingFilter"
+            options={[
+              { value: 'all', label: 'All Aging Brackets' },
+              { value: '0-30', label: '0 - 30 Days (Current)' },
+              { value: '31-60', label: '31 - 60 Days Overdue' },
+              { value: '61-90', label: '61 - 90 Days Overdue' },
+              { value: '90+', label: '90+ Days (Critical Risk)' }
+            ]}
+            value={agingFilter}
+            onChange={(e) => setAgingFilter(e.target.value)}
           />
 
           {/* Customer Search */}
@@ -201,7 +328,10 @@ export function DebtsPage() {
         </div>
         
         {/* Reset Filter Button */}
-        <div className="flex justify-end pt-1">
+        <div className="flex justify-between items-center pt-1">
+          <span className="text-xs text-slate-500 font-medium">
+            Total Debt Outstanding: <strong className="text-slate-900 dark:text-slate-100">LKR {agingSummary.total.toLocaleString()}</strong> ({agingSummary.count} debtors)
+          </span>
           <Button 
             variant="secondary" 
             size="sm" 

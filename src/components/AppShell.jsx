@@ -3,6 +3,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../hooks/useSettings';
 import { SagaAiDrawer } from './SagaAiDrawer';
+import { GlobalSearchModal } from './GlobalSearchModal';
 import { 
   LayoutDashboard, 
   Package, 
@@ -15,12 +16,10 @@ import {
   Menu,
   Sun,
   Moon,
-  Type,
   Zap,
   Receipt,
   Sparkles,
-  Cpu,
-  Bot
+  Search
 } from 'lucide-react';
 
 export function AppShell({ children }) {
@@ -29,14 +28,27 @@ export function AppShell({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // SAGA AI Drawer & Mobile Menu states
+  // SAGA AI Drawer, Mobile Menu & Global Search states
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(
     settings?.ai_enabled !== undefined 
       ? settings.ai_enabled 
       : (localStorage.getItem('saga_ai_enabled') !== 'false')
   );
+
+  // Global ⌘K / Ctrl+K keyboard shortcut listener
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setIsSearchOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   useEffect(() => {
     if (settings?.ai_enabled !== undefined) {
@@ -224,7 +236,20 @@ export function AppShell({ children }) {
           </div>
 
           {/* Right Header items */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3 sm:space-x-4">
+            {/* Global Search Button */}
+            <button
+              onClick={() => setIsSearchOpen(true)}
+              className="flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 text-xs font-medium transition"
+              title="Search System (⌘K)"
+            >
+              <Search size={14} />
+              <span className="hidden sm:inline">Search...</span>
+              <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded shadow-2xs">
+                ⌘K
+              </kbd>
+            </button>
+
             <span className="hidden sm:inline-flex text-xs px-2.5 py-1 rounded-full font-semibold uppercase bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
               {user?.role} Access
             </span>
@@ -315,6 +340,9 @@ export function AppShell({ children }) {
           </div>
         </div>
       )}
+
+      {/* Global Search Modal */}
+      <GlobalSearchModal isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
 
       {/* Floating SAGA AI Assistant Button & Drawer (Only if AI is enabled) */}
       {aiEnabled && (
