@@ -486,7 +486,7 @@ export function CashBankPage() {
                       Section 02: Bank Deposit
                     </h3>
                     <p className="text-[11px] text-slate-400">
-                      Deposits cash into Bank ($\text{Bank} = \text{Bank} + \text{Deposit}$) and deducts from Cash ($\text{Cash} = \text{Cash} - \text{Deposit}$).
+                      Deposits cash into Bank (Bank = Bank + Deposit) and deducts from Cash (Cash = Cash - Deposit).
                     </p>
                   </div>
                 </div>
