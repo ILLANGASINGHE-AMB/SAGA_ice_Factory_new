@@ -78,36 +78,35 @@ export function useDailyReport(reportDateStr) {
         setInvTransactions(invTxnRes);
       }
 
+      const localKey = `saga_daily_report_${targetDateStr}`;
+      const localData = localStorage.getItem(localKey);
+      let localParsed = {};
+      if (localData) {
+        try { localParsed = JSON.parse(localData); } catch (e) {}
+      }
+
       if (savedReportRes) {
         setSavedRecord(savedReportRes);
         setManualInputs({
-          brineCubes: savedReportRes.brine_cubes || 0,
-          freeIssue: savedReportRes.free_issue || 0,
-          damagedCubes: savedReportRes.damaged_cubes || 0,
-          pmProductionQty: savedReportRes.pm_production_qty || 0,
-          otherReceipts: savedReportRes.other_receipts || 0,
-          bankDepositAmount: savedReportRes.bank_deposit_amount || 0,
-          bankDepositToday: savedReportRes.bank_deposit_today || 0,
-          cashOnHand: savedReportRes.cash_on_hand || 0,
-          chequesOnHand: savedReportRes.cheques_on_hand || 0,
-          employeeLogs: Array.isArray(savedReportRes.employee_logs) ? savedReportRes.employee_logs : [],
-          vehicleLogs: Array.isArray(savedReportRes.vehicle_logs) ? savedReportRes.vehicle_logs : [],
-          chequeEntries: Array.isArray(savedReportRes.cheque_entries) ? savedReportRes.cheque_entries : [],
-          withdrawals: Array.isArray(savedReportRes.withdrawals) ? savedReportRes.withdrawals : [],
-          otherDetails: savedReportRes.other_details || '',
-          verifiedBy: savedReportRes.verified_by || ''
+          brineCubes: savedReportRes.brine_cubes ?? localParsed.brineCubes ?? 0,
+          freeIssue: savedReportRes.free_issue ?? localParsed.freeIssue ?? 0,
+          damagedCubes: savedReportRes.damaged_cubes ?? localParsed.damagedCubes ?? 0,
+          pmProductionQty: savedReportRes.pm_production_qty ?? localParsed.pmProductionQty ?? 0,
+          otherReceipts: savedReportRes.other_receipts ?? localParsed.otherReceipts ?? 0,
+          bankDepositAmount: savedReportRes.bank_deposit_amount ?? localParsed.bankDepositAmount ?? 0,
+          bankDepositToday: savedReportRes.bank_deposit_today ?? localParsed.bankDepositToday ?? 0,
+          cashOnHand: savedReportRes.cash_on_hand ?? localParsed.cashOnHand ?? 0,
+          chequesOnHand: savedReportRes.cheques_on_hand ?? localParsed.chequesOnHand ?? 0,
+          employeeLogs: Array.isArray(savedReportRes.employee_logs) && savedReportRes.employee_logs.length > 0 ? savedReportRes.employee_logs : (localParsed.employeeLogs || []),
+          vehicleLogs: Array.isArray(savedReportRes.vehicle_logs) && savedReportRes.vehicle_logs.length > 0 ? savedReportRes.vehicle_logs : (localParsed.vehicleLogs || []),
+          chequeEntries: Array.isArray(savedReportRes.cheque_entries) && savedReportRes.cheque_entries.length > 0 ? savedReportRes.cheque_entries : (localParsed.chequeEntries || []),
+          withdrawals: Array.isArray(savedReportRes.withdrawals) && savedReportRes.withdrawals.length > 0 ? savedReportRes.withdrawals : (localParsed.withdrawals || []),
+          otherDetails: savedReportRes.other_details || localParsed.otherDetails || '',
+          verifiedBy: savedReportRes.verified_by || localParsed.verifiedBy || ''
         });
       } else {
-        // Fallback to local storage if present
-        const localKey = `saga_daily_report_${targetDateStr}`;
-        const localData = localStorage.getItem(localKey);
-        if (localData) {
-          try {
-            const parsed = JSON.parse(localData);
-            setManualInputs(parsed);
-          } catch (e) {
-            console.warn("Error parsing local daily report:", e);
-          }
+        if (Object.keys(localParsed).length > 0) {
+          setManualInputs(localParsed);
         } else {
           setManualInputs({
             brineCubes: 0,
@@ -116,6 +115,7 @@ export function useDailyReport(reportDateStr) {
             pmProductionQty: 0,
             otherReceipts: 0,
             bankDepositAmount: 0,
+            bankDepositToday: 0,
             cashOnHand: 0,
             chequesOnHand: 0,
             employeeLogs: [],
@@ -383,6 +383,7 @@ export function useDailyReport(reportDateStr) {
           pm_production_qty: Number(payload.pmProductionQty) || 0,
           other_receipts: Number(payload.otherReceipts) || 0,
           bank_deposit_amount: Number(payload.bankDepositAmount) || 0,
+          bank_deposit_today: Number(payload.bankDepositToday) || 0,
           cash_on_hand: Number(payload.cashOnHand) || 0,
           cheques_on_hand: Number(payload.chequesOnHand) || 0,
           employee_logs: payload.employeeLogs || [],
