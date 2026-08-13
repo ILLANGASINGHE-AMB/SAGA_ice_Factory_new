@@ -19,8 +19,10 @@ import {
   Zap,
   Receipt,
   Sparkles,
-  Search
+  Search,
+  ClipboardCheck
 } from 'lucide-react';
+
 
 export function AppShell({ children }) {
   const { user, logout, isAdmin } = useAuth();
@@ -126,9 +128,11 @@ export function AppShell({ children }) {
     { name: 'Debts', path: '/debts', icon: <DollarSign size={20} />, adminOnly: false },
     { name: 'Production & Ops', path: '/production', icon: <Zap size={20} />, adminOnly: false },
     { name: 'Expense Ledger', path: '/expenses', icon: <Receipt size={20} />, adminOnly: false },
+    { name: 'Daily Manager Report', path: '/daily-report', icon: <ClipboardCheck size={20} />, adminOnly: false },
     { name: 'Reports', path: '/reports', icon: <FileBarChart size={20} />, adminOnly: true },
     { name: 'Settings', path: '/settings', icon: <SettingsIcon size={20} />, adminOnly: false }
   ];
+
 
   const visibleNavItems = navItems.filter(item => !item.adminOnly || isAdmin);
 
