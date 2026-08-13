@@ -42,14 +42,11 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // Listen to Supabase Auth state changes
+  // Clear session on app mount / browser refresh
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        fetchUserProfile(session.user);
-      } else {
-        setIsLoading(false);
-      }
+    supabase.auth.signOut().finally(() => {
+      setUser(null);
+      setIsLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
