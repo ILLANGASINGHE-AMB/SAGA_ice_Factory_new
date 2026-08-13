@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useDailyReport } from '../hooks/useDailyReport';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { Button } from '../components/Button';
-import { Input } from '../components/FormFields';
+import { Modal } from '../components/Modal';
 import { 
   Building2, 
   Landmark, 
@@ -11,48 +12,262 @@ import {
   DollarSign, 
   Save, 
   Calendar, 
+  Plus, 
+  Minus, 
   ArrowUpRight, 
+  ArrowDownLeft, 
   CheckCircle2, 
   TrendingUp, 
-  Receipt 
+  Receipt, 
+  FileText, 
+  Trash2, 
+  RefreshCcw, 
+  Clock 
 } from 'lucide-react';
 
 export function CashBankPage() {
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const { loading, reportData, manualInputs, saveDailyReport } = useDailyReport(selectedDate);
+  const { user } = useAuth();
   const toast = useToast();
 
-  const [bankDepositAmount, setBankDepositAmount] = useState(0);
+  // Primary Financial States
   const [cashOnHand, setCashOnHand] = useState(0);
+  const [bankDepositAmount, setBankDepositAmount] = useState(0);
   const [chequesOnHand, setChequesOnHand] = useState(0);
+  const [chequeEntries, setChequeEntries] = useState([]);
+  const [withdrawals, setWithdrawals] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Bank Deposit Form State
+  const [depositInput, setDepositInput] = useState('');
+  const [depositBankRef, setDepositBankRef] = useState('');
+
+  // Cheque Form State
+  const [chequeNo, setChequeNo] = useState('');
+  const [chequeBank, setChequeBank] = useState('');
+  const [chequeAmount, setChequeAmount] = useState('');
+  const [chequePayer, setChequePayer] = useState('');
+
+  // Withdrawal Form State
+  const [withdrawType, setWithdrawType] = useState('cash'); // 'cash' | 'bank'
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawDescription, setWithdrawDescription] = useState('');
+
+  // Adjust Cash Modal State
+  const [isAdjustCashOpen, setIsAdjustCashOpen] = useState(false);
+  const [cashOverrideInput, setCashOverrideInput] = useState('');
 
   useEffect(() => {
     if (manualInputs) {
-      setBankDepositAmount(manualInputs.bankDepositAmount || 0);
       setCashOnHand(manualInputs.cashOnHand || 0);
+      setBankDepositAmount(manualInputs.bankDepositAmount || 0);
       setChequesOnHand(manualInputs.chequesOnHand || 0);
+      setChequeEntries(manualInputs.chequeEntries || []);
+      setWithdrawals(manualInputs.withdrawals || []);
     }
   }, [manualInputs, selectedDate]);
 
-  const handleSave = async (e) => {
-    if (e) e.preventDefault();
+  // Total calculated cheques value
+  const totalChequesValue = useMemo(() => {
+    return chequeEntries.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+  }, [chequeEntries]);
+
+  // Auto-calculated Cash Sales & Debt Collections
+  const cashSalesAmount = reportData?.incomeDetails?.cashSalesAmount || 0;
+  const creditAmountReceived = reportData?.incomeDetails?.creditAmountReceived || 0;
+  const otherReceipts = reportData?.incomeDetails?.otherReceipts || 0;
+  const todaysTotalCashInflow = cashSalesAmount + creditAmountReceived + otherReceipts;
+
+  // Global Save Handler
+  const persistChanges = async (updatedFields) => {
     try {
       setIsSaving(true);
-      await saveDailyReport({
-        bankDepositAmount: Number(bankDepositAmount) || 0,
-        cashOnHand: Number(cashOnHand) || 0,
-        chequesOnHand: Number(chequesOnHand) || 0
-      });
-      toast.success(`Cash & Bank details saved for ${selectedDate}!`);
+      const payload = {
+        cashOnHand,
+        bankDepositAmount,
+        chequesOnHand: totalChequesValue,
+        chequeEntries,
+        withdrawals,
+        ...updatedFields
+      };
+
+      await saveDailyReport(payload);
+      toast.success("Cash & Bank details saved and synced!");
     } catch (err) {
-      toast.error(err.message || "Failed to save Cash & Bank details");
+      toast.error(err.message || "Failed to save entry");
     } finally {
       setIsSaving(false);
     }
   };
 
-  const totalLiquidAssets = (Number(bankDepositAmount) || 0) + (Number(cashOnHand) || 0) + (Number(chequesOnHand) || 0);
+  // 1. ACTION: Deposit Cash into Bank (Bank Balance = Bank Balance + Deposit; Cash Balance = Cash Balance - Deposit)
+  const handleBankDepositSubmit = async (e) => {
+    e.preventDefault();
+    const amount = parseFloat(depositInput);
+    if (isNaN(amount) || amount <= 0) {
+      toast.error("Please enter a valid deposit amount");
+      return;
+    }
+    if (amount > cashOnHand && cashOnHand > 0) {
+      toast.warning(`Deposit amount (LKR ${amount}) exceeds current Cash on Hand (LKR ${cashOnHand}). Executing transfer...`);
+    }
+
+    const newBankBalance = (Number(bankDepositAmount) || 0) + amount;
+    const newCashBalance = Math.max(0, (Number(cashOnHand) || 0) - amount);
+
+    setBankDepositAmount(newBankBalance);
+    setCashOnHand(newCashBalance);
+
+    setDepositInput('');
+    setDepositBankRef('');
+
+    await saveDailyReport({
+      bankDepositAmount: newBankBalance,
+      cashOnHand: newCashBalance
+    });
+
+    toast.success(`Deposited LKR ${amount.toLocaleString()} into Bank! Cash Balance updated.`);
+  };
+
+  // 2. ACTION: Add Cheque Record
+  const handleAddCheque = async (e) => {
+    e.preventDefault();
+    const amount = parseFloat(chequeAmount);
+    if (!chequeNo || isNaN(amount) || amount <= 0) {
+      toast.error("Please enter valid Cheque Number and Amount");
+      return;
+    }
+
+    const newCheque = {
+      id: Date.now(),
+      chequeNo,
+      bankName: chequeBank || 'General Bank',
+      amount,
+      payerName: chequePayer || 'Customer',
+      date: selectedDate,
+      status: 'pending'
+    };
+
+    const updatedCheques = [newCheque, ...chequeEntries];
+    const newChequeTotal = updatedCheques.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+
+    setChequeEntries(updatedCheques);
+    setChequesOnHand(newChequeTotal);
+
+    setChequeNo('');
+    setChequeBank('');
+    setChequeAmount('');
+    setChequePayer('');
+
+    await saveDailyReport({
+      chequeEntries: updatedCheques,
+      chequesOnHand: newChequeTotal
+    });
+
+    toast.success(`Cheque ${chequeNo} (LKR ${amount.toLocaleString()}) recorded!`);
+  };
+
+  // ACTION: Deposit Cheque into Bank
+  const handleDepositCheque = async (chequeId) => {
+    const targetCheque = chequeEntries.find(c => c.id === chequeId);
+    if (!targetCheque) return;
+
+    const amount = Number(targetCheque.amount) || 0;
+    const updatedCheques = chequeEntries.filter(c => c.id !== chequeId);
+    const newBankBalance = (Number(bankDepositAmount) || 0) + amount;
+    const newChequeTotal = updatedCheques.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+
+    setChequeEntries(updatedCheques);
+    setBankDepositAmount(newBankBalance);
+    setChequesOnHand(newChequeTotal);
+
+    await saveDailyReport({
+      chequeEntries: updatedCheques,
+      bankDepositAmount: newBankBalance,
+      chequesOnHand: newChequeTotal
+    });
+
+    toast.success(`Cheque ${targetCheque.chequeNo} (LKR ${amount.toLocaleString()}) deposited into Bank!`);
+  };
+
+  const handleRemoveCheque = async (chequeId) => {
+    const updatedCheques = chequeEntries.filter(c => c.id !== chequeId);
+    const newChequeTotal = updatedCheques.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+
+    setChequeEntries(updatedCheques);
+    setChequesOnHand(newChequeTotal);
+
+    await saveDailyReport({
+      chequeEntries: updatedCheques,
+      chequesOnHand: newChequeTotal
+    });
+  };
+
+  // 3. ACTION: Record Withdrawal (Work / Expense money taken from Cash or Bank)
+  const handleWithdrawalSubmit = async (e) => {
+    e.preventDefault();
+    const amount = parseFloat(withdrawAmount);
+    if (isNaN(amount) || amount <= 0 || !withdrawDescription) {
+      toast.error("Please enter a valid withdrawal amount and reason description");
+      return;
+    }
+
+    let newCashBalance = Number(cashOnHand) || 0;
+    let newBankBalance = Number(bankDepositAmount) || 0;
+
+    if (withdrawType === 'cash') {
+      newCashBalance = Math.max(0, newCashBalance - amount);
+      setCashOnHand(newCashBalance);
+    } else {
+      newBankBalance = Math.max(0, newBankBalance - amount);
+      setBankDepositAmount(newBankBalance);
+    }
+
+    const newWithdrawal = {
+      id: Date.now(),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      source: withdrawType,
+      amount,
+      description: withdrawDescription,
+      user: user?.fullName || 'Manager'
+    };
+
+    const updatedWithdrawals = [newWithdrawal, ...withdrawals];
+    setWithdrawals(updatedWithdrawals);
+
+    setWithdrawAmount('');
+    setWithdrawDescription('');
+
+    await saveDailyReport({
+      cashOnHand: newCashBalance,
+      bankDepositAmount: newBankBalance,
+      withdrawals: updatedWithdrawals
+    });
+
+    toast.success(`Withdrew LKR ${amount.toLocaleString()} from ${withdrawType.toUpperCase()} for "${withdrawDescription}"!`);
+  };
+
+  const handleRemoveWithdrawal = async (id) => {
+    const updated = withdrawals.filter(w => w.id !== id);
+    setWithdrawals(updated);
+    await saveDailyReport({ withdrawals: updated });
+  };
+
+  // Adjust Cash Override submit
+  const handleCashOverrideSubmit = async (e) => {
+    e.preventDefault();
+    const newVal = parseFloat(cashOverrideInput);
+    if (isNaN(newVal) || newVal < 0) {
+      toast.error("Please enter a valid cash amount");
+      return;
+    }
+
+    setCashOnHand(newVal);
+    setIsAdjustCashOpen(false);
+    await saveDailyReport({ cashOnHand: newVal });
+    toast.success(`Updated physical Cash on Hand to LKR ${newVal.toLocaleString()}`);
+  };
 
   return (
     <div className="space-y-6">
@@ -63,11 +278,11 @@ export function CashBankPage() {
           <div className="flex items-center space-x-2">
             <Landmark className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
             <h2 className="text-xl font-bold font-heading text-slate-900 dark:text-slate-100">
-              Cash & Bank Details
+              Cash & Bank Management
             </h2>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Linked directly with Section 06 of the Daily Manager Report.
+            Separate balances for Cash on Hand, Bank Deposits, Cheque Register, and Work Withdrawals.
           </p>
         </div>
 
@@ -84,201 +299,447 @@ export function CashBankPage() {
 
           <Button 
             variant="primary" 
-            onClick={handleSave} 
+            onClick={() => persistChanges()} 
             disabled={isSaving || loading}
             className="flex items-center space-x-2"
           >
             <Save size={16} />
-            <span>{isSaving ? 'Saving...' : 'Save Cash & Bank Entry'}</span>
+            <span>{isSaving ? 'Syncing...' : 'Save All Balances'}</span>
           </Button>
         </div>
       </div>
 
       {loading ? (
         <div className="p-12 text-center text-slate-500 animate-pulse">
-          Loading Cash & Bank Reconciliation for {selectedDate}...
+          Loading Cash & Bank Management for {selectedDate}...
         </div>
       ) : (
         <div className="space-y-6">
 
-          {/* Liquid Assets Summary Strip */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* 4 SECTION CARDS GRID */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             
-            <div className="bg-emerald-500 text-white rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+            {/* 1. Cash Balance Card */}
+            <div className="bg-emerald-500 text-white rounded-2xl p-5 shadow-xs flex flex-col justify-between relative overflow-hidden">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-100">Total Liquid Assets</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-100">01. Cash Balance</span>
                 <Wallet className="w-5 h-5 text-emerald-100" />
               </div>
-              <p className="text-2xl font-extrabold font-heading mt-3">
-                LKR {totalLiquidAssets.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-              </p>
-              <span className="text-[10px] text-emerald-100 mt-1">Bank + Cash + Cheques</span>
+              <div className="my-2">
+                <p className="text-2xl font-extrabold font-heading">
+                  LKR {(Number(cashOnHand) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </p>
+                <span className="text-[10px] text-emerald-100 block mt-0.5">Physical Cash in Till / Safe</span>
+              </div>
+              <button 
+                onClick={() => { setCashOverrideInput(cashOnHand.toString()); setIsAdjustCashOpen(true); }}
+                className="text-[11px] font-bold bg-white/20 hover:bg-white/30 text-white py-1 px-2.5 rounded-lg transition text-center self-start"
+              >
+                Adjust Cash Balance
+              </button>
             </div>
 
+            {/* 2. Bank Deposit Card */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
               <div className="flex items-center justify-between text-slate-500">
-                <span className="text-xs font-bold uppercase tracking-wider">Bank Deposit</span>
+                <span className="text-xs font-bold uppercase tracking-wider">02. Bank Deposit</span>
                 <Landmark className="w-5 h-5 text-navy-600 dark:text-sky-400" />
               </div>
-              <p className="text-xl font-bold font-heading text-slate-900 dark:text-slate-100 mt-2">
-                LKR {(Number(bankDepositAmount) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-              </p>
-              <span className="text-[10px] text-slate-400 mt-1">Deposited in Bank Today</span>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-              <div className="flex items-center justify-between text-slate-500">
-                <span className="text-xs font-bold uppercase tracking-wider">Cash on Hand</span>
-                <Wallet className="w-5 h-5 text-emerald-600" />
+              <div className="my-2">
+                <p className="text-2xl font-extrabold font-heading text-slate-900 dark:text-slate-100">
+                  LKR {(Number(bankDepositAmount) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </p>
+                <span className="text-[10px] text-slate-400 block mt-0.5">Total Funds in Bank Account</span>
               </div>
-              <p className="text-xl font-bold font-heading text-slate-900 dark:text-slate-100 mt-2">
-                LKR {(Number(cashOnHand) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-              </p>
-              <span className="text-[10px] text-slate-400 mt-1">Physical Cash in Safe/Till</span>
+              <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center">
+                <ArrowUpRight size={12} className="mr-0.5" /> Auto-increased on Deposits
+              </span>
             </div>
 
+            {/* 3. Cheque Prices Card */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
               <div className="flex items-center justify-between text-slate-500">
-                <span className="text-xs font-bold uppercase tracking-wider font-heading">Cheques on Hand</span>
+                <span className="text-xs font-bold uppercase tracking-wider">03. Cheque Prices</span>
                 <CreditCard className="w-5 h-5 text-amber-500" />
               </div>
-              <p className="text-xl font-bold font-heading text-slate-900 dark:text-slate-100 mt-2">
-                LKR {(Number(chequesOnHand) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-              </p>
-              <span className="text-[10px] text-slate-400 mt-1">Undeposited Customer Cheques</span>
+              <div className="my-2">
+                <p className="text-2xl font-extrabold font-heading text-slate-900 dark:text-slate-100">
+                  LKR {totalChequesValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </p>
+                <span className="text-[10px] text-slate-400 block mt-0.5">
+                  {chequeEntries.length} Cheque Record{chequeEntries.length !== 1 ? 's' : ''} on Hand
+                </span>
+              </div>
+              <span className="text-[10px] text-amber-600 font-semibold">
+                Saved as Separate Cheque Register
+              </span>
+            </div>
+
+            {/* 4. Withdrawals Card */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between text-slate-500">
+                <span className="text-xs font-bold uppercase tracking-wider">04. Work Withdrawals</span>
+                <ArrowDownLeft className="w-5 h-5 text-rose-500" />
+              </div>
+              <div className="my-2">
+                <p className="text-2xl font-extrabold font-heading text-rose-600 dark:text-rose-400">
+                  LKR {((reportData.cashDetails.cashWithdrawals || 0) + (reportData.cashDetails.bankWithdrawals || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </p>
+                <span className="text-[10px] text-slate-400 block mt-0.5">
+                  {withdrawals.length} Withdrawal Log{withdrawals.length !== 1 ? 's' : ''} Today
+                </span>
+              </div>
+              <span className="text-[10px] text-rose-500 font-semibold">
+                Cash: LKR {(reportData.cashDetails.cashWithdrawals || 0).toLocaleString()} • Bank: LKR {(reportData.cashDetails.bankWithdrawals || 0).toLocaleString()}
+              </span>
             </div>
 
           </div>
 
-          {/* Main Reconciliation & Entry Form */}
+          {/* MAIN 4 SECTIONS CONTENT GRID */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            {/* Form Inputs Section */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-5">
-              <div className="flex items-center space-x-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-                <Building2 className="w-5 h-5 text-navy-600 dark:text-sky-400" />
-                <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100">
-                  Daily Reconciliation Entry ({selectedDate})
-                </h3>
+
+            {/* SECTION 1 & 2: Cash Inflow Breakdown & Bank Deposit Form */}
+            <div className="space-y-6">
+              
+              {/* Cash Inflow Summary Panel */}
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <div className="flex items-center space-x-2">
+                    <TrendingUp size={18} className="text-emerald-600" />
+                    <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100">
+                      Cash Balance Inflows ({selectedDate})
+                    </h3>
+                  </div>
+                  <span className="text-xs font-bold text-emerald-600">
+                    Inflow: LKR {todaysTotalCashInflow.toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3 text-xs">
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                    <span className="text-[10px] text-slate-400 font-semibold uppercase block">Cash Sales</span>
+                    <span className="font-bold text-emerald-600 text-xs mt-1 block">
+                      +LKR {cashSalesAmount.toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                    <span className="text-[10px] text-slate-400 font-semibold uppercase block">Debt Recovered</span>
+                    <span className="font-bold text-sky-600 text-xs mt-1 block">
+                      +LKR {creditAmountReceived.toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                    <span className="text-[10px] text-slate-400 font-semibold uppercase block">Other Receipts</span>
+                    <span className="font-bold text-amber-600 text-xs mt-1 block">
+                      +LKR {otherReceipts.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              <form onSubmit={handleSave} className="space-y-4 text-xs">
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1.5">
-                    Amount Deposited in Bank (LKR)
-                  </label>
-                  <input 
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    value={bankDepositAmount}
-                    onChange={(e) => setBankDepositAmount(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-900 dark:text-slate-100 focus:outline-none"
-                  />
+              {/* Bank Deposit Section Form */}
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
+                <div className="flex items-center space-x-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <Landmark className="w-5 h-5 text-navy-600 dark:text-sky-400" />
+                  <div>
+                    <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100">
+                      Bank Deposit Section
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      Deposits cash into Bank and automatically deducts from Cash Balance.
+                    </p>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1.5">
-                    Cash Balance on Hand (LKR)
-                  </label>
-                  <input 
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    value={cashOnHand}
-                    onChange={(e) => setCashOnHand(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-900 dark:text-slate-100 focus:outline-none"
-                  />
-                </div>
+                <form onSubmit={handleBankDepositSubmit} className="space-y-4 text-xs">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                      Amount Newly Deposited to Bank (LKR)
+                    </label>
+                    <input 
+                      type="number"
+                      step="0.01"
+                      min="1"
+                      placeholder="e.g. 50000"
+                      value={depositInput}
+                      onChange={(e) => setDepositInput(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 font-bold text-slate-900 dark:text-slate-100 focus:outline-none"
+                      required
+                    />
+                  </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1.5">
-                    Value of Cheques on Hand (LKR)
-                  </label>
-                  <input 
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    value={chequesOnHand}
-                    onChange={(e) => setChequesOnHand(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-900 dark:text-slate-100 focus:outline-none"
-                  />
-                </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                      Bank Name / Reference Note (Optional)
+                    </label>
+                    <input 
+                      type="text"
+                      placeholder="e.g. Commercial Bank - Main Branch Deposit Slip #401"
+                      value={depositBankRef}
+                      onChange={(e) => setDepositBankRef(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs font-medium focus:outline-none"
+                    />
+                  </div>
 
-                <div className="pt-3">
-                  <Button variant="primary" type="submit" disabled={isSaving} className="w-full py-2.5 rounded-xl font-bold flex justify-center items-center space-x-2">
-                    <Save size={16} />
-                    <span>{isSaving ? 'Saving Entry...' : 'Save & Sync with Daily Report'}</span>
+                  <Button type="submit" variant="primary" className="w-full py-2.5 rounded-xl font-bold flex justify-center items-center space-x-2">
+                    <Landmark size={16} />
+                    <span>Deposit Cash into Bank (Deduct from Cash Balance)</span>
                   </Button>
-                </div>
-              </form>
+                </form>
+              </div>
+
             </div>
 
-            {/* Auto System Cash Inflow Reference */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
-              <div className="flex items-center space-x-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-                <TrendingUp className="w-5 h-5 text-emerald-600" />
-                <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100">
-                  Live Cash Inflows for {selectedDate}
-                </h3>
+            {/* SECTION 3 & 4: Cheque Prices Section & Withdraw Money Section */}
+            <div className="space-y-6">
+
+              {/* Cheque Prices / Register Section */}
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <div className="flex items-center space-x-2">
+                    <CreditCard className="w-5 h-5 text-amber-500" />
+                    <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100">
+                      Cheque Prices Register
+                    </h3>
+                  </div>
+                  <span className="text-xs font-bold text-amber-600">
+                    Total: LKR {totalChequesValue.toLocaleString()}
+                  </span>
+                </div>
+
+                {/* Add Cheque Form */}
+                <form onSubmit={handleAddCheque} className="grid grid-cols-2 gap-2 text-xs">
+                  <input 
+                    type="text"
+                    placeholder="Cheque No."
+                    value={chequeNo}
+                    onChange={(e) => setChequeNo(e.target.value)}
+                    className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none"
+                    required
+                  />
+                  <input 
+                    type="text"
+                    placeholder="Bank Name"
+                    value={chequeBank}
+                    onChange={(e) => setChequeBank(e.target.value)}
+                    className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none"
+                  />
+                  <input 
+                    type="number"
+                    step="0.01"
+                    placeholder="Amount (LKR)"
+                    value={chequeAmount}
+                    onChange={(e) => setChequeAmount(e.target.value)}
+                    className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 font-bold text-xs focus:outline-none"
+                    required
+                  />
+                  <input 
+                    type="text"
+                    placeholder="Customer / Payer Name"
+                    value={chequePayer}
+                    onChange={(e) => setChequePayer(e.target.value)}
+                    className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none"
+                  />
+                  <div className="col-span-2">
+                    <Button type="submit" size="sm" variant="secondary" className="w-full flex justify-center items-center space-x-1">
+                      <Plus size={14} />
+                      <span>Save Cheque Record</span>
+                    </Button>
+                  </div>
+                </form>
+
+                {/* Cheques Table */}
+                {chequeEntries.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-2">No cheque records saved for today.</p>
+                ) : (
+                  <div className="overflow-x-auto max-h-40 overflow-y-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px]">
+                          <th className="py-1.5">Cheque No</th>
+                          <th className="py-1.5">Bank</th>
+                          <th className="py-1.5">Payer</th>
+                          <th className="py-1.5 text-right">Amount</th>
+                          <th className="py-1.5 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {chequeEntries.map((c) => (
+                          <tr key={c.id}>
+                            <td className="py-1.5 font-mono text-slate-800 dark:text-slate-200">{c.chequeNo}</td>
+                            <td className="py-1.5 text-slate-500">{c.bankName}</td>
+                            <td className="py-1.5 font-medium">{c.payerName}</td>
+                            <td className="py-1.5 text-right font-bold text-amber-600">LKR {Number(c.amount).toLocaleString()}</td>
+                            <td className="py-1.5 text-right space-x-1">
+                              <button 
+                                onClick={() => handleDepositCheque(c.id)}
+                                title="Deposit cheque to Bank"
+                                className="px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold rounded"
+                              >
+                                Deposit
+                              </button>
+                              <button 
+                                onClick={() => handleRemoveCheque(c.id)}
+                                className="p-1 text-rose-500 hover:bg-rose-50 rounded"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
-              <div className="space-y-3 text-xs">
-                <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl flex items-center justify-between border border-slate-200/60 dark:border-slate-700/60">
-                  <div className="flex items-center space-x-2">
-                    <Receipt size={16} className="text-emerald-500" />
-                    <div>
-                      <span className="font-semibold text-slate-800 dark:text-slate-200 block">Cash Sales Inflow</span>
-                      <span className="text-[10px] text-slate-400">Direct sales paid in cash</span>
-                    </div>
+              {/* Withdraw Section (Money taken from Bank or Cash for work) */}
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
+                <div className="flex items-center space-x-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <ArrowDownLeft className="w-5 h-5 text-rose-500" />
+                  <div>
+                    <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100">
+                      Withdraw Money Section (Work Expenses)
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      Record money taken from Cash or Bank for factory work & expenses.
+                    </p>
                   </div>
-                  <span className="font-bold font-mono text-sm text-emerald-600">
-                    LKR {reportData.incomeDetails.cashSalesAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </span>
                 </div>
 
-                <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl flex items-center justify-between border border-slate-200/60 dark:border-slate-700/60">
-                  <div className="flex items-center space-x-2">
-                    <CreditCard size={16} className="text-sky-500" />
+                <form onSubmit={handleWithdrawalSubmit} className="space-y-3 text-xs">
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <span className="font-semibold text-slate-800 dark:text-slate-200 block">Debt Recoveries</span>
-                      <span className="text-[10px] text-slate-400">Credit settlements collected today</span>
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                        Select Source Type
+                      </label>
+                      <select 
+                        value={withdrawType}
+                        onChange={(e) => setWithdrawType(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
+                      >
+                        <option value="cash">Cash Balance</option>
+                        <option value="bank">Bank Deposit Balance</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                        Withdrawal Amount (LKR)
+                      </label>
+                      <input 
+                        type="number"
+                        step="0.01"
+                        min="1"
+                        placeholder="e.g. 5000"
+                        value={withdrawAmount}
+                        onChange={(e) => setWithdrawAmount(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 font-bold text-xs text-slate-900 dark:text-slate-100 focus:outline-none"
+                        required
+                      />
                     </div>
                   </div>
-                  <span className="font-bold font-mono text-sm text-sky-600">
-                    LKR {reportData.incomeDetails.creditAmountReceived.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
 
-                <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl flex items-center justify-between border border-slate-200/60 dark:border-slate-700/60">
-                  <div className="flex items-center space-x-2">
-                    <DollarSign size={16} className="text-amber-500" />
-                    <div>
-                      <span className="font-semibold text-slate-800 dark:text-slate-200 block">Other Receipts</span>
-                      <span className="text-[10px] text-slate-400 font-medium">Miscellaneous income</span>
-                    </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                      Description / Reason for Withdrawal
+                    </label>
+                    <input 
+                      type="text"
+                      placeholder="e.g. Diesel fuel purchase, Factory repair material, Staff advance"
+                      value={withdrawDescription}
+                      onChange={(e) => setWithdrawDescription(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none"
+                      required
+                    />
                   </div>
-                  <span className="font-bold font-mono text-sm text-amber-600">
-                    LKR {reportData.incomeDetails.otherReceipts.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
 
-                <div className="p-4 bg-emerald-50 dark:bg-emerald-950/20 rounded-xl border border-emerald-200 dark:border-emerald-900/50 flex items-center justify-between">
-                  <span className="font-bold text-xs text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">Total Cash Income</span>
-                  <span className="font-extrabold font-heading text-lg text-emerald-600 dark:text-emerald-400">
-                    LKR {reportData.incomeDetails.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
+                  <Button type="submit" variant="danger" className="w-full py-2 rounded-xl font-bold flex justify-center items-center space-x-2">
+                    <ArrowDownLeft size={16} />
+                    <span>Record Withdrawal (Deduct from {withdrawType.toUpperCase()})</span>
+                  </Button>
+                </form>
+
+                {/* Withdrawals Log Table */}
+                {withdrawals.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-2">No money withdrawals logged for today.</p>
+                ) : (
+                  <div className="overflow-x-auto max-h-40 overflow-y-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px]">
+                          <th className="py-1.5">Time</th>
+                          <th className="py-1.5">Source</th>
+                          <th className="py-1.5">Reason / Description</th>
+                          <th className="py-1.5 text-right">Amount</th>
+                          <th className="py-1.5 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {withdrawals.map((w) => (
+                          <tr key={w.id}>
+                            <td className="py-1.5 font-mono text-slate-400">{w.time}</td>
+                            <td className="py-1.5">
+                              <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase rounded ${
+                                w.source === 'cash' ? 'bg-emerald-100 text-emerald-800' : 'bg-sky-100 text-sky-800'
+                              }`}>
+                                {w.source}
+                              </span>
+                            </td>
+                            <td className="py-1.5 font-medium">{w.description}</td>
+                            <td className="py-1.5 text-right font-bold text-rose-600">LKR {Number(w.amount).toLocaleString()}</td>
+                            <td className="py-1.5 text-right">
+                              <button onClick={() => handleRemoveWithdrawal(w.id)} className="p-1 text-rose-500 hover:bg-rose-50 rounded">
+                                <Trash2 size={12} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
+
             </div>
 
           </div>
 
         </div>
       )}
+
+      {/* Adjust Physical Cash Modal */}
+      <Modal
+        isOpen={isAdjustCashOpen}
+        onClose={() => setIsAdjustCashOpen(false)}
+        title="Adjust Cash Balance on Hand"
+        size="sm"
+      >
+        <form onSubmit={handleCashOverrideSubmit} className="space-y-4">
+          <div>
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+              New Physical Cash Balance (LKR)
+            </label>
+            <input 
+              type="number"
+              step="0.01"
+              min="0"
+              value={cashOverrideInput}
+              onChange={(e) => setCashOverrideInput(e.target.value)}
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 font-bold text-sm text-slate-900 dark:text-slate-100 focus:outline-none"
+              required
+            />
+          </div>
+          <div className="flex justify-end space-x-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setIsAdjustCashOpen(false)}>Cancel</Button>
+            <Button type="submit" variant="primary">Confirm Override</Button>
+          </div>
+        </form>
+      </Modal>
+
     </div>
   );
 }

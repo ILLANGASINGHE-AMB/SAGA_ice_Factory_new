@@ -15,7 +15,7 @@ export function useDailyReport(reportDateStr) {
   const [inventory, setInventory] = useState([]);
   const [invTransactions, setInvTransactions] = useState([]);
 
-  // Manual Input State (for manager entries)
+  // Manual Input State (for manager entries & cash/bank logs)
   const [manualInputs, setManualInputs] = useState({
     brineCubes: 0,
     freeIssue: 0,
@@ -27,6 +27,8 @@ export function useDailyReport(reportDateStr) {
     chequesOnHand: 0,
     employeeLogs: [],
     vehicleLogs: [],
+    chequeEntries: [],
+    withdrawals: [],
     otherDetails: '',
     verifiedBy: ''
   });
@@ -88,6 +90,8 @@ export function useDailyReport(reportDateStr) {
           chequesOnHand: savedReportRes.cheques_on_hand || 0,
           employeeLogs: Array.isArray(savedReportRes.employee_logs) ? savedReportRes.employee_logs : [],
           vehicleLogs: Array.isArray(savedReportRes.vehicle_logs) ? savedReportRes.vehicle_logs : [],
+          chequeEntries: Array.isArray(savedReportRes.cheque_entries) ? savedReportRes.cheque_entries : [],
+          withdrawals: Array.isArray(savedReportRes.withdrawals) ? savedReportRes.withdrawals : [],
           otherDetails: savedReportRes.other_details || '',
           verifiedBy: savedReportRes.verified_by || ''
         });
@@ -114,6 +118,8 @@ export function useDailyReport(reportDateStr) {
             chequesOnHand: 0,
             employeeLogs: [],
             vehicleLogs: [],
+            chequeEntries: [],
+            withdrawals: [],
             otherDetails: '',
             verifiedBy: ''
           });
@@ -267,6 +273,15 @@ export function useDailyReport(reportDateStr) {
     });
     const totalExpensesAmount = expenseList.reduce((sum, item) => sum + item.totalAmount, 0);
 
+    // Cash & Bank withdrawals summary
+    const withdrawalsList = manualInputs.withdrawals || [];
+    const cashWithdrawals = withdrawalsList.filter(w => w.source === 'cash').reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+    const bankWithdrawals = withdrawalsList.filter(w => w.source === 'bank').reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+
+    // Cheques summary
+    const chequeList = manualInputs.chequeEntries || [];
+    const totalChequesValue = chequeList.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+
     return {
       reportDate: targetDateStr,
       stockDetails: {
@@ -302,7 +317,11 @@ export function useDailyReport(reportDateStr) {
       cashDetails: {
         bankDepositAmount: Number(manualInputs.bankDepositAmount) || 0,
         cashOnHand: Number(manualInputs.cashOnHand) || 0,
-        chequesOnHand: Number(manualInputs.chequesOnHand) || 0
+        chequesOnHand: Number(manualInputs.chequesOnHand) || totalChequesValue,
+        cashWithdrawals,
+        bankWithdrawals,
+        chequeEntries: chequeList,
+        withdrawals: withdrawalsList
       },
       employeeLogs: manualInputs.employeeLogs || [],
       vehicleLogs: manualInputs.vehicleLogs || [],
@@ -335,6 +354,8 @@ export function useDailyReport(reportDateStr) {
       cheques_on_hand: Number(payload.chequesOnHand) || 0,
       employee_logs: payload.employeeLogs || [],
       vehicle_logs: payload.vehicleLogs || [],
+      cheque_entries: payload.chequeEntries || [],
+      withdrawals: payload.withdrawals || [],
       other_details: payload.otherDetails || '',
       verified_by: payload.verifiedBy || '',
       verified_at: new Date().toISOString()
