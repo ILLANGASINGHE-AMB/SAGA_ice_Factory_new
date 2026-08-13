@@ -67,7 +67,7 @@ export function useDailyReport(reportDateStr) {
       setCustomers(customersRes || []);
       setInventory(inventoryRes || []);
 
-      // If Supabase transactions returns empty or error, fallback to local storage
+      // Fallback to local storage if Supabase transactions empty or error
       if (invTxnErr || !invTxnRes || invTxnRes.length === 0) {
         const savedTxns = localStorage.getItem('saga_inventory_transactions');
         setInvTransactions(savedTxns ? JSON.parse(savedTxns) : []);
@@ -164,16 +164,21 @@ export function useDailyReport(reportDateStr) {
       return toLocalDateStr(dStr) === targetDateStr;
     };
 
+    const isBeforeDate = (dStr) => {
+      if (!dStr) return false;
+      const dLocalDate = toLocalDateStr(dStr);
+      return dLocalDate !== '' && dLocalDate < targetDateStr;
+    };
+
     // Helper to get inventory item by type
     const mfcItem = inventory.find(i => i.type === 'manufactured');
     const rscItem = inventory.find(i => i.type === 'resell');
     const wstItem = inventory.find(i => i.type === 'waste');
 
-    // 1. Stock / Production Details
+    // 1. Stock / Production Details for targetDateStr
     const todaysBatches = batches.filter(b => isSameDate(b.batch_date));
     const batchProductionQty = todaysBatches.reduce((sum, b) => sum + (Number(b.cubes_produced) || 0), 0);
 
-    // Sum inventory additions on selected date per cube type
     let mfcTxnAdditions = 0;
     let rscTxnAdditions = 0;
     let brineTxnAdditions = 0;
@@ -201,9 +206,32 @@ export function useDailyReport(reportDateStr) {
     const todaysSalesRecords = sales.filter(s => isSameDate(s.sale_date));
     const todaysSalesQty = todaysSalesRecords.reduce((sum, s) => sum + (Number(s.quantity) || 0), 0);
 
-    // Calculate previous day balance
-    const currentMfgStock = mfcItem?.quantity || 0;
-    const previousDayBalance = Math.max(0, currentMfgStock - todaysProduction + todaysSalesQty);
+    // --- ACCURATE PREVIOUS DAY BALANCE CALCULATOR ---
+    const prevBatchesQty = batches.filter(b => isBeforeDate(b.batch_date)).reduce((sum, b) => sum + (Number(b.cubes_produced) || 0), 0);
+
+    let prevAdditions = 0;
+    let prevDeductions = 0;
+
+    invTransactions.forEach(txn => {
+      if (isBeforeDate(txn.created_at)) {
+        const qty = Number(txn.quantity_change) || 0;
+        if (txn.transaction_type === 'add' || qty > 0) {
+          prevAdditions += qty;
+        } else {
+          prevDeductions += Math.abs(qty);
+        }
+      }
+    });
+
+    const prevSalesQty = sales.filter(s => isBeforeDate(s.sale_date)).reduce((sum, s) => sum + (Number(s.quantity) || 0), 0);
+
+    const computedPrevBalance = prevBatchesQty + prevAdditions - prevSalesQty - prevDeductions;
+    const totalCurrentStock = inventory.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+    const todaysTotalAdditions = todaysProduction + todaysPurchase + brineTxnAdditions;
+
+    const previousDayBalance = computedPrevBalance > 0 
+      ? computedPrevBalance 
+      : Math.max(0, totalCurrentStock - todaysTotalAdditions + todaysSalesQty);
 
     // Brine Cubes = Brine cubes added today or manual entry
     const brineCubes = Number(manualInputs.brineCubes) > 0 ? Number(manualInputs.brineCubes) : brineTxnAdditions;
