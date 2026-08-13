@@ -393,15 +393,16 @@ export function CashBankPage() {
               </div>
               <div className="my-2">
                 <p className="text-2xl font-extrabold font-heading text-rose-600 dark:text-rose-400">
-                  LKR {((reportData.cashDetails.cashWithdrawals || 0) + (reportData.cashDetails.bankWithdrawals || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  LKR {(((reportData?.cashDetails?.cashWithdrawals || 0) + (reportData?.cashDetails?.bankWithdrawals || 0))).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </p>
                 <span className="text-[10px] text-slate-400 block mt-0.5">
                   {withdrawals.length} Withdrawal Log{withdrawals.length !== 1 ? 's' : ''} Today
                 </span>
               </div>
               <span className="text-[10px] text-rose-500 font-semibold">
-                Cash: LKR {(reportData.cashDetails.cashWithdrawals || 0).toLocaleString()} • Bank: LKR {(reportData.cashDetails.bankWithdrawals || 0).toLocaleString()}
+                Cash: LKR {(reportData?.cashDetails?.cashWithdrawals || 0).toLocaleString()} • Bank: LKR {(reportData?.cashDetails?.bankWithdrawals || 0).toLocaleString()}
               </span>
+
             </div>
 
           </div>
