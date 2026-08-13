@@ -164,12 +164,6 @@ export function useDailyReport(reportDateStr) {
       return toLocalDateStr(dStr) === targetDateStr;
     };
 
-    const isBeforeDate = (dStr) => {
-      if (!dStr) return false;
-      const dLocalDate = toLocalDateStr(dStr);
-      return dLocalDate !== '' && dLocalDate < targetDateStr;
-    };
-
     // Helper to get inventory item by type
     const mfcItem = inventory.find(i => i.type === 'manufactured');
     const rscItem = inventory.find(i => i.type === 'resell');
@@ -206,32 +200,8 @@ export function useDailyReport(reportDateStr) {
     const todaysSalesRecords = sales.filter(s => isSameDate(s.sale_date));
     const todaysSalesQty = todaysSalesRecords.reduce((sum, s) => sum + (Number(s.quantity) || 0), 0);
 
-    // --- ACCURATE PREVIOUS DAY BALANCE CALCULATOR ---
-    const prevBatchesQty = batches.filter(b => isBeforeDate(b.batch_date)).reduce((sum, b) => sum + (Number(b.cubes_produced) || 0), 0);
-
-    let prevAdditions = 0;
-    let prevDeductions = 0;
-
-    invTransactions.forEach(txn => {
-      if (isBeforeDate(txn.created_at)) {
-        const qty = Number(txn.quantity_change) || 0;
-        if (txn.transaction_type === 'add' || qty > 0) {
-          prevAdditions += qty;
-        } else {
-          prevDeductions += Math.abs(qty);
-        }
-      }
-    });
-
-    const prevSalesQty = sales.filter(s => isBeforeDate(s.sale_date)).reduce((sum, s) => sum + (Number(s.quantity) || 0), 0);
-
-    const computedPrevBalance = prevBatchesQty + prevAdditions - prevSalesQty - prevDeductions;
-    const totalCurrentStock = inventory.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
-    const todaysTotalAdditions = todaysProduction + todaysPurchase + brineTxnAdditions;
-
-    const previousDayBalance = computedPrevBalance > 0 
-      ? computedPrevBalance 
-      : Math.max(0, totalCurrentStock - todaysTotalAdditions + todaysSalesQty);
+    // Prev Balance = Total current inventory stock (Production Cubes + Purchases Cubes + Brine Cubes)
+    const previousDayBalance = inventory.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
 
     // Brine Cubes = Brine cubes added today or manual entry
     const brineCubes = Number(manualInputs.brineCubes) > 0 ? Number(manualInputs.brineCubes) : brineTxnAdditions;
