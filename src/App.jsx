@@ -21,7 +21,9 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ defa
 const ProductionPage = lazy(() => import('./pages/ProductionPage').then(m => ({ default: m.ProductionPage })));
 const ExpenseLedgerPage = lazy(() => import('./pages/ExpenseLedgerPage').then(m => ({ default: m.ExpenseLedgerPage })));
 const DailyReportPage = lazy(() => import('./pages/DailyReportPage').then(m => ({ default: m.DailyReportPage })));
+const CashBankPage = lazy(() => import('./pages/CashBankPage').then(m => ({ default: m.CashBankPage })));
 const PublicBillPage = lazy(() => import('./pages/PublicBillPage').then(m => ({ default: m.PublicBillPage })));
+
 
 
 function PageFallback() {
@@ -144,6 +146,17 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/cash-bank"
+                element={
+                  <ProtectedRoute>
+                    <AppShell>
+                      <CashBankPage />
+                    </AppShell>
+                  </ProtectedRoute>
+                }
+              />
+
               <Route
                 path="/expenses"
                 element={
