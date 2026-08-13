@@ -46,7 +46,7 @@ export function DailyManagerReportView() {
 
   useEffect(() => {
     if (manualInputs) {
-      setBrineCubes(manualInputs.brineCubes || 0);
+      setBrineCubes(manualInputs.brineCubes || reportData?.stockDetails?.brineCubes || 0);
       setFreeIssue(manualInputs.freeIssue || 0);
       setDamagedCubes(manualInputs.damagedCubes || 0);
       setPmProductionQty(manualInputs.pmProductionQty || 0);
@@ -59,7 +59,8 @@ export function DailyManagerReportView() {
       setOtherDetails(manualInputs.otherDetails || '');
       setVerifiedBy(manualInputs.verifiedBy || '');
     }
-  }, [manualInputs, selectedDate]);
+  }, [manualInputs, selectedDate, reportData]);
+
 
   // Handle Save
   const handleSave = async () => {
@@ -208,8 +209,11 @@ export function DailyManagerReportView() {
 
               <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
                 <span className="text-[10px] text-slate-500 uppercase font-semibold">Purchases</span>
-                <p className="font-bold text-sm text-slate-900 dark:text-slate-100 mt-1">0</p>
+                <p className="font-bold text-sm text-slate-900 dark:text-slate-100 mt-1">
+                  +{reportData.stockDetails.todaysPurchase.toLocaleString()}
+                </p>
               </div>
+
 
               <div className="bg-amber-50/50 dark:bg-amber-950/20 p-2.5 rounded-xl border border-amber-200 dark:border-amber-900/50">
                 <label className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold uppercase block">Brine Cubes</label>

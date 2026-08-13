@@ -45,7 +45,7 @@ export function useDailyReport(reportDateStr) {
         { data: expensesRes },
         { data: customersRes },
         { data: inventoryRes },
-        { data: invTxnRes },
+        { data: invTxnRes, error: invTxnErr },
         { data: savedReportRes }
       ] = await Promise.all([
         supabase.from('sales').select('*, customer:customers(*)'),
@@ -66,7 +66,14 @@ export function useDailyReport(reportDateStr) {
       setExpenses(expensesRes || []);
       setCustomers(customersRes || []);
       setInventory(inventoryRes || []);
-      setInvTransactions(invTxnRes || []);
+
+      // If Supabase transactions returns empty or error, fallback to local storage
+      if (invTxnErr || !invTxnRes || invTxnRes.length === 0) {
+        const savedTxns = localStorage.getItem('saga_inventory_transactions');
+        setInvTransactions(savedTxns ? JSON.parse(savedTxns) : []);
+      } else {
+        setInvTransactions(invTxnRes);
+      }
 
       if (savedReportRes) {
         setSavedRecord(savedReportRes);
@@ -114,6 +121,8 @@ export function useDailyReport(reportDateStr) {
       }
     } catch (err) {
       console.error("Failed to fetch daily report data:", err);
+      const savedTxns = localStorage.getItem('saga_inventory_transactions');
+      setInvTransactions(savedTxns ? JSON.parse(savedTxns) : []);
     } finally {
       setLoading(false);
     }
@@ -139,13 +148,20 @@ export function useDailyReport(reportDateStr) {
 
   // Compute live metrics for targetDateStr
   const reportData = useMemo(() => {
-    const targetStart = new Date(`${targetDateStr}T00:00:00.000Z`);
-    const targetEnd = new Date(`${targetDateStr}T23:59:59.999Z`);
+    // Robust local YYYY-MM-DD date formatter
+    const toLocalDateStr = (dStr) => {
+      if (!dStr) return '';
+      const d = new Date(dStr);
+      if (isNaN(d.getTime())) return '';
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
 
     const isSameDate = (dStr) => {
       if (!dStr) return false;
-      const d = new Date(dStr);
-      return d >= targetStart && d <= targetEnd;
+      return toLocalDateStr(dStr) === targetDateStr;
     };
 
     // Helper to get inventory item by type
@@ -163,14 +179,16 @@ export function useDailyReport(reportDateStr) {
     let brineTxnAdditions = 0;
 
     invTransactions.forEach(txn => {
-      if (isSameDate(txn.created_at) && (txn.transaction_type === 'add' || txn.quantity_change > 0)) {
+      if (isSameDate(txn.created_at) && (txn.transaction_type === 'add' || Number(txn.quantity_change) > 0)) {
         const invId = txn.inventory_id;
+        const qty = Number(txn.quantity_change) || 0;
+        
         if (mfcItem && Number(invId) === Number(mfcItem.id)) {
-          mfcTxnAdditions += Number(txn.quantity_change);
+          mfcTxnAdditions += qty;
         } else if (rscItem && Number(invId) === Number(rscItem.id)) {
-          rscTxnAdditions += Number(txn.quantity_change);
+          rscTxnAdditions += qty;
         } else if (wstItem && Number(invId) === Number(wstItem.id)) {
-          brineTxnAdditions += Number(txn.quantity_change);
+          brineTxnAdditions += qty;
         }
       }
     });
