@@ -78,15 +78,18 @@ export function CashBankPage() {
       setCashInput(activeCash.toString());
       setBankDepositAmount(manualInputs.bankDepositAmount || 0);
       setChequesOnHand(manualInputs.chequesOnHand || 0);
-      setChequeEntries(manualInputs.chequeEntries || []);
-      setWithdrawals(manualInputs.withdrawals || []);
+      setChequeEntries(Array.isArray(manualInputs.chequeEntries) ? manualInputs.chequeEntries : []);
+      setWithdrawals(Array.isArray(manualInputs.withdrawals) ? manualInputs.withdrawals : []);
     }
   }, [manualInputs, selectedDate, reportData]);
 
+  const safeChequeEntries = useMemo(() => Array.isArray(chequeEntries) ? chequeEntries : [], [chequeEntries]);
+  const safeWithdrawals = useMemo(() => Array.isArray(withdrawals) ? withdrawals : [], [withdrawals]);
+
   // Total calculated cheques value
   const totalChequesValue = useMemo(() => {
-    return chequeEntries.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
-  }, [chequeEntries]);
+    return safeChequeEntries.reduce((sum, c) => sum + (Number(c?.amount) || 0), 0);
+  }, [safeChequeEntries]);
 
   // Auto-calculated Cash Sales & Debt Collections
   const cashSalesAmount = reportData?.incomeDetails?.cashSalesAmount || 0;
@@ -377,7 +380,7 @@ export function CashBankPage() {
                   LKR {totalChequesValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </p>
                 <span className="text-[10px] text-slate-400 block mt-0.5">
-                  {chequeEntries.length} Cheque Record{chequeEntries.length !== 1 ? 's' : ''} on Hand
+                  {safeChequeEntries.length} Cheque Record{safeChequeEntries.length !== 1 ? 's' : ''} on Hand
                 </span>
               </div>
               <span className="text-[10px] text-amber-600 font-semibold">
@@ -396,7 +399,7 @@ export function CashBankPage() {
                   LKR {(((reportData?.cashDetails?.cashWithdrawals || 0) + (reportData?.cashDetails?.bankWithdrawals || 0))).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </p>
                 <span className="text-[10px] text-slate-400 block mt-0.5">
-                  {withdrawals.length} Withdrawal Log{withdrawals.length !== 1 ? 's' : ''} Today
+                  {safeWithdrawals.length} Withdrawal Log{safeWithdrawals.length !== 1 ? 's' : ''} Today
                 </span>
               </div>
               <span className="text-[10px] text-rose-500 font-semibold">
@@ -586,7 +589,7 @@ export function CashBankPage() {
                 </form>
 
                 {/* Cheques Table */}
-                {chequeEntries.length === 0 ? (
+                {safeChequeEntries.length === 0 ? (
                   <p className="text-xs text-slate-400 text-center py-2">No cheque records saved for today.</p>
                 ) : (
                   <div className="overflow-x-auto max-h-40 overflow-y-auto">
@@ -601,7 +604,7 @@ export function CashBankPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {chequeEntries.map((c) => (
+                        {safeChequeEntries.map((c) => (
                           <tr key={c.id}>
                             <td className="py-1.5 font-mono text-slate-800 dark:text-slate-200">{c.chequeNo}</td>
                             <td className="py-1.5 text-slate-500">{c.bankName}</td>
@@ -698,7 +701,7 @@ export function CashBankPage() {
                 </form>
 
                 {/* Withdrawals Log Table */}
-                {withdrawals.length === 0 ? (
+                {safeWithdrawals.length === 0 ? (
                   <p className="text-xs text-slate-400 text-center py-2">No money withdrawals logged for today.</p>
                 ) : (
                   <div className="overflow-x-auto max-h-40 overflow-y-auto">
@@ -713,7 +716,7 @@ export function CashBankPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {withdrawals.map((w) => (
+                        {safeWithdrawals.map((w) => (
                           <tr key={w.id}>
                             <td className="py-1.5 font-mono text-slate-400">{w.time}</td>
                             <td className="py-1.5">

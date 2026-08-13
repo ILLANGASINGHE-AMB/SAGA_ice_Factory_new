@@ -8,6 +8,7 @@ import { ProtectedRoute, AdminRoute } from './components/RouteGuards';
 import { AppShell } from './components/AppShell';
 import { useSettings } from './hooks/useSettings';
 import { Skeleton } from './components/Skeleton';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Lazy-loaded Page Components for Code Splitting
 const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
@@ -151,7 +152,9 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <AppShell>
-                      <CashBankPage />
+                      <ErrorBoundary>
+                        <CashBankPage />
+                      </ErrorBoundary>
                     </AppShell>
                   </ProtectedRoute>
                 }
