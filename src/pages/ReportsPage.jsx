@@ -7,7 +7,8 @@ import { Input, Select } from '../components/FormFields';
 import { Table } from '../components/Table';
 import { Badge } from '../components/Badge';
 import { generateReportPDF } from '../utils/pdfGenerator';
-import { FileBarChart2, FileText, Download, Calendar, UserCheck, CreditCard, SlidersHorizontal } from 'lucide-react';
+import { DailyManagerReportView } from '../components/DailyManagerReportView';
+import { FileBarChart2, FileText, Download, Calendar, UserCheck, CreditCard, SlidersHorizontal, ClipboardCheck } from 'lucide-react';
 
 export function ReportsPage() {
   const { settings } = useSettings();
@@ -496,6 +497,20 @@ export function ReportsPage() {
           
           <div className="space-y-3">
             <button
+              onClick={() => { setActiveReport('daily_manager'); setPreviewData(null); }}
+              className={`w-full text-left p-4 rounded-xl border transition flex items-center justify-between ${
+                activeReport === 'daily_manager'
+                  ? 'border-navy-500 bg-navy-50/50 dark:bg-navy-950/20 text-navy-800 dark:text-navy-300 font-semibold'
+                  : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <ClipboardCheck size={18} className="text-emerald-500" />
+                <span className="text-sm font-bold text-slate-900 dark:text-slate-100">Daily Manager Report</span>
+              </div>
+            </button>
+
+            <button
               onClick={() => { setActiveReport('weekly'); setPreviewData(null); }}
               className={`w-full text-left p-4 rounded-xl border transition flex items-center justify-between ${
                 activeReport === 'weekly'
@@ -503,6 +518,7 @@ export function ReportsPage() {
                   : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
               }`}
             >
+
               <div className="flex items-center space-x-3">
                 <Calendar size={18} />
                 <span className="text-sm">Weekly Report</span>
@@ -698,36 +714,42 @@ export function ReportsPage() {
               </>
             )}
 
-            {(activeReport === 'debtors' || activeReport === 'customers') && (
-              <p className="text-xs text-slate-400">
-                This report generates aggregate details based on the current complete ledger status.
+            {activeReport === 'daily_manager' && (
+              <p className="text-xs text-slate-500">
+                Daily Manager Report auto-populates live stock balance, cash & credit income, debt recoveries, and operating expenses for any selected date with operational manager entries.
               </p>
             )}
 
-            <Button
-              variant="primary"
-              onClick={handleGenerateReport}
-              className="w-full flex items-center justify-center space-x-2 py-2 rounded-xl"
-            >
-              <FileBarChart2 size={16} />
-              <span>Compile Preview</span>
-            </Button>
+            {activeReport !== 'daily_manager' && (
+              <Button
+                variant="primary"
+                onClick={handleGenerateReport}
+                className="w-full flex items-center justify-center space-x-2 py-2 rounded-xl"
+              >
+                <FileBarChart2 size={16} />
+                <span>Compile Preview</span>
+              </Button>
+            )}
           </div>
         </div>
       </div>
 
       {/* 2. Preview Panel Section */}
       <div className="xl:col-span-2 space-y-6">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 min-h-[500px] flex flex-col justify-between">
-          
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 mb-4">
-            <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-200">
-              <FileText size={20} className="text-navy-500" />
-              <h3 className="text-base font-bold font-heading">
-                Report Live Preview
-              </h3>
-            </div>
+        {activeReport === 'daily_manager' ? (
+          <DailyManagerReportView />
+        ) : (
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 min-h-[500px] flex flex-col justify-between">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 mb-4">
+              <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-200">
+                <FileText size={20} className="text-navy-500" />
+                <h3 className="text-base font-bold font-heading">
+                  Report Live Preview
+                </h3>
+              </div>
+
             {previewData && (
               <Button
                 variant="secondary"
@@ -924,10 +946,12 @@ export function ReportsPage() {
             <span>Sagacious Ice Factory Ledger Reports</span>
             <span>Generated: {new Date().toLocaleString()}</span>
           </div>
-
         </div>
-      </div>
-
+      )}
     </div>
-  );
+  </div>
+);
 }
+
+
+
