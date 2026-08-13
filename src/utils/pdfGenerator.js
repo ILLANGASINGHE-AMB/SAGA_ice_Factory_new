@@ -556,11 +556,12 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   const cashData = reportData.cashDetails;
   doc.autoTable({
     startY: currentY + 3,
-    head: [['Amount Deposited in Bank', 'Cash Balance on Hand', 'Value of Cheques on Hand']],
+    head: [['Amount Deposited in Bank', 'Amount Deposite Today', 'Cash Balance on Hand', 'Value of Cheques on Hand']],
     body: [[
-      `LKR ${cashData.bankDepositAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
-      `LKR ${cashData.cashOnHand.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
-      `LKR ${cashData.chequesOnHand.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+      `LKR ${(cashData?.bankDepositAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+      `LKR ${(cashData?.bankDepositToday || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+      `LKR ${(cashData?.cashOnHand || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+      `LKR ${(cashData?.chequesOnHand || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
     ]],
     theme: 'grid',
     headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 7.5, halign: 'center' },

@@ -34,6 +34,7 @@ export function CashBankPage() {
   // Primary Financial States
   const [cashOnHand, setCashOnHand] = useState(0);
   const [bankDepositAmount, setBankDepositAmount] = useState(0);
+  const [bankDepositToday, setBankDepositToday] = useState(0);
   const [chequesOnHand, setChequesOnHand] = useState(0);
   const [chequeEntries, setChequeEntries] = useState([]);
   const [withdrawals, setWithdrawals] = useState([]);
@@ -77,6 +78,7 @@ export function CashBankPage() {
       setCashOnHand(activeCash);
       setCashInput(activeCash.toString());
       setBankDepositAmount(manualInputs.bankDepositAmount || 0);
+      setBankDepositToday(manualInputs.bankDepositToday || 0);
       setChequesOnHand(manualInputs.chequesOnHand || 0);
       setChequeEntries(Array.isArray(manualInputs.chequeEntries) ? manualInputs.chequeEntries : []);
       setWithdrawals(Array.isArray(manualInputs.withdrawals) ? manualInputs.withdrawals : []);
@@ -104,6 +106,7 @@ export function CashBankPage() {
       const payload = {
         cashOnHand: Number(cashOnHand) || 0,
         bankDepositAmount: Number(bankDepositAmount) || 0,
+        bankDepositToday: Number(bankDepositToday) || 0,
         chequesOnHand: totalChequesValue,
         chequeEntries,
         withdrawals,
@@ -143,9 +146,11 @@ export function CashBankPage() {
     }
 
     const newBankBalance = (Number(bankDepositAmount) || 0) + amount;
+    const newBankDepositToday = (Number(bankDepositToday) || 0) + amount;
     const newCashBalance = Math.max(0, (Number(cashOnHand) || 0) - amount);
 
     setBankDepositAmount(newBankBalance);
+    setBankDepositToday(newBankDepositToday);
     setCashOnHand(newCashBalance);
     setCashInput(newCashBalance.toString());
 
@@ -154,6 +159,7 @@ export function CashBankPage() {
 
     await saveDailyReport({
       bankDepositAmount: newBankBalance,
+      bankDepositToday: newBankDepositToday,
       cashOnHand: newCashBalance
     });
 

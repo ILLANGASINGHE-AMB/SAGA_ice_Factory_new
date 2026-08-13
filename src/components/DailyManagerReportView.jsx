@@ -36,6 +36,7 @@ export function DailyManagerReportView() {
   const [pmProductionQty, setPmProductionQty] = useState(0);
   const [otherReceipts, setOtherReceipts] = useState(0);
   const [bankDepositAmount, setBankDepositAmount] = useState(0);
+  const [bankDepositToday, setBankDepositToday] = useState(0);
   const [cashOnHand, setCashOnHand] = useState(0);
   const [chequesOnHand, setChequesOnHand] = useState(0);
   const [employeeLogs, setEmployeeLogs] = useState([]);
@@ -52,6 +53,7 @@ export function DailyManagerReportView() {
       setPmProductionQty(manualInputs.pmProductionQty || 0);
       setOtherReceipts(manualInputs.otherReceipts || 0);
       setBankDepositAmount(reportData?.cashDetails?.bankDepositAmount ?? manualInputs.bankDepositAmount ?? 0);
+      setBankDepositToday(reportData?.cashDetails?.bankDepositToday ?? manualInputs.bankDepositToday ?? 0);
       setCashOnHand(reportData?.cashDetails?.cashOnHand ?? manualInputs.cashOnHand ?? 0);
       setChequesOnHand(reportData?.cashDetails?.chequesOnHand ?? manualInputs.chequesOnHand ?? 0);
       setEmployeeLogs(manualInputs.employeeLogs || []);
@@ -74,6 +76,7 @@ export function DailyManagerReportView() {
         pmProductionQty: Number(pmProductionQty) || 0,
         otherReceipts: Number(otherReceipts) || 0,
         bankDepositAmount: Number(bankDepositAmount) || 0,
+        bankDepositToday: Number(bankDepositToday) || 0,
         cashOnHand: Number(cashOnHand) || 0,
         chequesOnHand: Number(chequesOnHand) || 0,
         employeeLogs,
@@ -478,6 +481,19 @@ export function DailyManagerReportView() {
                     type="number"
                     value={bankDepositAmount}
                     onChange={(e) => setBankDepositAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 font-bold text-slate-800 dark:text-slate-100 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
+                    Amount Deposite Today (LKR)
+                  </label>
+                  <input 
+                    type="number"
+                    value={bankDepositToday}
+                    onChange={(e) => setBankDepositToday(e.target.value)}
                     placeholder="0.00"
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 font-bold text-slate-800 dark:text-slate-100 focus:outline-none"
                   />

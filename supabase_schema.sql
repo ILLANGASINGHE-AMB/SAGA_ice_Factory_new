@@ -624,6 +624,7 @@ create table if not exists public.daily_manager_reports (
   pm_production_qty integer default 0,
   other_receipts numeric(10, 2) default 0,
   bank_deposit_amount numeric(10, 2) default 0,
+  bank_deposit_today numeric(10, 2) default 0,
   cash_on_hand numeric(10, 2) default 0,
   cheques_on_hand numeric(10, 2) default 0,
   employee_logs jsonb default '[]'::jsonb,
@@ -636,6 +637,10 @@ create table if not exists public.daily_manager_reports (
   verified_at timestamp with time zone default timezone('utc'::text, now()),
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
+
+ALTER TABLE public.daily_manager_reports ADD COLUMN IF NOT EXISTS bank_deposit_today NUMERIC(10, 2) DEFAULT 0;
+ALTER TABLE public.daily_manager_reports ADD COLUMN IF NOT EXISTS cheque_entries JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.daily_manager_reports ADD COLUMN IF NOT EXISTS withdrawals JSONB DEFAULT '[]'::jsonb;
 
 alter table public.daily_manager_reports enable row level security;
 create policy "Allow read daily_manager_reports" on public.daily_manager_reports for select to authenticated using (true);
