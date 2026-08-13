@@ -13,6 +13,7 @@ export function useDailyReport(reportDateStr) {
   const [expenses, setExpenses] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [inventory, setInventory] = useState([]);
+  const [invTransactions, setInvTransactions] = useState([]);
 
   // Manual Input State (for manager entries)
   const [manualInputs, setManualInputs] = useState({
@@ -44,6 +45,7 @@ export function useDailyReport(reportDateStr) {
         { data: expensesRes },
         { data: customersRes },
         { data: inventoryRes },
+        { data: invTxnRes },
         { data: savedReportRes }
       ] = await Promise.all([
         supabase.from('sales').select('*, customer:customers(*)'),
@@ -53,6 +55,7 @@ export function useDailyReport(reportDateStr) {
         supabase.from('operating_expenses').select('*'),
         supabase.from('customers').select('*'),
         supabase.from('inventory').select('*'),
+        supabase.from('inventory_transactions').select('*, inventory(*)'),
         supabase.from('daily_manager_reports').select('*').eq('report_date', targetDateStr).maybeSingle()
       ]);
 
@@ -63,6 +66,7 @@ export function useDailyReport(reportDateStr) {
       setExpenses(expensesRes || []);
       setCustomers(customersRes || []);
       setInventory(inventoryRes || []);
+      setInvTransactions(invTxnRes || []);
 
       if (savedReportRes) {
         setSavedRecord(savedReportRes);
@@ -124,6 +128,7 @@ export function useDailyReport(reportDateStr) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'debt_settlements' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_batches' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'operating_expenses' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_transactions' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_manager_reports' }, () => fetchData())
       .subscribe();
 
@@ -149,25 +154,47 @@ export function useDailyReport(reportDateStr) {
       return d < targetStart;
     };
 
+    // Helper to get inventory item by type
+    const mfcItem = inventory.find(i => i.type === 'manufactured');
+    const rscItem = inventory.find(i => i.type === 'resell');
+    const wstItem = inventory.find(i => i.type === 'waste');
+
     // 1. Stock / Production Details
     const todaysBatches = batches.filter(b => isSameDate(b.batch_date));
-    const todaysProduction = todaysBatches.reduce((sum, b) => sum + (Number(b.cubes_produced) || 0), 0);
+    const batchProductionQty = todaysBatches.reduce((sum, b) => sum + (Number(b.cubes_produced) || 0), 0);
+
+    // Sum inventory additions on selected date per cube type
+    let mfcTxnAdditions = 0;
+    let rscTxnAdditions = 0;
+    let brineTxnAdditions = 0;
+
+    invTransactions.forEach(txn => {
+      if (isSameDate(txn.created_at) && (txn.transaction_type === 'add' || txn.quantity_change > 0)) {
+        const invId = txn.inventory_id;
+        if (mfcItem && Number(invId) === Number(mfcItem.id)) {
+          mfcTxnAdditions += Number(txn.quantity_change);
+        } else if (rscItem && Number(invId) === Number(rscItem.id)) {
+          rscTxnAdditions += Number(txn.quantity_change);
+        } else if (wstItem && Number(invId) === Number(wstItem.id)) {
+          brineTxnAdditions += Number(txn.quantity_change);
+        }
+      }
+    });
+
+    const todaysProduction = batchProductionQty + mfcTxnAdditions;
+    const todaysPurchase = rscTxnAdditions + brineTxnAdditions;
 
     const todaysSalesRecords = sales.filter(s => isSameDate(s.sale_date));
     const todaysSalesQty = todaysSalesRecords.reduce((sum, s) => sum + (Number(s.quantity) || 0), 0);
 
-    // Calculate previous day balance (all production minus all sales before today)
-    const prevProduction = batches.filter(b => isBeforeDate(b.batch_date)).reduce((sum, b) => sum + (Number(b.cubes_produced) || 0), 0);
-    const prevSalesQty = sales.filter(s => isBeforeDate(s.sale_date)).reduce((sum, s) => sum + (Number(s.quantity) || 0), 0);
-    
-    // Baseline stock
-    const currentMfgStock = inventory.find(i => i.type === 'manufactured')?.quantity || 0;
+    // Calculate previous day balance
+    const currentMfgStock = mfcItem?.quantity || 0;
     const previousDayBalance = Math.max(0, currentMfgStock - todaysProduction + todaysSalesQty);
 
-    const brineCubes = Number(manualInputs.brineCubes) || 0;
+    // Manual inputs overrides / entries
+    const brineCubes = Number(manualInputs.brineCubes) > 0 ? Number(manualInputs.brineCubes) : brineTxnAdditions;
     const freeIssue = Number(manualInputs.freeIssue) || 0;
     const damagedCubes = Number(manualInputs.damagedCubes) || 0;
-    const todaysPurchase = 0; // Ice factory produces, doesn't purchase
 
     const closingBalance = previousDayBalance + todaysProduction + todaysPurchase - brineCubes - freeIssue - damagedCubes - todaysSalesQty;
 
@@ -205,7 +232,7 @@ export function useDailyReport(reportDateStr) {
       const matchingDebt = debts.find(d => Number(d.customer_id) === Number(setl.customer_id));
       return {
         name: cust?.name || 'Customer',
-        method: 'Cash', // Default collection method
+        method: 'Cash',
         amountReceived: Number(setl.amount_paid),
         outstandingAmount: matchingDebt ? Number(matchingDebt.remaining_amount) : 0
       };
@@ -239,7 +266,12 @@ export function useDailyReport(reportDateStr) {
         damagedCubes,
         todaysSalesQty,
         closingBalance,
-        pmProductionQty: Number(manualInputs.pmProductionQty) || 0
+        pmProductionQty: Number(manualInputs.pmProductionQty) || 0,
+        breakdown: {
+          mfcAdded: todaysProduction,
+          rscAdded: rscTxnAdditions,
+          brineAdded: brineTxnAdditions
+        }
       },
       incomeDetails: {
         cashSoldQty,
@@ -265,7 +297,7 @@ export function useDailyReport(reportDateStr) {
       otherDetails: manualInputs.otherDetails || '',
       verifiedBy: manualInputs.verifiedBy || ''
     };
-  }, [targetDateStr, sales, debts, settlements, batches, expenses, customers, inventory, manualInputs]);
+  }, [targetDateStr, sales, debts, settlements, batches, expenses, customers, inventory, invTransactions, manualInputs]);
 
   // Save manual updates
   const saveDailyReport = async (updatedInputs) => {
