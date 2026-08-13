@@ -172,8 +172,9 @@ export function InventoryPage() {
             Inventory & Stock Control
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Real-time stock balances for Manufactured, Resell, and Brine Cubes.
+            Real-time stock balances for Production, Purchases, and Brine Cubes.
           </p>
+
         </div>
 
         <Button 
@@ -208,8 +209,9 @@ export function InventoryPage() {
                     {item.code}
                   </span>
                   <h3 className="text-lg font-bold font-heading text-slate-800 dark:text-slate-100 capitalize mt-0.5">
-                    {item.type === 'waste' ? 'Brine' : item.type} Cubes
+                    {item.type === 'manufactured' ? 'Production' : item.type === 'resell' ? 'Purchases' : 'Brine'} Cubes
                   </h3>
+
                 </div>
 
                 <div className="py-2 border-y border-slate-100 dark:border-slate-800 flex justify-between items-baseline">
@@ -479,9 +481,10 @@ export function InventoryPage() {
                 className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
               >
                 <option value="all">All Cube Types</option>
-                <option value="manufactured">Manufactured (MFC)</option>
-                <option value="resell">Resell (RSC)</option>
-                <option value="waste">Brine (WST)</option>
+                <option value="manufactured">Production (MFC)</option>
+                <option value="resell">Purchases (RSC)</option>
+                <option value="waste">Brine Cubes (WST)</option>
+
               </select>
             </div>
           </div>
@@ -533,7 +536,8 @@ export function InventoryPage() {
                   {filteredTransactions.map((txn, idx) => {
                     const change = Number(txn.quantity_change) || 0;
                     const isPositive = change > 0;
-                    const typeLabel = txn.inventory?.type === 'waste' ? 'Brine' : txn.inventory?.type || 'Cube';
+                    const typeLabel = txn.inventory?.type === 'manufactured' ? 'Production' : txn.inventory?.type === 'resell' ? 'Purchases' : txn.inventory?.type === 'waste' ? 'Brine' : txn.inventory?.type || 'Cube';
+
 
                     return (
                       <tr key={txn.id || idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">

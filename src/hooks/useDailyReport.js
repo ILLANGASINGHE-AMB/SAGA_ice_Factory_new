@@ -148,12 +148,6 @@ export function useDailyReport(reportDateStr) {
       return d >= targetStart && d <= targetEnd;
     };
 
-    const isBeforeDate = (dStr) => {
-      if (!dStr) return false;
-      const d = new Date(dStr);
-      return d < targetStart;
-    };
-
     // Helper to get inventory item by type
     const mfcItem = inventory.find(i => i.type === 'manufactured');
     const rscItem = inventory.find(i => i.type === 'resell');
@@ -181,8 +175,10 @@ export function useDailyReport(reportDateStr) {
       }
     });
 
+    // Production = Manufactured Cubes added today
     const todaysProduction = batchProductionQty + mfcTxnAdditions;
-    const todaysPurchase = rscTxnAdditions + brineTxnAdditions;
+    // Purchases = Resell Cubes added today
+    const todaysPurchase = rscTxnAdditions;
 
     const todaysSalesRecords = sales.filter(s => isSameDate(s.sale_date));
     const todaysSalesQty = todaysSalesRecords.reduce((sum, s) => sum + (Number(s.quantity) || 0), 0);
@@ -191,12 +187,12 @@ export function useDailyReport(reportDateStr) {
     const currentMfgStock = mfcItem?.quantity || 0;
     const previousDayBalance = Math.max(0, currentMfgStock - todaysProduction + todaysSalesQty);
 
-    // Manual inputs overrides / entries
+    // Brine Cubes = Brine cubes added today or manual entry
     const brineCubes = Number(manualInputs.brineCubes) > 0 ? Number(manualInputs.brineCubes) : brineTxnAdditions;
     const freeIssue = Number(manualInputs.freeIssue) || 0;
     const damagedCubes = Number(manualInputs.damagedCubes) || 0;
 
-    const closingBalance = previousDayBalance + todaysProduction + todaysPurchase - brineCubes - freeIssue - damagedCubes - todaysSalesQty;
+    const closingBalance = previousDayBalance + todaysProduction + todaysPurchase + brineCubes - freeIssue - damagedCubes - todaysSalesQty;
 
     // 2. Income Details
     const cashSalesRecords = todaysSalesRecords.filter(s => s.payment_type === 'cash');
