@@ -54,33 +54,26 @@ export function ReportsPage() {
 
   const fetchAllData = async () => {
     try {
-      const [
-        { data: salesRes, error: salesErr },
-        { data: debtsRes, error: debtsErr },
-        { data: settlementsRes, error: settlementsErr },
-        { data: customersRes, error: customersErr }
-      ] = await Promise.all([
-        supabase.from('sales').select('*'),
-        supabase.from('debts').select('*'),
-        supabase.from('debt_settlements').select('*'),
-        supabase.from('customers').select('*')
+      setDataLoading(true);
+      const [salesRes, debtsRes, settlementsRes, customersRes] = await Promise.all([
+        supabase.from('sales').select('*').then(r => r.data || []).catch(() => []),
+        supabase.from('debts').select('*').then(r => r.data || []).catch(() => []),
+        supabase.from('debt_settlements').select('*').then(r => r.data || []).catch(() => []),
+        supabase.from('customers').select('*').then(r => r.data || []).catch(() => [])
       ]);
 
-      if (salesErr) throw salesErr;
-      if (debtsErr) throw debtsErr;
-      if (settlementsErr) throw settlementsErr;
-      if (customersErr) throw customersErr;
-
-      setSales(salesRes || []);
-      setDebts(debtsRes || []);
-      setSettlements(settlementsRes || []);
-      setCustomers(customersRes || []);
+      setSales(salesRes);
+      setDebts(debtsRes);
+      setSettlements(settlementsRes);
+      setCustomers(customersRes);
     } catch (err) {
       console.error("Failed to fetch reports data:", err);
     } finally {
       setDataLoading(false);
     }
+
   };
+
 
   useEffect(() => {
     fetchAllData();

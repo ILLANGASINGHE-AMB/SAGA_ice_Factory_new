@@ -1,37 +1,48 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
+const defaultDashboardData = {
+  stats: {
+    mfcSoldToday: 0,
+    rscSoldToday: 0,
+    totalCubesSoldToday: 0,
+    totalInventory: 0,
+    revenueToday: 0,
+    totalRevenue: 0,
+    pendingDebtsCount: 0
+  },
+  charts: {
+    weekly: [],
+    monthly: [],
+    pie: [{ name: 'Cash Sales', value: 1 }, { name: 'Debt Sales', value: 0 }]
+  },
+  tables: {
+    recentSales: [],
+    recentDebts: [],
+    recentSettlements: []
+  }
+};
+
 export function useDashboard() {
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(defaultDashboardData);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchDashboardData = async () => {
     try {
+      setIsLoading(true);
       const [
-        { data: sales, error: salesErr },
-        { data: debts, error: debtsErr },
-        { data: settlements, error: settlementsErr },
-        { data: customers, error: customersErr },
-        { data: inventory, error: inventoryErr }
+        salesList,
+        debtsList,
+        settlementsList,
+        customersList,
+        inventoryList
       ] = await Promise.all([
-        supabase.from('sales').select('*'),
-        supabase.from('debts').select('*'),
-        supabase.from('debt_settlements').select('*'),
-        supabase.from('customers').select('*'),
-        supabase.from('inventory').select('*')
+        supabase.from('sales').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('debts').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('debt_settlements').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('customers').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('inventory').select('*').then(res => res.data || []).catch(() => [])
       ]);
-
-      if (salesErr) throw salesErr;
-      if (debtsErr) throw debtsErr;
-      if (settlementsErr) throw settlementsErr;
-      if (customersErr) throw customersErr;
-      if (inventoryErr) throw inventoryErr;
-
-      const salesList = sales || [];
-      const debtsList = debts || [];
-      const settlementsList = settlements || [];
-      const customersList = customers || [];
-      const inventoryList = inventory || [];
 
       const startOfToday = new Date();
       startOfToday.setHours(0, 0, 0, 0);
@@ -51,16 +62,16 @@ export function useDashboard() {
         const saleDate = new Date(sale.sale_date);
         if (saleDate >= startOfToday) {
           if (sale.cube_type === 'manufactured') {
-            mfcSoldToday += sale.quantity;
+            mfcSoldToday += Number(sale.quantity) || 0;
           } else if (sale.cube_type === 'resell') {
-            rscSoldToday += sale.quantity;
+            rscSoldToday += Number(sale.quantity) || 0;
           }
           revenueToday += amt;
         }
       });
 
       const totalCubesSoldToday = mfcSoldToday + rscSoldToday;
-      const totalInventory = inventoryList.reduce((sum, item) => sum + (item.quantity || 0), 0);
+      const totalInventory = inventoryList.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
 
       const pendingDebtsCount = debtsList.filter(d => d.status === 'pending' || d.status === 'partial').length;
 
@@ -85,9 +96,9 @@ export function useDashboard() {
           const sDate = new Date(sale.sale_date);
           if (sDate >= dayStart && sDate <= dayEnd) {
             if (sale.cube_type === 'manufactured') {
-              mfcQty += sale.quantity;
+              mfcQty += Number(sale.quantity) || 0;
             } else if (sale.cube_type === 'resell') {
-              rscQty += sale.quantity;
+              rscQty += Number(sale.quantity) || 0;
             }
           }
         });
@@ -115,7 +126,7 @@ export function useDashboard() {
         salesList.forEach(sale => {
           const sDate = new Date(sale.sale_date);
           if (sDate >= dayStart && sDate <= dayEnd) {
-            dayRev += Number(sale.total_amount);
+            dayRev += Number(sale.total_amount) || 0;
           }
         });
         
@@ -129,9 +140,9 @@ export function useDashboard() {
       let debtTotal = 0;
       salesList.forEach(sale => {
         if (sale.payment_type === 'cash') {
-          cashTotal += Number(sale.total_amount);
+          cashTotal += Number(sale.total_amount) || 0;
         } else if (sale.payment_type === 'debt') {
-          debtTotal += Number(sale.total_amount);
+          debtTotal += Number(sale.total_amount) || 0;
         }
       });
       
@@ -195,6 +206,7 @@ export function useDashboard() {
       });
     } catch (err) {
       console.error("Dashboard compilation failed:", err);
+      setData(defaultDashboardData);
     } finally {
       setIsLoading(false);
     }
@@ -219,6 +231,6 @@ export function useDashboard() {
 
   return {
     dashboardData: data,
-    isLoading: isLoading || !data
+    isLoading
   };
 }
