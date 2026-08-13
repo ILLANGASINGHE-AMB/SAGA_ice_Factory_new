@@ -54,19 +54,34 @@ export function CashBankPage() {
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawDescription, setWithdrawDescription] = useState('');
 
-  // Adjust Cash Modal State
-  const [isAdjustCashOpen, setIsAdjustCashOpen] = useState(false);
-  const [cashOverrideInput, setCashOverrideInput] = useState('');
+  // Physical Cash Input State inside form
+  const [cashInput, setCashInput] = useState('');
 
   useEffect(() => {
-    if (manualInputs) {
-      setCashOnHand(manualInputs.cashOnHand || 0);
+    if (manualInputs && reportData) {
+      const calculatedCashInflow = (reportData.incomeDetails?.cashSalesAmount || 0) + 
+                                   (reportData.incomeDetails?.creditAmountReceived || 0) + 
+                                   (reportData.incomeDetails?.otherReceipts || 0);
+      
+      const cashWithdrawals = (manualInputs.withdrawals || [])
+        .filter(w => w.source === 'cash')
+        .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+      
+      const bankDeposits = Number(manualInputs.bankDepositAmount) || 0;
+      const defaultCalculatedCash = Math.max(0, calculatedCashInflow - bankDeposits - cashWithdrawals);
+
+      const activeCash = (manualInputs.cashOnHand !== undefined && manualInputs.cashOnHand !== 0)
+        ? Number(manualInputs.cashOnHand)
+        : defaultCalculatedCash;
+
+      setCashOnHand(activeCash);
+      setCashInput(activeCash.toString());
       setBankDepositAmount(manualInputs.bankDepositAmount || 0);
       setChequesOnHand(manualInputs.chequesOnHand || 0);
       setChequeEntries(manualInputs.chequeEntries || []);
       setWithdrawals(manualInputs.withdrawals || []);
     }
-  }, [manualInputs, selectedDate]);
+  }, [manualInputs, selectedDate, reportData]);
 
   // Total calculated cheques value
   const totalChequesValue = useMemo(() => {
@@ -84,8 +99,8 @@ export function CashBankPage() {
     try {
       setIsSaving(true);
       const payload = {
-        cashOnHand,
-        bankDepositAmount,
+        cashOnHand: Number(cashOnHand) || 0,
+        bankDepositAmount: Number(bankDepositAmount) || 0,
         chequesOnHand: totalChequesValue,
         chequeEntries,
         withdrawals,
@@ -93,7 +108,7 @@ export function CashBankPage() {
       };
 
       await saveDailyReport(payload);
-      toast.success("Cash & Bank details saved and synced!");
+      toast.success("All Cash & Bank balances saved!");
     } catch (err) {
       toast.error(err.message || "Failed to save entry");
     } finally {
@@ -101,7 +116,21 @@ export function CashBankPage() {
     }
   };
 
-  // 1. ACTION: Deposit Cash into Bank (Bank Balance = Bank Balance + Deposit; Cash Balance = Cash Balance - Deposit)
+  // 1. ACTION: Save Physical Cash Balance Input
+  const handleSavePhysicalCash = async (e) => {
+    if (e) e.preventDefault();
+    const val = parseFloat(cashInput);
+    if (isNaN(val) || val < 0) {
+      toast.error("Please enter a valid cash amount");
+      return;
+    }
+
+    setCashOnHand(val);
+    await saveDailyReport({ cashOnHand: val });
+    toast.success(`Physical Cash Balance saved as LKR ${val.toLocaleString()}`);
+  };
+
+  // 2. ACTION: Deposit Cash into Bank (Bank Balance = Bank Balance + Deposit; Cash Balance = Cash Balance - Deposit)
   const handleBankDepositSubmit = async (e) => {
     e.preventDefault();
     const amount = parseFloat(depositInput);
@@ -109,15 +138,13 @@ export function CashBankPage() {
       toast.error("Please enter a valid deposit amount");
       return;
     }
-    if (amount > cashOnHand && cashOnHand > 0) {
-      toast.warning(`Deposit amount (LKR ${amount}) exceeds current Cash on Hand (LKR ${cashOnHand}). Executing transfer...`);
-    }
 
     const newBankBalance = (Number(bankDepositAmount) || 0) + amount;
     const newCashBalance = Math.max(0, (Number(cashOnHand) || 0) - amount);
 
     setBankDepositAmount(newBankBalance);
     setCashOnHand(newCashBalance);
+    setCashInput(newCashBalance.toString());
 
     setDepositInput('');
     setDepositBankRef('');
@@ -130,7 +157,7 @@ export function CashBankPage() {
     toast.success(`Deposited LKR ${amount.toLocaleString()} into Bank! Cash Balance updated.`);
   };
 
-  // 2. ACTION: Add Cheque Record
+  // 3. ACTION: Add Cheque Record
   const handleAddCheque = async (e) => {
     e.preventDefault();
     const amount = parseFloat(chequeAmount);
@@ -204,7 +231,7 @@ export function CashBankPage() {
     });
   };
 
-  // 3. ACTION: Record Withdrawal (Work / Expense money taken from Cash or Bank)
+  // 4. ACTION: Record Withdrawal (Work / Expense money taken from Cash or Bank)
   const handleWithdrawalSubmit = async (e) => {
     e.preventDefault();
     const amount = parseFloat(withdrawAmount);
@@ -219,6 +246,7 @@ export function CashBankPage() {
     if (withdrawType === 'cash') {
       newCashBalance = Math.max(0, newCashBalance - amount);
       setCashOnHand(newCashBalance);
+      setCashInput(newCashBalance.toString());
     } else {
       newBankBalance = Math.max(0, newBankBalance - amount);
       setBankDepositAmount(newBankBalance);
@@ -254,21 +282,6 @@ export function CashBankPage() {
     await saveDailyReport({ withdrawals: updated });
   };
 
-  // Adjust Cash Override submit
-  const handleCashOverrideSubmit = async (e) => {
-    e.preventDefault();
-    const newVal = parseFloat(cashOverrideInput);
-    if (isNaN(newVal) || newVal < 0) {
-      toast.error("Please enter a valid cash amount");
-      return;
-    }
-
-    setCashOnHand(newVal);
-    setIsAdjustCashOpen(false);
-    await saveDailyReport({ cashOnHand: newVal });
-    toast.success(`Updated physical Cash on Hand to LKR ${newVal.toLocaleString()}`);
-  };
-
   return (
     <div className="space-y-6">
       
@@ -282,7 +295,7 @@ export function CashBankPage() {
             </h2>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Separate balances for Cash on Hand, Bank Deposits, Cheque Register, and Work Withdrawals.
+            Separate sections for Cash Balance, Bank Deposits, Cheque Register, and Work Withdrawals.
           </p>
         </div>
 
@@ -331,12 +344,9 @@ export function CashBankPage() {
                 </p>
                 <span className="text-[10px] text-emerald-100 block mt-0.5">Physical Cash in Till / Safe</span>
               </div>
-              <button 
-                onClick={() => { setCashOverrideInput(cashOnHand.toString()); setIsAdjustCashOpen(true); }}
-                className="text-[11px] font-bold bg-white/20 hover:bg-white/30 text-white py-1 px-2.5 rounded-lg transition text-center self-start"
-              >
-                Adjust Cash Balance
-              </button>
+              <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded font-semibold self-start text-white">
+                Auto-updated on Sales & Deposits
+              </span>
             </div>
 
             {/* 2. Bank Deposit Card */}
@@ -399,57 +409,80 @@ export function CashBankPage() {
           {/* MAIN 4 SECTIONS CONTENT GRID */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-            {/* SECTION 1 & 2: Cash Inflow Breakdown & Bank Deposit Form */}
+            {/* SECTION 1 & 2: Cash Balance Input & Bank Deposit Form */}
             <div className="space-y-6">
               
-              {/* Cash Inflow Summary Panel */}
+              {/* SECTION 1: Cash Balance Input & Inflows */}
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                   <div className="flex items-center space-x-2">
-                    <TrendingUp size={18} className="text-emerald-600" />
+                    <Wallet size={18} className="text-emerald-600" />
                     <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100">
-                      Cash Balance Inflows ({selectedDate})
+                      Section 01: Cash Balance on Hand
                     </h3>
                   </div>
                   <span className="text-xs font-bold text-emerald-600">
-                    Inflow: LKR {todaysTotalCashInflow.toLocaleString()}
+                    Total Cash: LKR {(Number(cashOnHand) || 0).toLocaleString()}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3 text-xs">
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                <form onSubmit={handleSavePhysicalCash} className="space-y-3 text-xs">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                      Enter Physical Cash in Till / Safe (LKR)
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <input 
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        value={cashInput}
+                        onChange={(e) => setCashInput(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 font-bold text-slate-900 dark:text-slate-100 focus:outline-none"
+                        required
+                      />
+                      <Button type="submit" variant="primary" className="whitespace-nowrap py-2.5 px-4 rounded-xl font-bold">
+                        Save Cash
+                      </Button>
+                    </div>
+                  </div>
+                </form>
+
+                <div className="grid grid-cols-3 gap-2 text-xs pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <div className="p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
                     <span className="text-[10px] text-slate-400 font-semibold uppercase block">Cash Sales</span>
-                    <span className="font-bold text-emerald-600 text-xs mt-1 block">
+                    <span className="font-bold text-emerald-600 text-xs mt-0.5 block">
                       +LKR {cashSalesAmount.toLocaleString()}
                     </span>
                   </div>
 
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                  <div className="p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
                     <span className="text-[10px] text-slate-400 font-semibold uppercase block">Debt Recovered</span>
-                    <span className="font-bold text-sky-600 text-xs mt-1 block">
+                    <span className="font-bold text-sky-600 text-xs mt-0.5 block">
                       +LKR {creditAmountReceived.toLocaleString()}
                     </span>
                   </div>
 
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                  <div className="p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
                     <span className="text-[10px] text-slate-400 font-semibold uppercase block">Other Receipts</span>
-                    <span className="font-bold text-amber-600 text-xs mt-1 block">
+                    <span className="font-bold text-amber-600 text-xs mt-0.5 block">
                       +LKR {otherReceipts.toLocaleString()}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Bank Deposit Section Form */}
+              {/* SECTION 2: Bank Deposit Form */}
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
                 <div className="flex items-center space-x-2 border-b border-slate-100 dark:border-slate-800 pb-3">
                   <Landmark className="w-5 h-5 text-navy-600 dark:text-sky-400" />
                   <div>
                     <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100">
-                      Bank Deposit Section
+                      Section 02: Bank Deposit
                     </h3>
                     <p className="text-[11px] text-slate-400">
-                      Deposits cash into Bank and automatically deducts from Cash Balance.
+                      Deposits cash into Bank ($\text{Bank} = \text{Bank} + \text{Deposit}$) and deducts from Cash ($\text{Cash} = \text{Cash} - \text{Deposit}$).
                     </p>
                   </div>
                 </div>
@@ -496,13 +529,13 @@ export function CashBankPage() {
             {/* SECTION 3 & 4: Cheque Prices Section & Withdraw Money Section */}
             <div className="space-y-6">
 
-              {/* Cheque Prices / Register Section */}
+              {/* SECTION 3: Cheque Prices / Register Section */}
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                   <div className="flex items-center space-x-2">
                     <CreditCard className="w-5 h-5 text-amber-500" />
                     <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100">
-                      Cheque Prices Register
+                      Section 03: Cheque Prices Register
                     </h3>
                   </div>
                   <span className="text-xs font-bold text-amber-600">
@@ -596,13 +629,13 @@ export function CashBankPage() {
                 )}
               </div>
 
-              {/* Withdraw Section (Money taken from Bank or Cash for work) */}
+              {/* SECTION 4: Withdraw Section (Money taken from Bank or Cash for work) */}
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
                 <div className="flex items-center space-x-2 border-b border-slate-100 dark:border-slate-800 pb-3">
                   <ArrowDownLeft className="w-5 h-5 text-rose-500" />
                   <div>
                     <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100">
-                      Withdraw Money Section (Work Expenses)
+                      Section 04: Withdraw Money (Work Expenses)
                     </h3>
                     <p className="text-[11px] text-slate-400">
                       Record money taken from Cash or Bank for factory work & expenses.
@@ -710,35 +743,6 @@ export function CashBankPage() {
 
         </div>
       )}
-
-      {/* Adjust Physical Cash Modal */}
-      <Modal
-        isOpen={isAdjustCashOpen}
-        onClose={() => setIsAdjustCashOpen(false)}
-        title="Adjust Cash Balance on Hand"
-        size="sm"
-      >
-        <form onSubmit={handleCashOverrideSubmit} className="space-y-4">
-          <div>
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-              New Physical Cash Balance (LKR)
-            </label>
-            <input 
-              type="number"
-              step="0.01"
-              min="0"
-              value={cashOverrideInput}
-              onChange={(e) => setCashOverrideInput(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 font-bold text-sm text-slate-900 dark:text-slate-100 focus:outline-none"
-              required
-            />
-          </div>
-          <div className="flex justify-end space-x-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => setIsAdjustCashOpen(false)}>Cancel</Button>
-            <Button type="submit" variant="primary">Confirm Override</Button>
-          </div>
-        </form>
-      </Modal>
 
     </div>
   );
