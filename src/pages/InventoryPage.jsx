@@ -135,8 +135,9 @@ export function InventoryPage() {
                     {item.code}
                   </span>
                   <h3 className="text-lg font-bold font-heading text-slate-800 dark:text-slate-100 capitalize mt-0.5">
-                    {item.type} Cubes
+                    {item.type === 'waste' ? 'Brine' : item.type} Cubes
                   </h3>
+
                 </div>
 
                 <div className="py-2 border-y border-slate-100 dark:border-slate-800 flex justify-between items-baseline">
