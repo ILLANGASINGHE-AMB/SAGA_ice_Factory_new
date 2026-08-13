@@ -51,15 +51,16 @@ export function DailyManagerReportView() {
       setDamagedCubes(manualInputs.damagedCubes || 0);
       setPmProductionQty(manualInputs.pmProductionQty || 0);
       setOtherReceipts(manualInputs.otherReceipts || 0);
-      setBankDepositAmount(manualInputs.bankDepositAmount || 0);
-      setCashOnHand(manualInputs.cashOnHand || 0);
-      setChequesOnHand(manualInputs.chequesOnHand || 0);
+      setBankDepositAmount(reportData?.cashDetails?.bankDepositAmount ?? manualInputs.bankDepositAmount ?? 0);
+      setCashOnHand(reportData?.cashDetails?.cashOnHand ?? manualInputs.cashOnHand ?? 0);
+      setChequesOnHand(reportData?.cashDetails?.chequesOnHand ?? manualInputs.chequesOnHand ?? 0);
       setEmployeeLogs(manualInputs.employeeLogs || []);
       setVehicleLogs(manualInputs.vehicleLogs || []);
       setOtherDetails(manualInputs.otherDetails || '');
       setVerifiedBy(manualInputs.verifiedBy || '');
     }
   }, [manualInputs, selectedDate, reportData]);
+
 
 
   // Handle Save
@@ -458,15 +459,20 @@ export function DailyManagerReportView() {
 
             {/* 06. Cash & Bank Details (1 col) */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
-              <div className="flex items-center space-x-2 font-heading font-bold text-sm text-slate-800 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800 pb-3">
-                <DollarSign size={18} className="text-emerald-600" />
-                <span>06. CASH & BANK DETAILS</span>
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                <div className="flex items-center space-x-2 font-heading font-bold text-sm text-slate-800 dark:text-slate-100">
+                  <DollarSign size={18} className="text-emerald-600" />
+                  <span>06. CASH & BANK DETAILS</span>
+                </div>
+                <span className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 font-bold px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
+                  Auto-filled
+                </span>
               </div>
 
               <div className="space-y-3 text-xs">
                 <div>
                   <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
-                    Amount Deposited in Bank
+                    Amount Deposited in Bank (LKR)
                   </label>
                   <input 
                     type="number"
@@ -479,7 +485,7 @@ export function DailyManagerReportView() {
 
                 <div>
                   <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
-                    Cash Balance on Hand
+                    Cash Balance on Hand (LKR)
                   </label>
                   <input 
                     type="number"
@@ -492,7 +498,7 @@ export function DailyManagerReportView() {
 
                 <div>
                   <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
-                    Value of Cheques on Hand
+                    Value of Cheques on Hand (LKR)
                   </label>
                   <input 
                     type="number"
@@ -504,6 +510,7 @@ export function DailyManagerReportView() {
                 </div>
               </div>
             </div>
+
 
           </div>
 
