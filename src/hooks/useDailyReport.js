@@ -35,42 +35,42 @@ export function useDailyReport(reportDateStr) {
 
   const targetDateStr = reportDateStr || new Date().toISOString().slice(0, 10);
 
-  // Fetch all relevant data for the date
+  // Fetch all relevant data for the date with bulletproof per-table error catching
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       const [
-        { data: salesRes },
-        { data: debtsRes },
-        { data: settlementsRes },
-        { data: batchesRes },
-        { data: expensesRes },
-        { data: customersRes },
-        { data: inventoryRes },
-        { data: invTxnRes, error: invTxnErr },
-        { data: savedReportRes }
+        salesRes,
+        debtsRes,
+        settlementsRes,
+        batchesRes,
+        expensesRes,
+        customersRes,
+        inventoryRes,
+        invTxnRes,
+        savedReportRes
       ] = await Promise.all([
-        supabase.from('sales').select('*, customer:customers(*)'),
-        supabase.from('debts').select('*, customer:customers(*), sale:sales(*)'),
-        supabase.from('debt_settlements').select('*, customer:customers(*)'),
-        supabase.from('production_batches').select('*'),
-        supabase.from('operating_expenses').select('*'),
-        supabase.from('customers').select('*'),
-        supabase.from('inventory').select('*'),
-        supabase.from('inventory_transactions').select('*, inventory(*)'),
-        supabase.from('daily_manager_reports').select('*').eq('report_date', targetDateStr).maybeSingle()
+        supabase.from('sales').select('*, customer:customers(*)').then(res => res.data || []).catch(() => []),
+        supabase.from('debts').select('*, customer:customers(*), sale:sales(*)').then(res => res.data || []).catch(() => []),
+        supabase.from('debt_settlements').select('*, customer:customers(*)').then(res => res.data || []).catch(() => []),
+        supabase.from('production_batches').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('operating_expenses').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('customers').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('inventory').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('inventory_transactions').select('*, inventory(*)').then(res => res.data || []).catch(() => []),
+        supabase.from('daily_manager_reports').select('*').eq('report_date', targetDateStr).maybeSingle().then(res => res.data || null).catch(() => null)
       ]);
 
-      setSales(salesRes || []);
-      setDebts(debtsRes || []);
-      setSettlements(settlementsRes || []);
-      setBatches(batchesRes || []);
-      setExpenses(expensesRes || []);
-      setCustomers(customersRes || []);
-      setInventory(inventoryRes || []);
+      setSales(salesRes);
+      setDebts(debtsRes);
+      setSettlements(settlementsRes);
+      setBatches(batchesRes);
+      setExpenses(expensesRes);
+      setCustomers(customersRes);
+      setInventory(inventoryRes);
 
       // Fallback to local storage if Supabase transactions empty or error
-      if (invTxnErr || !invTxnRes || invTxnRes.length === 0) {
+      if (!invTxnRes || invTxnRes.length === 0) {
         const savedTxns = localStorage.getItem('saga_inventory_transactions');
         setInvTransactions(savedTxns ? JSON.parse(savedTxns) : []);
       } else {
@@ -330,7 +330,7 @@ export function useDailyReport(reportDateStr) {
     };
   }, [targetDateStr, sales, debts, settlements, batches, expenses, customers, inventory, invTransactions, manualInputs]);
 
-  // Save manual updates
+  // Save manual updates with safe column handling
   const saveDailyReport = async (updatedInputs) => {
     const payload = {
       ...manualInputs,
@@ -368,8 +368,33 @@ export function useDailyReport(reportDateStr) {
         .select('*')
         .single();
 
-      if (error) throw error;
-      if (data) setSavedRecord(data);
+      if (error) {
+        console.warn("Supabase upsert daily report warning (trying basic payload):", error.message);
+        // Fallback without new jsonb columns if they don't exist yet on DB
+        const basicPayload = {
+          report_date: targetDateStr,
+          brine_cubes: Number(payload.brineCubes) || 0,
+          free_issue: Number(payload.freeIssue) || 0,
+          damaged_cubes: Number(payload.damagedCubes) || 0,
+          pm_production_qty: Number(payload.pmProductionQty) || 0,
+          other_receipts: Number(payload.otherReceipts) || 0,
+          bank_deposit_amount: Number(payload.bankDepositAmount) || 0,
+          cash_on_hand: Number(payload.cashOnHand) || 0,
+          cheques_on_hand: Number(payload.chequesOnHand) || 0,
+          employee_logs: payload.employeeLogs || [],
+          vehicle_logs: payload.vehicleLogs || [],
+          other_details: payload.otherDetails || '',
+          verified_by: payload.verifiedBy || ''
+        };
+        const { data: bData } = await supabase
+          .from('daily_manager_reports')
+          .upsert(basicPayload, { onConflict: 'report_date' })
+          .select('*')
+          .single();
+        if (bData) setSavedRecord(bData);
+      } else if (data) {
+        setSavedRecord(data);
+      }
     } catch (err) {
       console.warn("Supabase upsert daily report error, stored locally:", err);
     }

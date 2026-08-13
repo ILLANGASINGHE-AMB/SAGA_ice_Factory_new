@@ -628,7 +628,10 @@ create table if not exists public.daily_manager_reports (
   cheques_on_hand numeric(10, 2) default 0,
   employee_logs jsonb default '[]'::jsonb,
   vehicle_logs jsonb default '[]'::jsonb,
+  cheque_entries jsonb default '[]'::jsonb,
+  withdrawals jsonb default '[]'::jsonb,
   other_details text default '',
+
   verified_by text default '',
   verified_at timestamp with time zone default timezone('utc'::text, now()),
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
