@@ -338,86 +338,86 @@ export function CashBankPage() {
       ) : (
         <div className="space-y-6">
 
-          {/* 4 SECTION CARDS GRID */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* 4 SECTION CARDS GRID - 4-Column Landscape Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 landscape:grid-cols-4 gap-2.5 sm:gap-4">
             
             {/* 1. Cash Balance Card */}
-            <div className="bg-emerald-500 text-white rounded-2xl p-5 shadow-xs flex flex-col justify-between relative overflow-hidden">
+            <div className="bg-emerald-500 text-white rounded-2xl p-3.5 sm:p-4 shadow-xs flex flex-col justify-between relative overflow-hidden">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-100">01. Cash Balance</span>
-                <Wallet className="w-5 h-5 text-emerald-100" />
+                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-emerald-100">01. Cash Balance</span>
+                <Wallet className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-100" />
               </div>
-              <div className="my-2">
-                <p className="text-2xl font-extrabold font-heading">
+              <div className="my-1.5">
+                <p className="text-base sm:text-lg md:text-xl font-extrabold font-heading truncate">
                   LKR {(Number(cashOnHand) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </p>
-                <span className="text-[10px] text-emerald-100 block mt-0.5">Physical Cash in Till / Safe</span>
+                <span className="text-[10px] text-emerald-100 block mt-0.5 truncate">Physical Cash in Till / Safe</span>
               </div>
-              <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded font-semibold self-start text-white">
-                Auto-updated on Sales & Deposits
+              <span className="text-[9px] sm:text-[10px] bg-white/20 px-2 py-0.5 rounded font-semibold self-start text-white truncate">
+                Auto-updated on Sales
               </span>
             </div>
 
             {/* 2. Bank Deposit Card */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-xs flex flex-col justify-between">
               <div className="flex items-center justify-between text-slate-500">
-                <span className="text-xs font-bold uppercase tracking-wider">02. Bank Deposit</span>
-                <Landmark className="w-5 h-5 text-navy-600 dark:text-sky-400" />
+                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">02. Bank Deposit</span>
+                <Landmark className="w-4 h-4 sm:w-5 sm:h-5 text-navy-600 dark:text-sky-400" />
               </div>
-              <div className="my-2">
-                <p className="text-2xl font-extrabold font-heading text-slate-900 dark:text-slate-100">
+              <div className="my-1.5">
+                <p className="text-base sm:text-lg md:text-xl font-extrabold font-heading text-slate-900 dark:text-slate-100 truncate">
                   LKR {(Number(bankDepositAmount) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </p>
-                <span className="text-[10px] text-slate-400 block mt-0.5">Total Funds in Bank Account</span>
+                <span className="text-[10px] text-slate-400 block mt-0.5 truncate">Funds in Bank Account</span>
               </div>
-              <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center">
-                <ArrowUpRight size={12} className="mr-0.5" /> Auto-increased on Deposits
+              <span className="text-[9px] sm:text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center truncate">
+                <ArrowUpRight size={12} className="mr-0.5 shrink-0" /> Auto-increased on Deposits
               </span>
             </div>
 
             {/* 3. Cheque Prices Card */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-xs flex flex-col justify-between">
               <div className="flex items-center justify-between text-slate-500">
-                <span className="text-xs font-bold uppercase tracking-wider">03. Cheque Prices</span>
-                <CreditCard className="w-5 h-5 text-amber-500" />
+                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">03. Cheques</span>
+                <CreditCard className="w-4 h-4 sm:w-5 sm:h-5 text-amber-500" />
               </div>
-              <div className="my-2">
-                <p className="text-2xl font-extrabold font-heading text-slate-900 dark:text-slate-100">
+              <div className="my-1.5">
+                <p className="text-base sm:text-lg md:text-xl font-extrabold font-heading text-slate-900 dark:text-slate-100 truncate">
                   LKR {totalChequesValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </p>
-                <span className="text-[10px] text-slate-400 block mt-0.5">
-                  {safeChequeEntries.length} Cheque Record{safeChequeEntries.length !== 1 ? 's' : ''} on Hand
+                <span className="text-[10px] text-slate-400 block mt-0.5 truncate">
+                  {safeChequeEntries.length} Cheque{safeChequeEntries.length !== 1 ? 's' : ''} on Hand
                 </span>
               </div>
-              <span className="text-[10px] text-amber-600 font-semibold">
-                Saved as Separate Cheque Register
+              <span className="text-[9px] sm:text-[10px] text-amber-600 font-semibold truncate">
+                Separate Cheque Register
               </span>
             </div>
 
             {/* 4. Withdrawals Card */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-xs flex flex-col justify-between">
               <div className="flex items-center justify-between text-slate-500">
-                <span className="text-xs font-bold uppercase tracking-wider">04. Work Withdrawals</span>
-                <ArrowDownLeft className="w-5 h-5 text-rose-500" />
+                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">04. Withdrawals</span>
+                <ArrowDownLeft className="w-4 h-4 sm:w-5 sm:h-5 text-rose-500" />
               </div>
-              <div className="my-2">
-                <p className="text-2xl font-extrabold font-heading text-rose-600 dark:text-rose-400">
+              <div className="my-1.5">
+                <p className="text-base sm:text-lg md:text-xl font-extrabold font-heading text-rose-600 dark:text-rose-400 truncate">
                   LKR {(((reportData?.cashDetails?.cashWithdrawals || 0) + (reportData?.cashDetails?.bankWithdrawals || 0))).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </p>
-                <span className="text-[10px] text-slate-400 block mt-0.5">
-                  {safeWithdrawals.length} Withdrawal Log{safeWithdrawals.length !== 1 ? 's' : ''} Today
+                <span className="text-[10px] text-slate-400 block mt-0.5 truncate">
+                  {safeWithdrawals.length} Withdrawal Log{safeWithdrawals.length !== 1 ? 's' : ''}
                 </span>
               </div>
-              <span className="text-[10px] text-rose-500 font-semibold">
-                Cash: LKR {(reportData?.cashDetails?.cashWithdrawals || 0).toLocaleString()} • Bank: LKR {(reportData?.cashDetails?.bankWithdrawals || 0).toLocaleString()}
+              <span className="text-[9px] sm:text-[10px] text-rose-500 font-semibold truncate">
+                Cash: {(reportData?.cashDetails?.cashWithdrawals || 0).toLocaleString()} • Bank: {(reportData?.cashDetails?.bankWithdrawals || 0).toLocaleString()}
               </span>
-
             </div>
 
           </div>
 
-          {/* MAIN 4 SECTIONS CONTENT GRID */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* MAIN 4 SECTIONS CONTENT GRID - Side by Side in Landscape */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 landscape:grid-cols-2 gap-4 sm:gap-6">
+
 
             {/* SECTION 1 & 2: Cash Balance Input & Bank Deposit Form */}
             <div className="space-y-6">

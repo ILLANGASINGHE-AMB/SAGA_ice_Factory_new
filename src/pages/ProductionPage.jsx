@@ -238,56 +238,55 @@ export function ProductionPage() {
 
       {/* TAB 1: FREEZING BATCH & ENERGY consumption LOGGER */}
       {activeTab === 'batches' && (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           
-          {/* KPI Summary Strip */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* KPI Summary Strip - High Density 4-Col Landscape Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 landscape:grid-cols-4 gap-2.5 sm:gap-4">
             
-            <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center space-x-4">
-              <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400">
-                <Boxes size={22} />
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center space-x-3">
+              <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 shrink-0">
+                <Boxes size={20} />
               </div>
-              <div>
-                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Cubes Produced</span>
-                <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
-                  {totalCubes.toLocaleString()} <span className="text-xs font-normal text-slate-400">cubes</span>
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider block truncate">Cubes Produced</span>
+                <h3 className="text-sm sm:text-base md:text-lg font-bold text-slate-900 dark:text-slate-100 font-heading truncate">
+                  {totalCubes.toLocaleString()} <span className="text-[11px] font-normal text-slate-400">cubes</span>
                 </h3>
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center space-x-4">
-              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400">
-                <Zap size={22} />
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center space-x-3">
+              <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 shrink-0">
+                <Zap size={20} />
               </div>
-              <div>
-                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Energy Cost</span>
-                <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider block truncate">Total Energy</span>
+                <h3 className="text-sm sm:text-base md:text-lg font-bold text-slate-900 dark:text-slate-100 font-heading truncate">
                   LKR {totalEnergyCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </h3>
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center space-x-4">
-              <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
-                <TrendingUp size={22} />
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center space-x-3">
+              <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 shrink-0">
+                <TrendingUp size={20} />
               </div>
-              <div>
-                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Avg Cost / Cube</span>
-                <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider block truncate">Avg Cost / Cube</span>
+                <h3 className="text-sm sm:text-base md:text-lg font-bold text-slate-900 dark:text-slate-100 font-heading truncate">
                   LKR {avgCostPerCube}
                 </h3>
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center space-x-4">
-              <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400">
-                <Flame size={22} />
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center space-x-3">
+              <div className="p-2.5 rounded-xl bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 shrink-0">
+                <Flame size={20} />
               </div>
-              <div>
-                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Fuel vs Grid Split</span>
-                <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 mt-1">
-                  Grid: LKR {totalElecCost.toLocaleString()} <br/>
-                  Diesel: LKR {totalDieselCost.toLocaleString()}
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider block truncate">Grid vs Fuel</span>
+                <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 mt-0.5 truncate">
+                  E: {totalElecCost.toLocaleString()} | D: {totalDieselCost.toLocaleString()}
                 </div>
               </div>
             </div>
@@ -295,7 +294,7 @@ export function ProductionPage() {
           </div>
 
           {/* Table Header Controls */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
             <div className="relative w-full sm:w-72">
               <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
               <input
@@ -303,7 +302,7 @@ export function ProductionPage() {
                 placeholder="Search batch code or notes..."
                 value={batchSearch}
                 onChange={(e) => setBatchSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-navy-500 text-slate-800 dark:text-slate-100"
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-navy-500 text-slate-800 dark:text-slate-100 min-h-[38px]"
               />
             </div>
 
@@ -318,7 +317,7 @@ export function ProductionPage() {
           </div>
 
           {/* Batches Table */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
             {loadingBatches ? (
               <div className="p-6 space-y-3">
                 <Skeleton className="h-10 w-full" />
@@ -326,53 +325,53 @@ export function ProductionPage() {
                 <Skeleton className="h-10 w-full" />
               </div>
             ) : filteredBatches.length === 0 ? (
-              <div className="p-12 text-center">
+              <div className="p-10 text-center">
                 <Boxes size={36} className="mx-auto text-slate-300 dark:text-slate-600 mb-3" />
                 <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">No Freezing Batches Logged</h3>
                 <p className="text-xs text-slate-400 mt-1">Click "Log Freezing Batch" to record electricity and diesel costs per cycle.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto touch-scroll">
                 <table className="w-full text-left text-xs text-slate-600 dark:text-slate-300">
                   <thead className="bg-slate-50 dark:bg-slate-800/50 uppercase text-[10px] font-bold text-slate-500 border-b border-slate-200 dark:border-slate-800">
                     <tr>
-                      <th className="py-3 px-4">Batch Code</th>
-                      <th className="py-3 px-4">Date & Time</th>
-                      <th className="py-3 px-4 text-right">Cubes Produced</th>
-                      <th className="py-3 px-4 text-right">Elec Cost</th>
-                      <th className="py-3 px-4 text-right">Diesel Cost</th>
-                      <th className="py-3 px-4 text-right">Total Energy</th>
-                      <th className="py-3 px-4 text-right">Cost / Cube</th>
-                      <th className="py-3 px-4">Notes</th>
+                      <th className="py-2.5 px-3.5 sm:px-4">Batch Code</th>
+                      <th className="py-2.5 px-3.5 sm:px-4">Date & Time</th>
+                      <th className="py-2.5 px-3.5 sm:px-4 text-right">Cubes</th>
+                      <th className="py-2.5 px-3.5 sm:px-4 text-right">Elec Cost</th>
+                      <th className="py-2.5 px-3.5 sm:px-4 text-right">Diesel Cost</th>
+                      <th className="py-2.5 px-3.5 sm:px-4 text-right">Total Energy</th>
+                      <th className="py-2.5 px-3.5 sm:px-4 text-right">Cost / Cube</th>
+                      <th className="py-2.5 px-3.5 sm:px-4">Notes</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-sans">
                     {filteredBatches.map((b) => (
                       <tr key={b.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition">
-                        <td className="py-3 px-4 font-bold text-slate-900 dark:text-slate-100 font-mono">
+                        <td className="py-2.5 px-3.5 sm:px-4 font-bold text-slate-900 dark:text-slate-100 font-mono">
                           {b.batch_code}
                         </td>
-                        <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
+                        <td className="py-2.5 px-3.5 sm:px-4 text-slate-500 whitespace-nowrap">
                           {new Date(b.batch_date).toLocaleString()}
                         </td>
-                        <td className="py-3 px-4 text-right font-semibold text-slate-900 dark:text-slate-100">
+                        <td className="py-2.5 px-3.5 sm:px-4 text-right font-semibold text-slate-900 dark:text-slate-100">
                           {b.cubes_produced?.toLocaleString()}
                         </td>
-                        <td className="py-3 px-4 text-right text-slate-600 dark:text-slate-400">
+                        <td className="py-2.5 px-3.5 sm:px-4 text-right text-slate-600 dark:text-slate-400 font-mono">
                           LKR {parseFloat(b.electricity_cost || 0).toLocaleString()}
                         </td>
-                        <td className="py-3 px-4 text-right text-slate-600 dark:text-slate-400">
+                        <td className="py-2.5 px-3.5 sm:px-4 text-right text-slate-600 dark:text-slate-400 font-mono">
                           LKR {parseFloat(b.diesel_cost || 0).toLocaleString()}
                         </td>
-                        <td className="py-3 px-4 text-right font-bold text-slate-900 dark:text-slate-100">
+                        <td className="py-2.5 px-3.5 sm:px-4 text-right font-bold text-slate-900 dark:text-slate-100 font-mono">
                           LKR {parseFloat(b.total_energy_cost || 0).toLocaleString()}
                         </td>
-                        <td className="py-3 px-4 text-right">
+                        <td className="py-2.5 px-3.5 sm:px-4 text-right">
                           <span className="inline-block px-2 py-0.5 rounded font-mono font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
                             LKR {b.cost_per_cube}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-slate-500 max-w-xs truncate">
+                        <td className="py-2.5 px-3.5 sm:px-4 text-slate-500 max-w-xs truncate">
                           {b.notes || '—'}
                         </td>
                       </tr>
@@ -388,9 +387,9 @@ export function ProductionPage() {
 
       {/* TAB 2: MACHINERY MAINTENANCE & DOWNTIME ALERTS */}
       {activeTab === 'maintenance' && (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
             <div className="relative w-full sm:w-72">
               <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
               <input
@@ -398,7 +397,7 @@ export function ProductionPage() {
                 placeholder="Search machinery name or type..."
                 value={equipSearch}
                 onChange={(e) => setEquipSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-navy-500 text-slate-800 dark:text-slate-100"
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-navy-500 text-slate-800 dark:text-slate-100 min-h-[38px]"
               />
             </div>
 
@@ -412,14 +411,14 @@ export function ProductionPage() {
             </Button>
           </div>
 
-          {/* Machinery Status Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Machinery Status Cards Grid - Landscape 4-Col Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 landscape:grid-cols-4 gap-3 sm:gap-4">
             {loadingMaintenance ? (
               <Skeleton className="h-36 w-full rounded-2xl" />
             ) : filteredEquipment.map((equip) => (
               <div
                 key={equip.id}
-                className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between space-y-4"
+                className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between space-y-3"
               >
                 <div>
                   <div className="flex items-start justify-between">
@@ -428,12 +427,12 @@ export function ProductionPage() {
                     </span>
                     {getStatusBadge(equip.status)}
                   </div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 font-heading mt-3">
+                  <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 font-heading mt-2 truncate">
                     {equip.equipment_name}
                   </h3>
                 </div>
 
-                <div className="space-y-1.5 text-xs text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="space-y-1 text-xs text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800">
                   <div className="flex justify-between">
                     <span>Last Service:</span>
                     <span className="font-medium text-slate-700 dark:text-slate-300">
@@ -448,8 +447,8 @@ export function ProductionPage() {
                   </div>
                   {equip.performed_by && (
                     <div className="flex justify-between text-[11px]">
-                      <span>Technician:</span>
-                      <span className="text-slate-600 dark:text-slate-400">{equip.performed_by}</span>
+                      <span>Tech:</span>
+                      <span className="text-slate-600 dark:text-slate-400 truncate max-w-[120px]">{equip.performed_by}</span>
                     </div>
                   )}
                 </div>
@@ -457,14 +456,14 @@ export function ProductionPage() {
                 <div className="flex items-center space-x-2 pt-1">
                   <button
                     onClick={() => openMaintenanceForEquipment(equip)}
-                    className="flex-1 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-lg transition"
+                    className="flex-1 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-lg transition min-h-[32px] cursor-pointer"
                   >
                     Update Log
                   </button>
                   {equip.status !== 'operational' && (
                     <button
                       onClick={() => updateEquipmentStatus(equip.id, 'operational', 'Marked operational by user')}
-                      className="px-2.5 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition"
+                      className="px-2.5 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition min-h-[32px] cursor-pointer"
                       title="Set to Operational"
                     >
                       Clear Alert
@@ -478,13 +477,14 @@ export function ProductionPage() {
         </div>
       )}
 
-      {/* MODAL: LOG FREEZING BATCH */}
+      {/* MODAL: LOG FREEZING BATCH - 2-Column Responsive Landscape Grid */}
       <Modal
         isOpen={isAddBatchOpen}
         onClose={() => setIsAddBatchOpen(false)}
         title="Log Freezing Cycle & Energy Usage"
+        size="lg"
       >
-        <form onSubmit={handleBatchSubmit} className="space-y-4">
+        <form onSubmit={handleBatchSubmit} className="space-y-3">
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
               Manufactured Ice Cubes Produced <span className="text-red-500">*</span>
@@ -496,11 +496,11 @@ export function ProductionPage() {
               placeholder="e.g. 1200"
               value={cubesProduced}
               onChange={(e) => setCubesProduced(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100"
+              className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100 min-h-[38px]"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                 Electricity Units (kWh)
@@ -511,7 +511,7 @@ export function ProductionPage() {
                 placeholder="e.g. 180.5"
                 value={elecUnits}
                 onChange={(e) => setElecUnits(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100"
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100 min-h-[38px]"
               />
             </div>
 
@@ -525,12 +525,12 @@ export function ProductionPage() {
                 placeholder="e.g. 3610.00"
                 value={elecCost}
                 onChange={(e) => setElecCost(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100"
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100 min-h-[38px]"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                 Diesel Liters
@@ -541,7 +541,7 @@ export function ProductionPage() {
                 placeholder="e.g. 15.0"
                 value={dieselLiters}
                 onChange={(e) => setDieselLiters(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100"
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100 min-h-[38px]"
               />
             </div>
 
@@ -555,7 +555,7 @@ export function ProductionPage() {
                 placeholder="e.g. 1200.00"
                 value={dieselCost}
                 onChange={(e) => setDieselCost(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100"
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100 min-h-[38px]"
               />
             </div>
           </div>
@@ -564,7 +564,7 @@ export function ProductionPage() {
           {cubesProduced && (
             <div className="p-3 bg-navy-50 dark:bg-navy-950/40 border border-navy-200 dark:border-navy-900 rounded-xl text-xs flex justify-between items-center">
               <span className="font-bold text-navy-800 dark:text-navy-200">Estimated Cost per Cube:</span>
-              <span className="font-mono font-bold text-navy-600 dark:text-navy-400 text-sm">
+              <span className="font-mono font-bold text-navy-600 dark:text-sky-400 text-sm">
                 LKR {(((parseFloat(elecCost)||0) + (parseFloat(dieselCost)||0)) / (parseInt(cubesProduced)||1)).toFixed(4)}
               </span>
             </div>
@@ -577,7 +577,7 @@ export function ProductionPage() {
               placeholder="e.g. Compressor #1 morning run"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100"
+              className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100 min-h-[38px]"
             />
           </div>
 
@@ -594,7 +594,7 @@ export function ProductionPage() {
             </label>
           </div>
 
-          <div className="flex justify-end space-x-2 pt-4 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100 dark:border-slate-800">
             <Button variant="secondary" onClick={() => setIsAddBatchOpen(false)}>Cancel</Button>
             <Button variant="primary" type="submit" disabled={isSubmittingBatch}>
               {isSubmittingBatch ? 'Logging...' : 'Confirm & Save Batch'}
@@ -603,32 +603,33 @@ export function ProductionPage() {
         </form>
       </Modal>
 
-      {/* MODAL: LOG EQUIPMENT MAINTENANCE */}
+      {/* MODAL: LOG EQUIPMENT MAINTENANCE - 2-Column Responsive Landscape Grid */}
       <Modal
         isOpen={isLogMaintenanceOpen}
         onClose={() => setIsLogMaintenanceOpen(false)}
         title="Schedule / Log Machinery Maintenance"
+        size="lg"
       >
-        <form onSubmit={handleMaintenanceSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Equipment Name <span className="text-red-500">*</span></label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. Sabroe Industrial Compressor #2"
-              value={equipName}
-              onChange={(e) => setEquipName(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100"
-            />
-          </div>
+        <form onSubmit={handleMaintenanceSubmit} className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Equipment Name <span className="text-red-500">*</span></label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Sabroe Industrial Compressor #2"
+                value={equipName}
+                onChange={(e) => setEquipName(e.target.value)}
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100 min-h-[38px]"
+              />
+            </div>
 
-          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Equipment Type</label>
               <select
                 value={equipType}
                 onChange={(e) => setEquipType(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100"
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100 min-h-[38px]"
               >
                 <option value="Compressor">Compressor</option>
                 <option value="Chiller">Chiller</option>
@@ -637,32 +638,34 @@ export function ProductionPage() {
                 <option value="Other Machinery">Other Machinery</option>
               </select>
             </div>
+          </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Current Status</label>
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100"
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100 min-h-[38px]"
               >
                 <option value="operational">Operational 🟢</option>
                 <option value="maintenance_due">Service Due 🟡</option>
                 <option value="offline">Offline / Downtime 🔴</option>
               </select>
             </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Next Scheduled Service Date</label>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Next Service Date</label>
               <input
                 type="date"
                 value={nextDue}
                 onChange={(e) => setNextDue(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100"
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100 min-h-[38px]"
               />
             </div>
+          </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Service Cost (LKR)</label>
               <input
@@ -671,34 +674,34 @@ export function ProductionPage() {
                 placeholder="0.00"
                 value={maintCost}
                 onChange={(e) => setMaintCost(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100"
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100 min-h-[38px]"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Contractor / Technician</label>
+              <input
+                type="text"
+                placeholder="e.g. FrostTech Refrigeration Services"
+                value={techName}
+                onChange={(e) => setTechName(e.target.value)}
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100 min-h-[38px]"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Service Contractor / Technician</label>
-            <input
-              type="text"
-              placeholder="e.g. FrostTech Refrigeration Services"
-              value={techName}
-              onChange={(e) => setTechName(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100"
-            />
-          </div>
-
-          <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Maintenance Details & Notes</label>
             <textarea
-              rows="3"
+              rows="2"
               placeholder="Oil change, gas pressure top up, filter replacement..."
               value={maintNotes}
               onChange={(e) => setMaintNotes(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100"
+              className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100"
             ></textarea>
           </div>
 
-          <div className="flex justify-end space-x-2 pt-4 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100 dark:border-slate-800">
             <Button variant="secondary" onClick={() => setIsLogMaintenanceOpen(false)}>Cancel</Button>
             <Button variant="primary" type="submit" disabled={isSubmittingMaint}>
               {isSubmittingMaint ? 'Saving...' : 'Save Maintenance Record'}
@@ -710,3 +713,5 @@ export function ProductionPage() {
     </div>
   );
 }
+
+

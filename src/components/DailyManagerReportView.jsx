@@ -196,138 +196,139 @@ export function DailyManagerReportView() {
               <span className="text-xs text-slate-400">Live Auto-Calculated + Manager Entries</span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 text-xs">
-              <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
-                <span className="text-[10px] text-slate-500 uppercase font-semibold">Prev Balance</span>
-                <p className="font-bold text-sm text-slate-900 dark:text-slate-100 mt-1">
-                  {reportData.stockDetails.previousDayBalance.toLocaleString()}
-                </p>
+              {/* High Density Stock Balance Chips - 8-Col Landscape Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 landscape:grid-cols-8 gap-2 text-xs">
+                <div className="bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                  <span className="text-[10px] text-slate-500 uppercase font-semibold block truncate">Prev Bal</span>
+                  <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 mt-0.5 truncate">
+                    {reportData.stockDetails.previousDayBalance.toLocaleString()}
+                  </p>
+                </div>
+
+                <div className="bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                  <span className="text-[10px] text-emerald-600 font-semibold uppercase block truncate">Production</span>
+                  <p className="font-bold text-xs sm:text-sm text-emerald-600 dark:text-emerald-400 mt-0.5 truncate">
+                    +{reportData.stockDetails.todaysProduction.toLocaleString()}
+                  </p>
+                </div>
+
+                <div className="bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                  <span className="text-[10px] text-slate-500 uppercase font-semibold block truncate">Purchases</span>
+                  <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 mt-0.5 truncate">
+                    +{reportData.stockDetails.todaysPurchase.toLocaleString()}
+                  </p>
+                </div>
+
+                <div className="bg-amber-50/50 dark:bg-amber-950/20 p-2 rounded-xl border border-amber-200 dark:border-amber-900/50">
+                  <label className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold uppercase block truncate">Brine</label>
+                  <input 
+                    type="number" 
+                    value={brineCubes} 
+                    onChange={(e) => setBrineCubes(e.target.value)}
+                    className="w-full mt-0.5 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
+                  />
+                </div>
+
+                <div className="bg-amber-50/50 dark:bg-amber-950/20 p-2 rounded-xl border border-amber-200 dark:border-amber-900/50">
+                  <label className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold uppercase block truncate">Free Issue</label>
+                  <input 
+                    type="number" 
+                    value={freeIssue} 
+                    onChange={(e) => setFreeIssue(e.target.value)}
+                    className="w-full mt-0.5 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
+                  />
+                </div>
+
+                <div className="bg-rose-50/50 dark:bg-rose-950/20 p-2 rounded-xl border border-rose-200 dark:border-rose-900/50">
+                  <label className="text-[10px] text-rose-700 dark:text-rose-400 font-semibold uppercase block truncate">Damaged</label>
+                  <input 
+                    type="number" 
+                    value={damagedCubes} 
+                    onChange={(e) => setDamagedCubes(e.target.value)}
+                    className="w-full mt-0.5 bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-800 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
+                  />
+                </div>
+
+                <div className="bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                  <span className="text-[10px] text-rose-600 font-semibold uppercase block truncate">Sales</span>
+                  <p className="font-bold text-xs sm:text-sm text-rose-600 dark:text-rose-400 mt-0.5 truncate">
+                    -{reportData.stockDetails.todaysSalesQty.toLocaleString()}
+                  </p>
+                </div>
+
+                <div className="bg-navy-50 dark:bg-navy-950/40 p-2.5 rounded-xl border border-navy-200 dark:border-navy-900/50">
+                  <span className="text-[10px] text-navy-700 dark:text-sky-300 font-bold uppercase block truncate">Closing Bal</span>
+                  <p className="font-bold text-xs sm:text-sm text-navy-700 dark:text-sky-300 mt-0.5 truncate">
+                    {reportData.stockDetails.closingBalance.toLocaleString()}
+                  </p>
+                </div>
               </div>
 
-              <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
-                <span className="text-[10px] text-emerald-600 font-semibold uppercase">Production</span>
-                <p className="font-bold text-sm text-emerald-600 dark:text-emerald-400 mt-1">
-                  +{reportData.stockDetails.todaysProduction.toLocaleString()}
-                </p>
-              </div>
-
-              <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
-                <span className="text-[10px] text-slate-500 uppercase font-semibold">Purchases</span>
-                <p className="font-bold text-sm text-slate-900 dark:text-slate-100 mt-1">
-                  +{reportData.stockDetails.todaysPurchase.toLocaleString()}
-                </p>
-              </div>
-
-
-              <div className="bg-amber-50/50 dark:bg-amber-950/20 p-2.5 rounded-xl border border-amber-200 dark:border-amber-900/50">
-                <label className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold uppercase block">Brine Cubes</label>
-                <input 
-                  type="number" 
-                  value={brineCubes} 
-                  onChange={(e) => setBrineCubes(e.target.value)}
-                  className="w-full mt-1 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded px-2 py-1 text-xs font-bold focus:outline-none"
-                />
-              </div>
-
-              <div className="bg-amber-50/50 dark:bg-amber-950/20 p-2.5 rounded-xl border border-amber-200 dark:border-amber-900/50">
-                <label className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold uppercase block">Free Issue</label>
-                <input 
-                  type="number" 
-                  value={freeIssue} 
-                  onChange={(e) => setFreeIssue(e.target.value)}
-                  className="w-full mt-1 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded px-2 py-1 text-xs font-bold focus:outline-none"
-                />
-              </div>
-
-              <div className="bg-rose-50/50 dark:bg-rose-950/20 p-2.5 rounded-xl border border-rose-200 dark:border-rose-900/50">
-                <label className="text-[10px] text-rose-700 dark:text-rose-400 font-semibold uppercase block">Damaged</label>
-                <input 
-                  type="number" 
-                  value={damagedCubes} 
-                  onChange={(e) => setDamagedCubes(e.target.value)}
-                  className="w-full mt-1 bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-800 rounded px-2 py-1 text-xs font-bold focus:outline-none"
-                />
-              </div>
-
-              <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
-                <span className="text-[10px] text-rose-600 font-semibold uppercase">Today's Sales</span>
-                <p className="font-bold text-sm text-rose-600 dark:text-rose-400 mt-1">
-                  -{reportData.stockDetails.todaysSalesQty.toLocaleString()}
-                </p>
-              </div>
-
-              <div className="bg-navy-50 dark:bg-navy-950/40 p-3 rounded-xl border border-navy-200 dark:border-navy-900/50">
-                <span className="text-[10px] text-navy-700 dark:text-sky-300 font-bold uppercase">Closing Balance</span>
-                <p className="font-bold text-sm text-navy-700 dark:text-sky-300 mt-1">
-                  {reportData.stockDetails.closingBalance.toLocaleString()}
-                </p>
-              </div>
-            </div>
-
-            <div className="pt-2 flex items-center space-x-3">
-              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">PM Production Quantity:</span>
-              <input 
-                type="number"
-                value={pmProductionQty}
-                onChange={(e) => setPmProductionQty(e.target.value)}
-                placeholder="Enter PM batch quantity..."
-                className="w-48 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-medium focus:outline-none"
-              />
-            </div>
-          </div>
-
-          {/* SECTION 02: Income Details */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <div className="flex items-center space-x-2 font-heading font-bold text-sm text-slate-800 dark:text-slate-100">
-                <DollarSign size={18} className="text-emerald-500" />
-                <span>02. INCOME DETAILS</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
-                <span className="text-[10px] text-slate-500 font-semibold uppercase">Cash Sold Qty</span>
-                <p className="font-bold text-sm text-slate-900 dark:text-slate-100 mt-1">
-                  {reportData.incomeDetails.cashSoldQty.toLocaleString()} cubes
-                </p>
-              </div>
-
-              <div className="p-3 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl border border-emerald-200 dark:border-emerald-900/50">
-                <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold uppercase">Sales Cash Received</span>
-                <p className="font-bold text-sm text-emerald-600 dark:text-emerald-400 mt-1">
-                  LKR {reportData.incomeDetails.cashSalesAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </p>
-              </div>
-
-              <div className="p-3 bg-sky-50/50 dark:bg-sky-950/20 rounded-xl border border-sky-200 dark:border-sky-900/50">
-                <span className="text-[10px] text-sky-700 dark:text-sky-400 font-semibold uppercase">Credit Amount Received</span>
-                <p className="font-bold text-sm text-sky-600 dark:text-sky-400 mt-1">
-                  LKR {reportData.incomeDetails.creditAmountReceived.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </p>
-              </div>
-
-              <div className="p-2.5 bg-amber-50/50 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-900/50">
-                <label className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold uppercase block">Other Receipts</label>
+              <div className="pt-2 flex items-center space-x-3">
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">PM Production Quantity:</span>
                 <input 
                   type="number"
-                  value={otherReceipts}
-                  onChange={(e) => setOtherReceipts(e.target.value)}
-                  className="w-full mt-1 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded px-2 py-1 text-xs font-bold focus:outline-none"
+                  value={pmProductionQty}
+                  onChange={(e) => setPmProductionQty(e.target.value)}
+                  placeholder="Enter PM batch quantity..."
+                  className="w-48 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-medium focus:outline-none min-h-[36px]"
                 />
               </div>
+            </div>
 
-              <div className="p-3 bg-emerald-500 text-white rounded-xl shadow-xs">
-                <span className="text-[10px] uppercase font-bold text-emerald-100">Total Income</span>
-                <p className="font-bold text-base mt-1">
-                  LKR {reportData.incomeDetails.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </p>
+            {/* SECTION 02: Income Details - 5-Col Landscape Grid */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+                <div className="flex items-center space-x-2 font-heading font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-100">
+                  <DollarSign size={18} className="text-emerald-500" />
+                  <span>02. INCOME DETAILS</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 landscape:grid-cols-5 gap-2.5 text-xs">
+                <div className="p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                  <span className="text-[10px] text-slate-500 font-semibold uppercase block truncate">Cash Sold Qty</span>
+                  <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 mt-0.5 truncate">
+                    {reportData.incomeDetails.cashSoldQty.toLocaleString()} cubes
+                  </p>
+                </div>
+
+                <div className="p-2.5 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl border border-emerald-200 dark:border-emerald-900/50">
+                  <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold uppercase block truncate">Cash Received</span>
+                  <p className="font-bold text-xs sm:text-sm text-emerald-600 dark:text-emerald-400 mt-0.5 truncate">
+                    LKR {reportData.incomeDetails.cashSalesAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+
+                <div className="p-2.5 bg-sky-50/50 dark:bg-sky-950/20 rounded-xl border border-sky-200 dark:border-sky-900/50">
+                  <span className="text-[10px] text-sky-700 dark:text-sky-400 font-semibold uppercase block truncate">Credit Received</span>
+                  <p className="font-bold text-xs sm:text-sm text-sky-600 dark:text-sky-400 mt-0.5 truncate">
+                    LKR {reportData.incomeDetails.creditAmountReceived.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+
+                <div className="p-2 bg-amber-50/50 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-900/50">
+                  <label className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold uppercase block truncate">Other Receipts</label>
+                  <input 
+                    type="number"
+                    value={otherReceipts}
+                    onChange={(e) => setOtherReceipts(e.target.value)}
+                    className="w-full mt-0.5 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
+                  />
+                </div>
+
+                <div className="p-2.5 bg-emerald-500 text-white rounded-xl shadow-xs">
+                  <span className="text-[10px] uppercase font-bold text-emerald-100 block truncate">Total Income</span>
+                  <p className="font-bold text-xs sm:text-sm mt-0.5 truncate">
+                    LKR {reportData.incomeDetails.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* SECTION 03 & 04: Credit Details Tables Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* SECTION 03 & 04: Credit Details Tables Grid - Side by Side in Landscape */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 landscape:grid-cols-2 gap-4 sm:gap-6">
+
             
             {/* 03. Credit Given Today */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-3">

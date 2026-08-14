@@ -138,56 +138,56 @@ export function ExpenseLedgerPage() {
         </Button>
       </div>
 
-      {/* P&L Executive KPI Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* P&L Executive KPI Summary Cards - 4-Column Landscape Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 landscape:grid-cols-4 gap-2.5 sm:gap-4">
         
         {/* Total Sales Revenue */}
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center space-x-4">
-          <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
-            <TrendingUp size={24} />
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center space-x-3">
+          <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 shrink-0">
+            <TrendingUp size={20} />
           </div>
-          <div>
-            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Gross Sales Revenue</span>
-            <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
+          <div className="min-w-0 flex-1">
+            <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider block truncate">Gross Sales</span>
+            <h3 className="text-sm sm:text-base md:text-lg font-bold text-slate-900 dark:text-slate-100 font-heading truncate">
               LKR {pnlMetrics.totalSalesRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </h3>
           </div>
         </div>
 
         {/* Total Operational Costs */}
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center space-x-4">
-          <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400">
-            <TrendingDown size={24} />
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center space-x-3">
+          <div className="p-2.5 rounded-xl bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 shrink-0">
+            <TrendingDown size={20} />
           </div>
-          <div>
-            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Operational Costs</span>
-            <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
+          <div className="min-w-0 flex-1">
+            <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider block truncate">Total Costs</span>
+            <h3 className="text-sm sm:text-base md:text-lg font-bold text-slate-900 dark:text-slate-100 font-heading truncate">
               LKR {pnlMetrics.totalCosts.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </h3>
           </div>
         </div>
 
         {/* Net Profit */}
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center space-x-4">
-          <div className={`p-3 rounded-xl ${pnlMetrics.netProfit >= 0 ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400' : 'bg-red-50 text-red-600'}`}>
-            <DollarSign size={24} />
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center space-x-3">
+          <div className={`p-2.5 rounded-xl shrink-0 ${pnlMetrics.netProfit >= 0 ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400' : 'bg-red-50 text-red-600'}`}>
+            <DollarSign size={20} />
           </div>
-          <div>
-            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Net Profit</span>
-            <h3 className={`text-xl font-bold font-heading ${pnlMetrics.netProfit >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-600'}`}>
+          <div className="min-w-0 flex-1">
+            <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider block truncate">Net Profit</span>
+            <h3 className={`text-sm sm:text-base md:text-lg font-bold font-heading truncate ${pnlMetrics.netProfit >= 0 ? 'text-blue-600 dark:text-sky-400' : 'text-red-600'}`}>
               LKR {pnlMetrics.netProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </h3>
           </div>
         </div>
 
         {/* Profit Margin % */}
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center space-x-4">
-          <div className="p-3 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400">
-            <PieIcon size={24} />
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center space-x-3">
+          <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 shrink-0">
+            <PieIcon size={20} />
           </div>
-          <div>
-            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Net Profit Margin</span>
-            <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
+          <div className="min-w-0 flex-1">
+            <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider block truncate">Margin</span>
+            <h3 className="text-sm sm:text-base md:text-lg font-bold text-slate-900 dark:text-slate-100 font-heading truncate">
               {pnlMetrics.netProfitMargin}%
             </h3>
           </div>
@@ -195,15 +195,15 @@ export function ExpenseLedgerPage() {
 
       </div>
 
-      {/* P&L Visual Analytics Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* P&L Visual Analytics Section - Side by Side in Landscape */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 landscape:grid-cols-2 gap-4 sm:gap-6">
         
         {/* P&L Comparison Bar Chart */}
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-          <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 font-heading">
+        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+          <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 font-heading">
             P&L Overview (Revenue vs Costs vs Profit)
           </h3>
-          <div className="h-64 w-full">
+          <div className="h-48 sm:h-56 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={pnlChartData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
@@ -221,11 +221,11 @@ export function ExpenseLedgerPage() {
         </div>
 
         {/* Expense Category Distribution Pie Chart */}
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-          <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 font-heading">
-            Operational Cost Breakdown by Category
+        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+          <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 font-heading">
+            Cost Breakdown by Category
           </h3>
-          <div className="h-64 w-full flex items-center justify-center">
+          <div className="h-48 sm:h-56 w-full flex items-center justify-center">
             {categoryPieData.length === 0 ? (
               <p className="text-xs text-slate-400">No expense category data logged yet.</p>
             ) : (
@@ -235,8 +235,8 @@ export function ExpenseLedgerPage() {
                     data={categoryPieData}
                     cx="50%"
                     cy="50%"
-                    innerRadius={55}
-                    outerRadius={80}
+                    innerRadius={45}
+                    outerRadius={70}
                     paddingAngle={5}
                     dataKey="value"
                     label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
@@ -248,6 +248,7 @@ export function ExpenseLedgerPage() {
                   <Tooltip formatter={(value) => `LKR ${Number(value).toLocaleString()}`} />
                 </PieChart>
               </ResponsiveContainer>
+
             )}
           </div>
         </div>
@@ -369,38 +370,54 @@ export function ExpenseLedgerPage() {
         isOpen={isAddExpenseOpen}
         onClose={() => setIsAddExpenseOpen(false)}
         title="Log Operating Expense"
+        size="lg"
       >
-        <form onSubmit={handleAddExpense} className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Expense Category</label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-navy-500"
-            >
-              <option value="electricity">Electricity Power Bill</option>
-              <option value="diesel">Diesel & Fuel</option>
-              <option value="maintenance">Machinery & Plant Maintenance</option>
-              <option value="salaries">Staff Wages & Salaries</option>
-              <option value="water_utilities">Water & Utility Bills</option>
-              <option value="packaging">Packaging Materials</option>
-              <option value="other">Other Operational Costs</option>
-            </select>
+        <form onSubmit={handleAddExpense} className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Expense Category</label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-navy-500 min-h-[38px]"
+              >
+                <option value="electricity">Electricity Power Bill</option>
+                <option value="diesel">Diesel & Fuel</option>
+                <option value="maintenance">Machinery & Plant Maintenance</option>
+                <option value="salaries">Staff Wages & Salaries</option>
+                <option value="water_utilities">Water & Utility Bills</option>
+                <option value="packaging">Packaging Materials</option>
+                <option value="other">Other Operational Costs</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Payment Method</label>
+              <select
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value)}
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-navy-500 min-h-[38px]"
+              >
+                <option value="bank_transfer">Bank Transfer</option>
+                <option value="cash">Cash</option>
+                <option value="cheque">Cheque</option>
+              </select>
+            </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Description <span className="text-red-500">*</span></label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. CEB Industrial Grid Power Bill July"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100"
-            />
-          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Description <span className="text-red-500">*</span></label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. CEB Industrial Grid Power Bill July"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100 min-h-[38px]"
+              />
+            </div>
 
-          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Amount (LKR) <span className="text-red-500">*</span></label>
               <input
@@ -410,25 +427,12 @@ export function ExpenseLedgerPage() {
                 placeholder="e.g. 45000.00"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100"
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-navy-500 text-slate-900 dark:text-slate-100 min-h-[38px]"
               />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Payment Method</label>
-              <select
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-navy-500"
-              >
-                <option value="bank_transfer">Bank Transfer</option>
-                <option value="cash">Cash</option>
-                <option value="cheque">Cheque</option>
-              </select>
             </div>
           </div>
 
-          <div className="flex justify-end space-x-2 pt-4 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100 dark:border-slate-800">
             <Button variant="secondary" onClick={() => setIsAddExpenseOpen(false)}>Cancel</Button>
             <Button variant="primary" type="submit" disabled={isSubmitting}>
               {isSubmitting ? 'Logging...' : 'Confirm & Save Expense'}

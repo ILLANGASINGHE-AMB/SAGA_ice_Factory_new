@@ -195,72 +195,72 @@ export function DebtsPage() {
   return (
     <div className="space-y-6">
       
-      {/* --- Debt Aging Summary Cards --- */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* --- Debt Aging Summary Cards - 4-Column Landscape Grid --- */}
+      <div className="grid grid-cols-2 md:grid-cols-4 landscape:grid-cols-4 gap-2.5 sm:gap-4">
         <div 
           onClick={() => setAgingFilter(agingFilter === '0-30' ? 'all' : '0-30')}
-          className={`p-4 rounded-2xl border cursor-pointer transition-all ${
+          className={`p-3.5 sm:p-4 rounded-2xl border cursor-pointer transition-all ${
             agingFilter === '0-30' 
               ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30 shadow-md ring-2 ring-emerald-500/20' 
               : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-300'
           }`}
         >
-          <div className="flex justify-between items-center text-xs text-slate-500 font-semibold mb-1">
-            <span>0 - 30 Days (Current)</span>
-            <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 text-[10px]">Normal</span>
+          <div className="flex justify-between items-center text-[11px] sm:text-xs text-slate-500 font-semibold mb-1">
+            <span className="truncate">0-30 Days (Current)</span>
+            <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 text-[10px]">Normal</span>
           </div>
-          <p className="text-xl font-extrabold font-heading text-emerald-600 dark:text-emerald-400">
+          <p className="text-sm sm:text-base md:text-lg font-extrabold font-heading text-emerald-600 dark:text-emerald-400 truncate">
             LKR {agingSummary.b0_30.toLocaleString(undefined, { minimumFractionDigits: 2 })}
           </p>
         </div>
 
         <div 
           onClick={() => setAgingFilter(agingFilter === '31-60' ? 'all' : '31-60')}
-          className={`p-4 rounded-2xl border cursor-pointer transition-all ${
+          className={`p-3.5 sm:p-4 rounded-2xl border cursor-pointer transition-all ${
             agingFilter === '31-60' 
               ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/30 shadow-md ring-2 ring-amber-500/20' 
               : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-amber-300'
           }`}
         >
-          <div className="flex justify-between items-center text-xs text-slate-500 font-semibold mb-1">
-            <span>31 - 60 Days</span>
-            <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 text-[10px]">Watchlist</span>
+          <div className="flex justify-between items-center text-[11px] sm:text-xs text-slate-500 font-semibold mb-1">
+            <span className="truncate">31-60 Days</span>
+            <span className="px-1.5 py-0.2 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 text-[10px]">Watch</span>
           </div>
-          <p className="text-xl font-extrabold font-heading text-amber-600 dark:text-amber-400">
+          <p className="text-sm sm:text-base md:text-lg font-extrabold font-heading text-amber-600 dark:text-amber-400 truncate">
             LKR {agingSummary.b31_60.toLocaleString(undefined, { minimumFractionDigits: 2 })}
           </p>
         </div>
 
         <div 
           onClick={() => setAgingFilter(agingFilter === '61-90' ? 'all' : '61-90')}
-          className={`p-4 rounded-2xl border cursor-pointer transition-all ${
+          className={`p-3.5 sm:p-4 rounded-2xl border cursor-pointer transition-all ${
             agingFilter === '61-90' 
               ? 'border-orange-500 bg-orange-50/50 dark:bg-orange-950/30 shadow-md ring-2 ring-orange-500/20' 
               : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-orange-300'
           }`}
         >
-          <div className="flex justify-between items-center text-xs text-slate-500 font-semibold mb-1">
-            <span>61 - 90 Days</span>
-            <span className="px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-400 text-[10px]">Overdue</span>
+          <div className="flex justify-between items-center text-[11px] sm:text-xs text-slate-500 font-semibold mb-1">
+            <span className="truncate">61-90 Days</span>
+            <span className="px-1.5 py-0.2 rounded-full bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-400 text-[10px]">Overdue</span>
           </div>
-          <p className="text-xl font-extrabold font-heading text-orange-600 dark:text-orange-400">
+          <p className="text-sm sm:text-base md:text-lg font-extrabold font-heading text-orange-600 dark:text-orange-400 truncate">
             LKR {agingSummary.b61_90.toLocaleString(undefined, { minimumFractionDigits: 2 })}
           </p>
         </div>
 
         <div 
           onClick={() => setAgingFilter(agingFilter === '90+' ? 'all' : '90+')}
-          className={`p-4 rounded-2xl border cursor-pointer transition-all ${
+          className={`p-3.5 sm:p-4 rounded-2xl border cursor-pointer transition-all ${
             agingFilter === '90+' 
               ? 'border-rose-500 bg-rose-50/50 dark:bg-rose-950/30 shadow-md ring-2 ring-rose-500/20' 
               : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-rose-300'
           }`}
         >
-          <div className="flex justify-between items-center text-xs text-slate-500 font-semibold mb-1">
-            <span>90+ Days (Critical)</span>
-            <span className="px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 text-[10px]">High Risk</span>
+          <div className="flex justify-between items-center text-[11px] sm:text-xs text-slate-500 font-semibold mb-1">
+            <span className="truncate">90+ Days</span>
+            <span className="px-1.5 py-0.2 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 text-[10px]">Critical</span>
           </div>
-          <p className="text-xl font-extrabold font-heading text-rose-600 dark:text-rose-400">
+          <p className="text-sm sm:text-base md:text-lg font-extrabold font-heading text-rose-600 dark:text-rose-400 truncate">
             LKR {agingSummary.b90_plus.toLocaleString(undefined, { minimumFractionDigits: 2 })}
           </p>
         </div>

@@ -93,3 +93,39 @@ h1, h2, h3, h4, h5, h6 {
 .dark .glow-amber {
   box-shadow: 0 0 25px -5px rgba(245, 158, 11, 0.15);
 }
+
+/* Tablet & Mobile Touch Enhancements */
+button, a, input, select, textarea {
+  touch-action: manipulation;
+}
+
+/* Prevent text zoom on iOS input focus */
+input, select, textarea {
+  font-size: 16px;
+}
+@media (min-width: 640px) {
+  input, select, textarea {
+    font-size: var(--text-base-size, 14px);
+  }
+}
+
+/* Landscape Viewport Optimization Helpers */
+@media (orientation: landscape) and (max-height: 700px) {
+  .landscape-compact-header {
+    height: 3rem !important;
+  }
+  .landscape-compact-padding {
+    padding-top: 0.75rem !important;
+    padding-bottom: 0.75rem !important;
+  }
+  .landscape-modal-body {
+    max-height: 65vh !important;
+  }
+}
+
+/* Smooth Touch Scrolling on Tables */
+.touch-scroll {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+

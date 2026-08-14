@@ -172,26 +172,26 @@ export function CustomersPage() {
         emptyMessage="No customer records match your filter criteria."
         renderRow={(customer) => (
           <tr key={customer.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
-            <td className="px-6 py-4 font-mono font-medium text-navy-600 dark:text-navy-400">{customer.customer_code}</td>
-            <td className="px-6 py-4 font-semibold text-slate-900 dark:text-slate-100">{customer.name}</td>
-            <td className="px-6 py-4 font-mono text-slate-700 dark:text-slate-300">{customer.whatsapp_number}</td>
-            <td className="px-6 py-4 text-xs max-w-xs truncate">{customer.address || <span className="text-slate-400">—</span>}</td>
-            <td className="px-6 py-4 text-xs font-mono">{customer.email || <span className="text-slate-400">—</span>}</td>
-            <td className="px-6 py-4">
+            <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono font-medium text-navy-600 dark:text-navy-400">{customer.customer_code}</td>
+            <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-semibold text-slate-900 dark:text-slate-100">{customer.name}</td>
+            <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono text-slate-700 dark:text-slate-300">{customer.whatsapp_number}</td>
+            <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-xs max-w-xs truncate">{customer.address || <span className="text-slate-400">—</span>}</td>
+            <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-xs font-mono">{customer.email || <span className="text-slate-400">—</span>}</td>
+            <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5">
               <div className="flex items-center space-x-2">
                 {/* Edit & Delete Action Buttons (Admin only, user has View only or hidden) */}
                 {isAdmin ? (
                   <>
                     <button
                       onClick={() => handleOpenEdit(customer)}
-                      className="p-1 rounded-lg text-slate-500 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[32px] min-h-[32px] flex items-center justify-center cursor-pointer"
                       title="Edit Customer"
                     >
                       <Edit2 size={15} />
                     </button>
                     <button
                       onClick={() => handleOpenDelete(customer.id)}
-                      className="p-1 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition"
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition min-w-[32px] min-h-[32px] flex items-center justify-center cursor-pointer"
                       title="Delete Customer"
                     >
                       <Trash2 size={15} />
@@ -213,49 +213,63 @@ export function CustomersPage() {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         title={editingCustomer ? "Edit Customer Record" : "Register New Customer"}
+        size="lg"
       >
-        <form onSubmit={handleSubmit(onSubmitForm)} className="space-y-4">
-          <Input
-            label="Full Name"
-            name="name"
-            required
-            placeholder="e.g. Nimal Perera"
-            error={errors.name}
-            {...register('name')}
-          />
+        <form onSubmit={handleSubmit(onSubmitForm)} className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="Full Name"
+              name="name"
+              required
+              placeholder="e.g. Nimal Perera"
+              error={errors.name}
+              {...register('name')}
+            />
 
-          <Input
-            label="WhatsApp Number (10 Digits)"
-            name="whatsapp_number"
-            required
-            placeholder="e.g. 0771234567"
-            error={errors.whatsapp_number}
-            {...register('whatsapp_number')}
-          />
+            <Input
+              label="WhatsApp Number (10 Digits)"
+              name="whatsapp_number"
+              required
+              placeholder="e.g. 0771234567"
+              error={errors.whatsapp_number}
+              {...register('whatsapp_number')}
+            />
+          </div>
 
-          <Input
-            label="Email Address"
-            name="email"
-            type="email"
-            placeholder="e.g. nimal@example.com"
-            error={errors.email}
-            {...register('email')}
-          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="Email Address"
+              name="email"
+              type="email"
+              placeholder="e.g. nimal@example.com"
+              error={errors.email}
+              {...register('email')}
+            />
 
-          <TextArea
-            label="Residential/Business Address"
-            name="address"
-            placeholder="e.g. 45 Galle Rd, Colombo 03"
-            error={errors.address}
-            {...register('address')}
-          />
+            <Input
+              label="Residential/Business Address"
+              name="address"
+              placeholder="e.g. 45 Galle Rd, Colombo 03"
+              error={errors.address}
+              {...register('address')}
+            />
+          </div>
 
-          <div className="flex justify-end space-x-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-            <Button variant="secondary" onClick={() => setModalOpen(false)} disabled={actionLoading}>
+          <div className="flex justify-end space-x-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <Button 
+              type="button" 
+              variant="secondary" 
+              onClick={() => setModalOpen(false)}
+              disabled={actionLoading}
+            >
               Cancel
             </Button>
-            <Button variant="primary" type="submit" isLoading={actionLoading}>
-              {editingCustomer ? "Save Changes" : "Register Customer"}
+            <Button 
+              type="submit" 
+              variant="primary" 
+              isLoading={actionLoading}
+            >
+              {editingCustomer ? 'Update Profile' : 'Save Customer'}
             </Button>
           </div>
         </form>

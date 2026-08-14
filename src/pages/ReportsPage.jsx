@@ -479,122 +479,122 @@ export function ReportsPage() {
   };
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 xl:grid-cols-3 landscape:grid-cols-3 gap-4 sm:gap-6">
       
       {/* 1. Selector Section */}
-      <div className="space-y-6">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 space-y-4">
-          <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800 pb-3">
+      <div className="space-y-4 sm:space-y-6">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5 space-y-3">
+          <h3 className="text-sm sm:text-base font-bold font-heading text-slate-800 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800 pb-2.5">
             Compile Report
           </h3>
           
-          <div className="space-y-3">
+          <div className="space-y-2 sm:space-y-2.5">
             <button
               onClick={() => { setActiveReport('daily_manager'); setPreviewData(null); }}
-              className={`w-full text-left p-4 rounded-xl border transition flex items-center justify-between ${
+              className={`w-full text-left p-3 sm:p-3.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
                 activeReport === 'daily_manager'
                   ? 'border-navy-500 bg-navy-50/50 dark:bg-navy-950/20 text-navy-800 dark:text-navy-300 font-semibold'
                   : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
               }`}
             >
-              <div className="flex items-center space-x-3">
-                <ClipboardCheck size={18} className="text-emerald-500" />
-                <span className="text-sm font-bold text-slate-900 dark:text-slate-100">Daily Manager Report</span>
+              <div className="flex items-center space-x-2.5 sm:space-x-3">
+                <ClipboardCheck size={18} className="text-emerald-500 shrink-0" />
+                <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">Daily Manager Report</span>
               </div>
             </button>
 
             <button
               onClick={() => { setActiveReport('weekly'); setPreviewData(null); }}
-              className={`w-full text-left p-4 rounded-xl border transition flex items-center justify-between ${
+              className={`w-full text-left p-3 sm:p-3.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
                 activeReport === 'weekly'
                   ? 'border-navy-500 bg-navy-50/50 dark:bg-navy-950/20 text-navy-800 dark:text-navy-300 font-semibold'
                   : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
               }`}
             >
-
-              <div className="flex items-center space-x-3">
-                <Calendar size={18} />
-                <span className="text-sm">Weekly Report</span>
+              <div className="flex items-center space-x-2.5 sm:space-x-3">
+                <Calendar size={18} className="shrink-0" />
+                <span className="text-xs sm:text-sm">Weekly Report</span>
               </div>
             </button>
 
             <button
               onClick={() => { setActiveReport('monthly'); setPreviewData(null); }}
-              className={`w-full text-left p-4 rounded-xl border transition flex items-center justify-between ${
+              className={`w-full text-left p-3 sm:p-3.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
                 activeReport === 'monthly'
                   ? 'border-navy-500 bg-navy-50/50 dark:bg-navy-950/20 text-navy-800 dark:text-navy-300 font-semibold'
                   : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
               }`}
             >
-              <div className="flex items-center space-x-3">
-                <Calendar size={18} />
-                <span className="text-sm">Monthly Report</span>
+              <div className="flex items-center space-x-2.5 sm:space-x-3">
+                <Calendar size={18} className="shrink-0" />
+                <span className="text-xs sm:text-sm">Monthly Report</span>
               </div>
             </button>
 
             <button
               onClick={() => { setActiveReport('full'); setPreviewData(null); }}
-              className={`w-full text-left p-4 rounded-xl border transition flex items-center justify-between ${
+              className={`w-full text-left p-3 sm:p-3.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
                 activeReport === 'full'
                   ? 'border-navy-500 bg-navy-50/50 dark:bg-navy-950/20 text-navy-800 dark:text-navy-300 font-semibold'
                   : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
               }`}
             >
-              <div className="flex items-center space-x-3">
-                <Calendar size={18} />
-                <span className="text-sm">Full Report (Date Range)</span>
+              <div className="flex items-center space-x-2.5 sm:space-x-3">
+                <Calendar size={18} className="shrink-0" />
+                <span className="text-xs sm:text-sm">Full Report (Date Range)</span>
               </div>
             </button>
 
             <button
               onClick={() => { setActiveReport('debtors'); setPreviewData(null); }}
-              className={`w-full text-left p-4 rounded-xl border transition flex items-center justify-between ${
+              className={`w-full text-left p-3 sm:p-3.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
                 activeReport === 'debtors'
                   ? 'border-navy-500 bg-navy-50/50 dark:bg-navy-950/20 text-navy-800 dark:text-navy-300 font-semibold'
                   : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
               }`}
             >
-              <div className="flex items-center space-x-3">
-                <CreditCard size={18} />
-                <span className="text-sm">Debtors Report</span>
+              <div className="flex items-center space-x-2.5 sm:space-x-3">
+                <CreditCard size={18} className="shrink-0" />
+                <span className="text-xs sm:text-sm">Debtors Report</span>
               </div>
             </button>
 
             <button
               onClick={() => { setActiveReport('customers'); setPreviewData(null); }}
-              className={`w-full text-left p-4 rounded-xl border transition flex items-center justify-between ${
+              className={`w-full text-left p-3 sm:p-3.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
                 activeReport === 'customers'
                   ? 'border-navy-500 bg-navy-50/50 dark:bg-navy-950/20 text-navy-800 dark:text-navy-300 font-semibold'
                   : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
               }`}
             >
-              <div className="flex items-center space-x-3">
-                <UserCheck size={18} />
-                <span className="text-sm">Customer Details Report</span>
+              <div className="flex items-center space-x-2.5 sm:space-x-3">
+                <UserCheck size={18} className="shrink-0" />
+                <span className="text-xs sm:text-sm">Customer Details Report</span>
               </div>
             </button>
 
             <button
               onClick={() => { setActiveReport('custom'); setPreviewData(null); }}
-              className={`w-full text-left p-4 rounded-xl border transition flex items-center justify-between ${
+              className={`w-full text-left p-3 sm:p-3.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
                 activeReport === 'custom'
                   ? 'border-navy-500 bg-navy-50/50 dark:bg-navy-950/20 text-navy-800 dark:text-navy-300 font-semibold'
                   : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
               }`}
             >
-              <div className="flex items-center space-x-3">
-                <SlidersHorizontal size={18} className="text-navy-500" />
-                <span className="text-sm font-semibold">Customized Report</span>
+              <div className="flex items-center space-x-2.5 sm:space-x-3">
+                <SlidersHorizontal size={18} className="text-navy-500 shrink-0" />
+                <span className="text-xs sm:text-sm font-semibold">Customized Report</span>
               </div>
             </button>
           </div>
         </div>
 
         {/* Date parameters card depending on type */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 space-y-4">
-          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5 space-y-3">
+          <h3 className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200">
             Set Parameters
           </h3>
+
           
           <div className="space-y-4">
             {activeReport === 'weekly' && (

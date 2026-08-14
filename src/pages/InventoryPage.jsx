@@ -166,15 +166,14 @@ export function InventoryPage() {
     <div className="space-y-6">
       
       {/* Top Bar with History Trigger */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs">
         <div>
-          <h2 className="text-xl font-bold font-heading text-slate-900 dark:text-slate-100">
+          <h2 className="text-base sm:text-lg font-bold font-heading text-slate-900 dark:text-slate-100">
             Inventory & Stock Control
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             Real-time stock balances for Production, Purchases, and Brine Cubes.
           </p>
-
         </div>
 
         <Button 
@@ -187,46 +186,45 @@ export function InventoryPage() {
         </Button>
       </div>
 
-      {/* Stock Cards Layout */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* Stock Cards Layout - 3-Column Landscape Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 landscape:grid-cols-3 gap-3 sm:gap-5">
         {inventory.map((item) => {
           const isWst = item.type === 'waste';
           
           return (
             <div 
               key={item.id} 
-              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 flex flex-col justify-between hover:shadow-md transition-shadow relative overflow-hidden"
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5 flex flex-col justify-between hover:shadow-md transition-shadow relative overflow-hidden"
             >
               {/* Badge Overlay */}
-              <div className="absolute top-4 right-4">
+              <div className="absolute top-3.5 right-3.5">
                 <Badge type={item.code.split('-')[0]} />
               </div>
 
               {/* Card Body */}
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div>
                   <span className="text-[10px] text-slate-400 font-bold tracking-wider uppercase">
                     {item.code}
                   </span>
-                  <h3 className="text-lg font-bold font-heading text-slate-800 dark:text-slate-100 capitalize mt-0.5">
+                  <h3 className="text-sm sm:text-base font-bold font-heading text-slate-800 dark:text-slate-100 capitalize mt-0.5">
                     {item.type === 'manufactured' ? 'Production' : item.type === 'resell' ? 'Purchases' : 'Brine'} Cubes
                   </h3>
-
                 </div>
 
                 <div className="py-2 border-y border-slate-100 dark:border-slate-800 flex justify-between items-baseline">
                   <div>
-                    <span className="text-xs text-slate-400 block mb-1">Available Qty</span>
-                    <span className="text-3xl font-extrabold font-heading text-slate-900 dark:text-slate-50">
+                    <span className="text-[11px] text-slate-400 block mb-0.5">Available Qty</span>
+                    <span className="text-xl sm:text-2xl font-extrabold font-heading text-slate-900 dark:text-slate-50">
                       {item.quantity.toLocaleString()}
                     </span>
                   </div>
                   
                   {!isWst && (
                     <div className="text-right">
-                      <span className="text-xs text-slate-400 block mb-1">Price per Cube</span>
+                      <span className="text-[11px] text-slate-400 block mb-0.5">Price / Cube</span>
                       {item.price_per_cube !== null && item.price_per_cube !== undefined ? (
-                        <span className="text-lg font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                        <span className="text-sm sm:text-base font-bold font-mono text-emerald-600 dark:text-emerald-400">
                           LKR {item.price_per_cube.toFixed(2)}
                         </span>
                       ) : (
@@ -240,7 +238,7 @@ export function InventoryPage() {
               </div>
 
               {/* Card Actions */}
-              <div className="mt-6 grid grid-cols-3 gap-2">
+              <div className="mt-4 grid grid-cols-3 gap-1.5 sm:gap-2">
                 {/* Add button visible to all */}
                 <Button 
                   variant="secondary" 
@@ -302,9 +300,7 @@ export function InventoryPage() {
                     </Button>
                   )
                 ) : (
-                  <div className="bg-slate-50 dark:bg-slate-800/20 border border-slate-100 dark:border-slate-800 rounded-lg flex items-center justify-center text-[10px] text-slate-400 font-semibold uppercase">
-                    No Price
-                  </div>
+                  <div />
                 )}
               </div>
             </div>

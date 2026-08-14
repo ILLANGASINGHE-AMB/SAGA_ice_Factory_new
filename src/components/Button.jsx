@@ -11,19 +11,19 @@ export function Button({
   onClick,
   ...props
 }) {
-  const baseStyle = 'inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-navy-500 disabled:opacity-50 disabled:cursor-not-allowed';
+  const baseStyle = 'inline-flex items-center justify-center font-medium rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-navy-500 disabled:opacity-50 disabled:cursor-not-allowed select-none active:scale-[0.98] cursor-pointer';
   
   const variants = {
-    primary: 'bg-navy-600 hover:bg-navy-700 text-white shadow-sm shadow-navy-200 dark:shadow-none focus:ring-navy-500',
-    secondary: 'bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200',
-    danger: 'bg-red-600 hover:bg-red-700 text-white shadow-sm focus:ring-red-500',
-    ghost: 'bg-transparent hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-700 dark:text-slate-300 focus:ring-slate-500'
+    primary: 'bg-navy-600 hover:bg-navy-700 active:bg-navy-800 text-white shadow-sm shadow-navy-200 dark:shadow-none focus:ring-navy-500',
+    secondary: 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700',
+    danger: 'bg-red-600 hover:bg-red-700 active:bg-red-800 text-white shadow-sm focus:ring-red-500',
+    ghost: 'bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 focus:ring-slate-500'
   };
 
   const sizes = {
-    sm: 'px-3 py-1.5 text-xs',
-    md: 'px-4 py-2 text-sm',
-    lg: 'px-5 py-2.5 text-base'
+    sm: 'px-3 py-1.5 text-xs min-h-[36px]',
+    md: 'px-4 py-2 text-xs sm:text-sm min-h-[40px]',
+    lg: 'px-5 py-2.5 text-sm sm:text-base min-h-[44px]'
   };
 
   return (
@@ -46,3 +46,4 @@ export function Button({
     </button>
   );
 }
+
