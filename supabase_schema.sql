@@ -334,6 +334,22 @@ $$ language plpgsql security definer;
 -- when the caller is an admin (Key Business Rule: "price per cube editable by
 -- admin only"). This closes the gap where a non-admin (or a direct RPC call)
 -- could previously submit an arbitrary price_per_cube and have it accepted.
+--
+-- CASH-TO-OLD-DEBT OFFSET: when this is a 'cash' order and the customer has
+-- any pre-existing outstanding debt(s), the incoming cash is first applied
+-- FIFO (oldest debt first) to reduce that old debt before it counts toward
+-- this sale. Whatever portion of THIS sale's own cost isn't covered by
+-- whatever cash is left over becomes a new debt for this sale (and the sale
+-- is recorded as payment_type='debt' in that case, since only part or none
+-- of its own price was actually paid at time of purchase). A 'debt' (credit)
+-- order is unaffected by this and always creates its own independent debt,
+-- exactly as before — this behavior only triggers on cash payments.
+--
+-- Example: customer owes 50,000 (old debt). Places a new 25,000 cash order.
+-- The 25,000 cash is applied to the old debt first -> old debt drops to
+-- 25,000. Nothing is left to cover the new order's own 25,000 cost, so a
+-- fresh 25,000 debt is created for THIS sale (dated today, ages independently
+-- of the old one).
 create or replace function public.place_order_transaction(
   p_customer_id bigint,
   p_cube_type text,
@@ -353,6 +369,16 @@ declare
   v_sale_id bigint;
   v_debt_id bigint := null;
   v_now timestamp with time zone := timezone('utc'::text, now());
+  v_final_payment_type text := p_payment_type;
+  v_cash_remaining numeric(10, 2);
+  v_applied_to_old_debt numeric(10, 2) := 0;
+  v_old_debt record;
+  v_apply_amt numeric(10, 2);
+  v_old_new_remaining numeric(10, 2);
+  v_old_new_status text;
+  v_settlement_code text;
+  v_sale_paid_portion numeric(10, 2);
+  v_sale_shortfall numeric(10, 2) := 0;
 begin
   -- Validate inputs
   if p_customer_id is null then raise exception 'Customer is required'; end if;
@@ -391,27 +417,78 @@ begin
   -- 3. Atomic sale code generation
   v_sale_code := public.get_next_code('sale', 'S');
   v_total_amount := v_final_price * p_quantity;
+  v_sale_paid_portion := v_total_amount;
 
-  -- 4. Create sale record
+  -- 4. Cash-to-old-debt FIFO offset (cash orders only)
+  if p_payment_type = 'cash' then
+    v_cash_remaining := v_total_amount;
+
+    for v_old_debt in
+      select id, remaining_amount
+      from public.debts
+      where customer_id = p_customer_id
+        and status in ('pending', 'partial')
+      order by created_at asc
+      for update
+    loop
+      exit when v_cash_remaining <= 0;
+
+      v_apply_amt := least(v_cash_remaining, v_old_debt.remaining_amount);
+      v_old_new_remaining := v_old_debt.remaining_amount - v_apply_amt;
+      v_old_new_status := case when v_old_new_remaining <= 0 then 'settled' else 'partial' end;
+
+      update public.debts
+      set paid_amount = paid_amount + v_apply_amt,
+          remaining_amount = v_old_new_remaining,
+          status = v_old_new_status
+      where id = v_old_debt.id;
+
+      v_settlement_code := public.get_next_code('settlement', 'D');
+      insert into public.debt_settlements (debt_id, customer_id, amount_paid, settlement_date, created_by)
+      values (v_old_debt.id, p_customer_id, v_apply_amt, v_now, p_created_by || ' (auto-applied from sale ' || v_sale_code || ')');
+
+      v_applied_to_old_debt := v_applied_to_old_debt + v_apply_amt;
+      v_cash_remaining := v_cash_remaining - v_apply_amt;
+    end loop;
+
+    v_sale_paid_portion := v_cash_remaining;
+    v_sale_shortfall := v_total_amount - v_cash_remaining;
+
+    if v_sale_shortfall > 0 then
+      v_final_payment_type := 'debt';
+    end if;
+  end if;
+
+  -- 5. Create sale record (payment_type reflects the actual outcome)
   insert into public.sales (
     sale_code, customer_id, cube_type, quantity, price_per_cube, total_amount, payment_type, sale_date, created_by
   ) values (
-    v_sale_code, p_customer_id, p_cube_type, p_quantity, v_final_price, v_total_amount, p_payment_type, v_now, p_created_by
+    v_sale_code, p_customer_id, p_cube_type, p_quantity, v_final_price, v_total_amount, v_final_payment_type, v_now, p_created_by
   ) returning id into v_sale_id;
 
-  -- 5. Record inventory audit log
+  -- 6. Record inventory audit log
   insert into public.inventory_transactions (
     inventory_id, transaction_type, quantity_change, previous_quantity, new_quantity, reference_code, created_by
   ) values (
     v_item_id, 'sale_deduction', -p_quantity, v_current_qty, v_new_qty, v_sale_code, p_created_by
   );
 
-  -- 6. Insert debt record if credit sale
+  -- 7. Create a debt for this sale if applicable
   if p_payment_type = 'debt' then
+    -- Original behavior: a plain credit order, no cash involved at all.
     insert into public.debts (
       sale_id, customer_id, total_amount, paid_amount, remaining_amount, status, created_at
     ) values (
       v_sale_id, p_customer_id, v_total_amount, 0, v_total_amount, 'pending', v_now
+    ) returning id into v_debt_id;
+  elsif v_sale_shortfall > 0 then
+    -- Cash order whose payment was (fully or partly) redirected to older
+    -- debt, leaving this sale itself partly or fully unpaid.
+    insert into public.debts (
+      sale_id, customer_id, total_amount, paid_amount, remaining_amount, status, created_at
+    ) values (
+      v_sale_id, p_customer_id, v_total_amount, v_sale_paid_portion, v_sale_shortfall,
+      case when v_sale_paid_portion <= 0 then 'pending' else 'partial' end, v_now
     ) returning id into v_debt_id;
   end if;
 
@@ -423,9 +500,11 @@ begin
     'quantity', p_quantity,
     'price_per_cube', v_final_price,
     'total_amount', v_total_amount,
-    'payment_type', p_payment_type,
+    'payment_type', v_final_payment_type,
     'sale_date', v_now,
-    'debt_id', v_debt_id
+    'debt_id', v_debt_id,
+    'applied_to_old_debt', v_applied_to_old_debt,
+    'new_debt_amount', v_sale_shortfall
   );
 end;
 $$ language plpgsql security definer;

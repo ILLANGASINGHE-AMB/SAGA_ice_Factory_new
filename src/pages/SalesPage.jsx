@@ -193,6 +193,17 @@ export function SalesPage() {
       const billDoc = generateBillPDF(sale, settings);
       billDoc.save(`${sale.sale_code}_invoice.pdf`);
 
+      // A 'cash' order can come back as 'debt' if this customer had older
+      // outstanding debt — their cash was applied to that first, so it's
+      // important the operator sees this rather than assuming the sale was
+      // paid in full as originally selected.
+      if (sale.appliedToOldDebt > 0) {
+        toast.success(
+          `LKR ${sale.appliedToOldDebt.toLocaleString()} from this payment was applied to ${sale.customer?.name || 'the customer'}'s older debt.` +
+          (sale.newDebtAmount > 0 ? ` Remaining LKR ${sale.newDebtAmount.toLocaleString()} of this order is now on credit.` : '')
+        );
+      }
+
       toast.success(`Order placed successfully! Invoiced: ${sale.sale_code}`);
       setPlacedSaleRecord(sale);
       setWizardOpen(false);

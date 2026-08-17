@@ -70,6 +70,11 @@ export function useSales() {
     let sale_date = new Date().toISOString();
     let debtId = null;
     let saleId = null;
+    // Populated only when a 'cash' order's payment gets (fully or partly)
+    // redirected to pay down the customer's older outstanding debt — see the
+    // cash-to-old-debt offset logic in place_order_transaction.
+    let appliedToOldDebt = 0;
+    let newDebtAmount = 0;
 
     const { data: rpcData, error: rpcErr } = await supabase.rpc('place_order_transaction', {
       p_customer_id: customer_id,
@@ -87,6 +92,13 @@ export function useSales() {
       total_amount = rpcData.total_amount;
       sale_date = rpcData.sale_date;
       debtId = rpcData.debt_id;
+      appliedToOldDebt = Number(rpcData.applied_to_old_debt) || 0;
+      newDebtAmount = Number(rpcData.new_debt_amount) || 0;
+      // The RPC may have changed this from what was requested — a 'cash'
+      // order whose payment got redirected to older debt is recorded as
+      // 'debt' since part or all of its own cost went unpaid. The bill and
+      // returned record must reflect what actually happened.
+      payment_type = rpcData.payment_type;
       // Reflect the server-enforced price (may differ from what was
       // submitted if a non-admin's cached inventory price was stale) so the
       // generated bill always matches what was actually charged.
@@ -98,6 +110,12 @@ export function useSales() {
       // path can double-sell stock under concurrent orders (two sales both
       // reading the same quantity before either write lands). Safer to block
       // the sale and ask the operator to retry.
+      //
+      // NOTE: this fallback does NOT replicate the cash-to-old-debt FIFO
+      // offset (see place_order_transaction) — multi-row debt locking and
+      // settlement bookkeeping without a real DB transaction is not safe to
+      // approximate in JS. A plain 'cash' order placed via this fallback
+      // stays a plain cash sale even if the customer has older debt.
       const { error: deductErr } = await supabase.rpc('deduct_inventory_stock_by_type', {
         p_cube_type: cube_type,
         p_amount: quantity
@@ -239,7 +257,9 @@ export function useSales() {
       sale_date,
       created_by,
       customer,
-      debtId
+      debtId,
+      appliedToOldDebt,
+      newDebtAmount
     };
   };
 
