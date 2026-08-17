@@ -70,8 +70,14 @@ export function InventoryPage() {
       toast.error("Please enter a valid positive quantity");
       return;
     }
-    if (qty > selectedItem.quantity) {
-      toast.error(`Cannot remove more than available stock (${selectedItem.quantity})`);
+    // Re-derive from the live inventory list rather than the snapshot taken
+    // when the modal opened — another operator may have changed stock while
+    // this modal was open. The server-side RPC re-validates under lock
+    // regardless, but checking against current data here avoids a confusing
+    // "it let me try, then the server said no" round trip.
+    const liveItem = inventory.find(i => i.id === selectedItem.id) || selectedItem;
+    if (qty > liveItem.quantity) {
+      toast.error(`Cannot remove more than available stock (${liveItem.quantity})`);
       return;
     }
 
@@ -90,8 +96,8 @@ export function InventoryPage() {
   const handleEditPrice = async (e) => {
     e.preventDefault();
     const price = parseFloat(priceInput);
-    if (isNaN(price) || price < 0) {
-      toast.error("Please enter a valid price");
+    if (isNaN(price) || price <= 0) {
+      toast.error("Please enter a price greater than zero");
       return;
     }
 

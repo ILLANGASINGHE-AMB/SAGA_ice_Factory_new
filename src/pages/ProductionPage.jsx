@@ -462,7 +462,7 @@ export function ProductionPage() {
                   </button>
                   {equip.status !== 'operational' && (
                     <button
-                      onClick={() => updateEquipmentStatus(equip.id, 'operational', 'Marked operational by user')}
+                      onClick={() => updateEquipmentStatus(equip.id, 'operational', 'Marked operational by user').catch(err => toast.error(err.message || "Failed to update equipment status"))}
                       className="px-2.5 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition min-h-[32px] cursor-pointer"
                       title="Set to Operational"
                     >

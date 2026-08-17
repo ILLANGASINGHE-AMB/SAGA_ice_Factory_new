@@ -254,6 +254,43 @@ begin
 end;
 $$ language plpgsql security definer;
 
+-- Atomic Inventory Add Stock (By Cube Type)
+-- Row-locked mirror of deduct_inventory_stock_by_type, used wherever stock is
+-- added by cube type rather than by a known inventory row id (e.g. production
+-- batches crediting Manufactured Cubes). Prevents the lost-update race where
+-- two concurrent adds both read the same starting quantity.
+create or replace function public.add_inventory_stock_by_type(p_cube_type text, p_amount integer, p_reference_code text default 'STOCK_ADD', p_created_by text default 'Operator')
+returns void as $$
+declare
+  v_item_id bigint;
+  v_current_qty integer;
+  v_new_qty integer;
+begin
+  if p_amount <= 0 then
+    raise exception 'Amount must be a positive integer';
+  end if;
+
+  select id, quantity into v_item_id, v_current_qty
+  from public.inventory
+  where type = p_cube_type
+  for update;
+
+  if not found then
+    raise exception 'Inventory item for % not found', p_cube_type;
+  end if;
+
+  v_new_qty := v_current_qty + p_amount;
+
+  update public.inventory
+  set quantity = v_new_qty,
+      updated_at = timezone('utc'::text, now())
+  where id = v_item_id;
+
+  insert into public.inventory_transactions (inventory_id, transaction_type, quantity_change, previous_quantity, new_quantity, reference_code, created_by)
+  values (v_item_id, 'add', p_amount, v_current_qty, v_new_qty, p_reference_code, p_created_by);
+end;
+$$ language plpgsql security definer;
+
 -- Atomic Inventory Deduct Stock (By Cube Type)
 create or replace function public.deduct_inventory_stock_by_type(p_cube_type text, p_amount integer, p_created_by text default 'Operator')
 returns void as $$
@@ -292,6 +329,11 @@ end;
 $$ language plpgsql security definer;
 
 -- Atomic Transactional Order Placement Function
+-- SECURITY NOTE: the sale price is never trusted from the client. It is always
+-- read from the locked inventory row; a caller-supplied price is only honored
+-- when the caller is an admin (Key Business Rule: "price per cube editable by
+-- admin only"). This closes the gap where a non-admin (or a direct RPC call)
+-- could previously submit an arbitrary price_per_cube and have it accepted.
 create or replace function public.place_order_transaction(
   p_customer_id bigint,
   p_cube_type text,
@@ -303,6 +345,8 @@ create or replace function public.place_order_transaction(
 declare
   v_item_id bigint;
   v_current_qty integer;
+  v_inventory_price numeric(10, 2);
+  v_final_price numeric(10, 2);
   v_new_qty integer;
   v_sale_code text;
   v_total_amount numeric(10, 2);
@@ -313,17 +357,28 @@ begin
   -- Validate inputs
   if p_customer_id is null then raise exception 'Customer is required'; end if;
   if p_quantity <= 0 then raise exception 'Quantity must be a positive integer'; end if;
-  if p_price_per_cube <= 0 then raise exception 'Price per cube must be set'; end if;
   if p_payment_type not in ('cash', 'debt') then raise exception 'Invalid payment type'; end if;
 
-  -- 1. Lock inventory row and verify stock
-  select id, quantity into v_item_id, v_current_qty
+  -- 1. Lock inventory row and read the authoritative price + stock
+  select id, quantity, price_per_cube into v_item_id, v_current_qty, v_inventory_price
   from public.inventory
   where type = p_cube_type
   for update;
 
   if not found then raise exception 'Inventory item for % not found', p_cube_type; end if;
   if v_current_qty < p_quantity then raise exception 'Insufficient stock. Available: %', v_current_qty; end if;
+  if v_inventory_price is null or v_inventory_price <= 0 then
+    raise exception 'Price per cube must be set before placing a sale';
+  end if;
+
+  -- Non-admins (and any caller not supplying a price) always sell at the
+  -- current inventory price. Admins may override with a caller-supplied
+  -- positive price (e.g. a negotiated discount).
+  if public.is_admin() and p_price_per_cube is not null and p_price_per_cube > 0 then
+    v_final_price := p_price_per_cube;
+  else
+    v_final_price := v_inventory_price;
+  end if;
 
   v_new_qty := v_current_qty - p_quantity;
 
@@ -335,13 +390,13 @@ begin
 
   -- 3. Atomic sale code generation
   v_sale_code := public.get_next_code('sale', 'S');
-  v_total_amount := p_price_per_cube * p_quantity;
+  v_total_amount := v_final_price * p_quantity;
 
   -- 4. Create sale record
   insert into public.sales (
     sale_code, customer_id, cube_type, quantity, price_per_cube, total_amount, payment_type, sale_date, created_by
   ) values (
-    v_sale_code, p_customer_id, p_cube_type, p_quantity, p_price_per_cube, v_total_amount, p_payment_type, v_now, p_created_by
+    v_sale_code, p_customer_id, p_cube_type, p_quantity, v_final_price, v_total_amount, p_payment_type, v_now, p_created_by
   ) returning id into v_sale_id;
 
   -- 5. Record inventory audit log
@@ -366,11 +421,85 @@ begin
     'customer_id', p_customer_id,
     'cube_type', p_cube_type,
     'quantity', p_quantity,
-    'price_per_cube', p_price_per_cube,
+    'price_per_cube', v_final_price,
     'total_amount', v_total_amount,
     'payment_type', p_payment_type,
     'sale_date', v_now,
     'debt_id', v_debt_id
+  );
+end;
+$$ language plpgsql security definer;
+
+-- Atomic Debt Settlement Transaction
+-- Locks the debt row so two concurrent/duplicate settlements can never both
+-- apply against the same "remaining_amount" snapshot (fixes lost-payment
+-- race), and updates the debt + inserts the audit row in one transaction so
+-- a failure can never leave the debt updated without a matching settlement
+-- record (fixes double-apply-on-retry).
+create or replace function public.settle_debt_transaction(
+  p_debt_id bigint,
+  p_amount_paid numeric,
+  p_created_by text
+) returns jsonb as $$
+declare
+  v_total numeric(10, 2);
+  v_paid numeric(10, 2);
+  v_remaining numeric(10, 2);
+  v_customer_id bigint;
+  v_sale_id bigint;
+  v_new_paid numeric(10, 2);
+  v_new_remaining numeric(10, 2);
+  v_new_status text;
+  v_settlement_code text;
+  v_settlement_id bigint;
+  v_now timestamp with time zone := timezone('utc'::text, now());
+begin
+  if p_amount_paid is null or p_amount_paid <= 0 then
+    raise exception 'Settlement amount must be a positive number';
+  end if;
+
+  select total_amount, paid_amount, remaining_amount, customer_id, sale_id
+    into v_total, v_paid, v_remaining, v_customer_id, v_sale_id
+  from public.debts
+  where id = p_debt_id
+  for update;
+
+  if not found then
+    raise exception 'Debt record not found';
+  end if;
+
+  if p_amount_paid > v_remaining then
+    raise exception 'Payment exceeds outstanding debt. Max payable: LKR %', v_remaining;
+  end if;
+
+  v_new_paid := v_paid + p_amount_paid;
+  v_new_remaining := v_total - v_new_paid;
+  v_new_status := case when v_new_remaining <= 0 then 'settled' else 'partial' end;
+
+  update public.debts
+  set paid_amount = v_new_paid,
+      remaining_amount = v_new_remaining,
+      status = v_new_status
+  where id = p_debt_id;
+
+  v_settlement_code := public.get_next_code('settlement', 'D');
+
+  insert into public.debt_settlements (
+    debt_id, customer_id, amount_paid, settlement_date, created_by
+  ) values (
+    p_debt_id, v_customer_id, p_amount_paid, v_now, p_created_by
+  ) returning id into v_settlement_id;
+
+  return jsonb_build_object(
+    'id', v_settlement_id,
+    'settlement_code', v_settlement_code,
+    'debt_id', p_debt_id,
+    'customer_id', v_customer_id,
+    'sale_id', v_sale_id,
+    'amount_paid', p_amount_paid,
+    'remaining_amount', v_new_remaining,
+    'status', v_new_status,
+    'settlement_date', v_now
   );
 end;
 $$ language plpgsql security definer;
@@ -383,8 +512,8 @@ begin
     raise exception 'Only administrators can update inventory prices';
   end if;
   
-  if p_price < 0 then
-    raise exception 'Price must be non-negative';
+  if p_price <= 0 then
+    raise exception 'Price must be a positive value';
   end if;
 
   update public.inventory
@@ -641,6 +770,25 @@ create table if not exists public.daily_manager_reports (
 ALTER TABLE public.daily_manager_reports ADD COLUMN IF NOT EXISTS bank_deposit_today NUMERIC(10, 2) DEFAULT 0;
 ALTER TABLE public.daily_manager_reports ADD COLUMN IF NOT EXISTS cheque_entries JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.daily_manager_reports ADD COLUMN IF NOT EXISTS withdrawals JSONB DEFAULT '[]'::jsonb;
+-- Day-scoped counter: how much of today's bank deposits came specifically
+-- from physical cash (as opposed to cheques). Used only to compute the
+-- suggested/default cash-on-hand figure for a day before the manager has
+-- manually confirmed it — kept separate from bank_deposit_amount (the true
+-- running bank balance) so a cheque deposit never wrongly reduces the
+-- calculated cash balance.
+ALTER TABLE public.daily_manager_reports ADD COLUMN IF NOT EXISTS cash_deposited_today NUMERIC(10, 2) DEFAULT 0;
+-- Explicit flag: has cash_on_hand actually been confirmed by a real action
+-- (manual save, bank deposit, cash withdrawal) for this day, as opposed to
+-- just holding the JS default of 0? Without this, a deliberately-saved
+-- cash_on_hand of exactly 0 (e.g. "we banked everything, till is empty") is
+-- indistinguishable from "nobody has entered anything yet" and gets silently
+-- replaced by the auto-calculated suggestion.
+ALTER TABLE public.daily_manager_reports ADD COLUMN IF NOT EXISTS cash_on_hand_confirmed BOOLEAN DEFAULT false;
+-- Same "explicitly entered vs still the JS default" problem as
+-- cash_on_hand_confirmed, but for Section 01's brine (waste) cube count: a
+-- manager typing 0 to correct an auto-calculated figure was previously
+-- indistinguishable from the field never having been touched.
+ALTER TABLE public.daily_manager_reports ADD COLUMN IF NOT EXISTS brine_cubes_confirmed BOOLEAN DEFAULT false;
 
 alter table public.daily_manager_reports enable row level security;
 create policy "Allow read daily_manager_reports" on public.daily_manager_reports for select to authenticated using (true);

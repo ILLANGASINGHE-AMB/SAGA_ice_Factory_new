@@ -59,7 +59,12 @@ export function useExpenses() {
         .select('*')
         .order('expense_date', { ascending: false });
 
-      if (error || !data || data.length === 0) {
+      // A genuinely empty table (data === [], no error) is valid data — e.g.
+      // right after deleting the last expense — and must not be treated the
+      // same as a fetch failure, or the stale localStorage cache (from
+      // before the deletion) gets used forever and the "deleted" expense
+      // permanently reappears in the UI.
+      if (error || !data) {
         const saved = localStorage.getItem('saga_operating_expenses');
         setExpenses(saved ? JSON.parse(saved) : INITIAL_EXPENSES);
       } else {
@@ -99,8 +104,18 @@ export function useExpenses() {
     if (isNaN(val) || val <= 0) throw new Error("Amount must be a positive number");
     if (!description) throw new Error("Description is required");
 
-    const codeNum = Math.floor(100 + Math.random() * 900);
-    const expense_code = `EXP-${codeNum}-26`;
+    // Atomic sequential code (mirrors sale_code/customer_code/settlement
+    // codes). The previous 900-value random suffix had a real chance of
+    // colliding with an existing expense_code (unique constraint), which
+    // used to fail the insert silently — see the insert-error handling below.
+    const { data: expense_code, error: codeErr } = await supabase.rpc('get_next_code', {
+      p_entity: 'expense',
+      p_prefix: 'EXP'
+    });
+
+    if (codeErr || !expense_code) {
+      throw new Error("Unable to generate an expense code. Please try again.");
+    }
 
     const expenseData = {
       expense_code,
@@ -112,20 +127,17 @@ export function useExpenses() {
       created_by
     };
 
-    let inserted = null;
-    try {
-      const { data } = await supabase
-        .from('operating_expenses')
-        .insert([expenseData])
-        .select('*')
-        .single();
-      if (data) inserted = data;
-    } catch (e) {
-      console.warn("Insert expense failed, using local state:", e);
-    }
+    // A failed insert must be surfaced as an error, not silently replaced
+    // with a client-only fake record that vanishes on the next refetch while
+    // the UI already reported success.
+    const { data: inserted, error: insertErr } = await supabase
+      .from('operating_expenses')
+      .insert([expenseData])
+      .select('*')
+      .single();
 
-    if (!inserted) {
-      inserted = { ...expenseData, id: Date.now() };
+    if (insertErr) {
+      throw new Error(insertErr.message || "Failed to save expense");
     }
 
     const updated = [inserted, ...expenses];
@@ -135,10 +147,14 @@ export function useExpenses() {
   };
 
   const deleteExpense = async (id) => {
-    try {
-      await supabase.from('operating_expenses').delete().eq('id', id);
-    } catch (e) {
-      console.warn("Delete expense failed:", e);
+    // Supabase delete calls resolve with { error } rather than throwing on
+    // RLS denial — only checking network-layer exceptions let local state
+    // drop the row even when the server never actually deleted it, so the
+    // "removed" toast would be shown right before a later refetch brings
+    // the row back with no explanation.
+    const { error } = await supabase.from('operating_expenses').delete().eq('id', id);
+    if (error) {
+      throw new Error(error.message || "Failed to delete expense");
     }
     const updated = expenses.filter(item => item.id !== id);
     setExpenses(updated);

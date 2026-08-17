@@ -134,8 +134,8 @@ export function SalesPage() {
           toast.error("Please enter a valid customer name (min 2 chars)");
           return;
         }
-        if (!newCustPhone || !/^\d{10}$/.test(newCustPhone)) {
-          toast.error("Please enter a valid 10-digit WhatsApp number");
+        if (!newCustPhone || !/^0\d{9}$/.test(newCustPhone)) {
+          toast.error("Please enter a valid 10-digit WhatsApp number starting with 0 (e.g. 0771234567)");
           return;
         }
       }
@@ -282,9 +282,9 @@ ${billURL}`;
     // Search query filter
     const query = searchQuery.toLowerCase().trim();
     if (query) {
-      result = result.filter(s => 
-        s.sale_code.toLowerCase().includes(query) || 
-        s.customer.name.toLowerCase().includes(query)
+      result = result.filter(s =>
+        s.sale_code.toLowerCase().includes(query) ||
+        (s.customer?.name || '').toLowerCase().includes(query)
       );
     }
 

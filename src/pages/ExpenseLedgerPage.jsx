@@ -79,8 +79,12 @@ export function ExpenseLedgerPage() {
 
   const handleDelete = async (id) => {
     if (window.confirm("Are you sure you want to delete this expense log?")) {
-      await deleteExpense(id);
-      toast.info("Expense log removed.");
+      try {
+        await deleteExpense(id);
+        toast.info("Expense log removed.");
+      } catch (err) {
+        toast.error(err.message || "Failed to delete expense");
+      }
     }
   };
 

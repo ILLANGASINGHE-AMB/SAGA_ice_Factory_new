@@ -91,9 +91,18 @@ export function useProductionBatches() {
     const totalEnergy = elecCost + dslCost;
     const costPerCube = parseFloat((totalEnergy / qty).toFixed(4));
 
-    const dateStr = new Date().toISOString().slice(0,10).replace(/-/g, '');
-    const randId = Math.floor(100 + Math.random() * 900);
-    const batch_code = `BATCH-${dateStr}-${randId}`;
+    // Atomic sequential code (mirrors sale_code/customer_code/expense_code).
+    // The previous 900-value random daily suffix had a real chance of
+    // colliding with an existing batch_code (unique constraint), which used
+    // to fail the insert silently.
+    const { data: batch_code, error: codeErr } = await supabase.rpc('get_next_code', {
+      p_entity: 'batch',
+      p_prefix: 'BATCH'
+    });
+
+    if (codeErr || !batch_code) {
+      throw new Error("Unable to generate a batch code. Please try again.");
+    }
 
     const batchData = {
       batch_code,
@@ -109,45 +118,38 @@ export function useProductionBatches() {
       created_by
     };
 
-    let inserted = null;
+    // Insert must actually succeed — a failed insert (RLS denial, unique
+    // constraint on batch_code, network error) is surfaced as an error
+    // instead of being silently replaced with a client-only fake record,
+    // which previously caused the UI to report success for a batch that was
+    // never persisted to the database.
+    const { data: inserted, error: insertErr } = await supabase
+      .from('production_batches')
+      .insert([batchData])
+      .select('*')
+      .single();
 
-    try {
-      const { data, error } = await supabase
-        .from('production_batches')
-        .insert([batchData])
-        .select('*')
-        .single();
-
-      if (!error && data) {
-        inserted = data;
-      }
-    } catch (e) {
-      console.warn("Supabase insert production_batches failed, updating locally:", e);
-    }
-
-    if (!inserted) {
-      inserted = { ...batchData, id: Date.now() };
+    if (insertErr) {
+      throw new Error(insertErr.message || "Failed to save production batch");
     }
 
     const updated = [inserted, ...batches];
     setBatches(updated);
     localStorage.setItem('saga_production_batches', JSON.stringify(updated));
 
-    // Optional stock update for Manufactured Cubes (MFC)
+    // Optional stock update for Manufactured Cubes (MFC) — uses the atomic,
+    // row-locked RPC instead of a plain read-then-write, which previously
+    // allowed two concurrently-logged batches to both read the same starting
+    // quantity and have one write silently clobber the other.
     if (updateInventory) {
       try {
-        const { data: inv } = await supabase
-          .from('inventory')
-          .select('*')
-          .eq('type', 'manufactured')
-          .single();
-
-        if (inv) {
-          await supabase
-            .from('inventory')
-            .update({ quantity: inv.quantity + qty, updated_at: new Date().toISOString() })
-            .eq('id', inv.id);
-        }
+        const { error: invRpcErr } = await supabase.rpc('add_inventory_stock_by_type', {
+          p_cube_type: 'manufactured',
+          p_amount: qty,
+          p_reference_code: batch_code,
+          p_created_by: created_by
+        });
+        if (invRpcErr) throw invRpcErr;
       } catch (e) {
         console.warn("Inventory update from batch failed:", e);
       }

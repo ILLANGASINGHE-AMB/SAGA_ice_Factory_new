@@ -89,17 +89,21 @@ export function useMaintenance() {
   }, []);
 
   const updateEquipmentStatus = async (id, status, notes = '') => {
-    let updatedList = [];
-    try {
-      await supabase
-        .from('equipment_maintenance')
-        .update({ status, notes, last_service_date: status === 'operational' ? new Date().toISOString() : undefined })
-        .eq('id', id);
-    } catch (e) {
-      console.warn("Supabase equipment update failed, updating local state:", e);
+    // Supabase update calls resolve with { error } rather than throwing on
+    // RLS denial or a constraint violation — checking only network-layer
+    // exceptions let a rejected update still apply optimistically to local
+    // state, showing a change that was never actually saved (and that a
+    // later refetch would silently revert with no explanation).
+    const { error } = await supabase
+      .from('equipment_maintenance')
+      .update({ status, notes, last_service_date: status === 'operational' ? new Date().toISOString() : undefined })
+      .eq('id', id);
+
+    if (error) {
+      throw new Error(error.message || "Failed to update equipment status");
     }
 
-    updatedList = equipmentList.map(item => {
+    const updatedList = equipmentList.map(item => {
       if (item.id === id) {
         return {
           ...item,
@@ -129,23 +133,28 @@ export function useMaintenance() {
     const now = new Date().toISOString();
 
     if (id) {
-      // Edit / Update existing equipment log
+      // Edit / Update existing equipment log. Only stamp last_service_date
+      // to "now" when the status is actually being set to operational — an
+      // edit that marks equipment offline (e.g. after a breakdown) or just
+      // updates notes is not a service event, and must not overwrite the
+      // real last-serviced date. Mirrors updateEquipmentStatus below.
+      const existing = equipmentList.find(item => item.id === id);
       const payload = {
         status,
-        last_service_date: now,
+        last_service_date: status === 'operational' ? now : (existing?.last_service_date ?? null),
         next_service_due: next_service_due ? new Date(next_service_due).toISOString() : null,
         cost: serviceCost,
         performed_by,
         notes
       };
 
-      try {
-        await supabase
-          .from('equipment_maintenance')
-          .update(payload)
-          .eq('id', id);
-      } catch (e) {
-        console.warn("Update maintenance error:", e);
+      const { error } = await supabase
+        .from('equipment_maintenance')
+        .update(payload)
+        .eq('id', id);
+
+      if (error) {
+        throw new Error(error.message || "Failed to update equipment record");
       }
 
       const updated = equipmentList.map(item => item.id === id ? { ...item, ...payload } : item);
@@ -165,20 +174,17 @@ export function useMaintenance() {
         created_at: now
       };
 
-      let inserted = null;
-      try {
-        const { data } = await supabase
-          .from('equipment_maintenance')
-          .insert([newPayload])
-          .select('*')
-          .single();
-        if (data) inserted = data;
-      } catch (e) {
-        console.warn("Insert equipment error:", e);
-      }
+      // A failed insert must be surfaced as an error, not silently replaced
+      // with a client-only fake record that vanishes on the next refetch
+      // while the UI already reported success.
+      const { data: inserted, error: insertErr } = await supabase
+        .from('equipment_maintenance')
+        .insert([newPayload])
+        .select('*')
+        .single();
 
-      if (!inserted) {
-        inserted = { ...newPayload, id: Date.now() };
+      if (insertErr) {
+        throw new Error(insertErr.message || "Failed to save equipment record");
       }
 
       const updated = [...equipmentList, inserted];

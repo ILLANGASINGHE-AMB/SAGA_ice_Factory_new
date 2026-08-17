@@ -307,7 +307,7 @@ export function generateSettlementReceiptPDF(settlement, settings) {
 }
 
 // 3. Generate Analytical Report PDF
-export function generateReportPDF(reportTitle, dateStr, salesData, summaryData, settings) {
+export function generateReportPDF(reportTitle, dateStr, salesData, summaryData, settings, showFinancialSummary = true) {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -326,13 +326,22 @@ export function generateReportPDF(reportTitle, dateStr, salesData, summaryData, 
   doc.text(`Type: ${reportTitle}`, 14, 67);
   doc.text(`Period: ${dateStr}`, 14, 72);
 
-  // Summary Section Block
-  doc.setFont('Helvetica', 'bold');
-  doc.text('FINANCIAL SUMMARY:', 130, 62);
-  doc.setFont('Helvetica', 'normal');
-  doc.text(`Total Sales: LKR ${summaryData.totalRevenue.toLocaleString()}`, 130, 67);
-  doc.text(`Cash Inflow: LKR ${summaryData.cashRevenue.toLocaleString()}`, 130, 72);
-  doc.text(`Outstanding Credit: LKR ${summaryData.debtRevenue.toLocaleString()}`, 130, 77);
+  // Summary Section Block — gated the same way the on-screen preview hides
+  // this strip for Debtors/Customer Details reports, where these figures
+  // (cash vs debt split, outstanding credit) don't apply cleanly.
+  if (showFinancialSummary) {
+    doc.setFont('Helvetica', 'bold');
+    doc.text('FINANCIAL SUMMARY:', 130, 62);
+    doc.setFont('Helvetica', 'normal');
+    doc.text(`Total Sales: LKR ${summaryData.totalRevenue.toLocaleString()}`, 130, 67);
+    doc.text(`Cash Inflow: LKR ${summaryData.cashRevenue.toLocaleString()}`, 130, 72);
+    // debtRevenue is gross credit sales issued in the period — it must be
+    // netted against settlements collected in that same period, or this
+    // overstates the true outstanding balance whenever some of the period's
+    // credit sales were already paid off within the period.
+    const netOutstandingCredit = Math.max(0, (summaryData.debtRevenue || 0) - (summaryData.totalSettled || 0));
+    doc.text(`Outstanding Credit: LKR ${netOutstandingCredit.toLocaleString()}`, 130, 77);
+  }
 
   // Itemized transactions table
   const tableHeaders = [['Date', 'Sale Code', 'Customer', 'Type', 'Qty', 'Amount', 'Payment']];

@@ -18,13 +18,16 @@ export function useDailyReport(reportDateStr) {
   // Manual Input State (for manager entries & cash/bank logs)
   const [manualInputs, setManualInputs] = useState({
     brineCubes: 0,
+    brineCubesConfirmed: false,
     freeIssue: 0,
     damagedCubes: 0,
     pmProductionQty: 0,
     otherReceipts: 0,
     bankDepositAmount: 0,
     bankDepositToday: 0,
+    cashDepositedToday: 0,
     cashOnHand: 0,
+    cashOnHandConfirmed: false,
     chequesOnHand: 0,
     employeeLogs: [],
     vehicleLogs: [],
@@ -49,7 +52,8 @@ export function useDailyReport(reportDateStr) {
         customersRes,
         inventoryRes,
         invTxnRes,
-        savedReportRes
+        savedReportRes,
+        previousReportRes
       ] = await Promise.all([
         supabase.from('sales').select('*, customer:customers(*)').then(res => res.data || []).catch(() => []),
         supabase.from('debts').select('*, customer:customers(*), sale:sales(*)').then(res => res.data || []).catch(() => []),
@@ -59,7 +63,19 @@ export function useDailyReport(reportDateStr) {
         supabase.from('customers').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('inventory').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('inventory_transactions').select('*, inventory(*)').then(res => res.data || []).catch(() => []),
-        supabase.from('daily_manager_reports').select('*').eq('report_date', targetDateStr).maybeSingle().then(res => res.data || null).catch(() => null)
+        supabase.from('daily_manager_reports').select('*').eq('report_date', targetDateStr).maybeSingle().then(res => res.data || null).catch(() => null),
+        // Most recent PRIOR day's saved report, used to carry forward the
+        // true running cash/bank balances (closing balance -> next day's
+        // opening balance) when today has no saved report yet. Without this,
+        // a new day silently starts assuming an empty till/bank account.
+        supabase.from('daily_manager_reports')
+          .select('cash_on_hand, bank_deposit_amount, cheques_on_hand, cash_on_hand_confirmed')
+          .lt('report_date', targetDateStr)
+          .order('report_date', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+          .then(res => res.data || null)
+          .catch(() => null)
       ]);
 
       setSales(salesRes);
@@ -89,13 +105,21 @@ export function useDailyReport(reportDateStr) {
         setSavedRecord(savedReportRes);
         setManualInputs({
           brineCubes: savedReportRes.brine_cubes ?? localParsed.brineCubes ?? 0,
+          // Default true when the column is absent/null (pre-migration
+          // rows), same reasoning as cash_on_hand_confirmed above.
+          brineCubesConfirmed: savedReportRes.brine_cubes_confirmed ?? localParsed.brineCubesConfirmed ?? true,
           freeIssue: savedReportRes.free_issue ?? localParsed.freeIssue ?? 0,
           damagedCubes: savedReportRes.damaged_cubes ?? localParsed.damagedCubes ?? 0,
           pmProductionQty: savedReportRes.pm_production_qty ?? localParsed.pmProductionQty ?? 0,
           otherReceipts: savedReportRes.other_receipts ?? localParsed.otherReceipts ?? 0,
           bankDepositAmount: savedReportRes.bank_deposit_amount ?? localParsed.bankDepositAmount ?? 0,
           bankDepositToday: savedReportRes.bank_deposit_today ?? localParsed.bankDepositToday ?? 0,
+          cashDepositedToday: savedReportRes.cash_deposited_today ?? localParsed.cashDepositedToday ?? 0,
           cashOnHand: savedReportRes.cash_on_hand ?? localParsed.cashOnHand ?? 0,
+          // Default true when the column is absent/null (pre-migration rows)
+          // so an already-saved cash_on_hand value keeps being trusted as-is
+          // rather than retroactively treated as "unconfirmed".
+          cashOnHandConfirmed: savedReportRes.cash_on_hand_confirmed ?? localParsed.cashOnHandConfirmed ?? true,
           chequesOnHand: savedReportRes.cheques_on_hand ?? localParsed.chequesOnHand ?? 0,
           employeeLogs: Array.isArray(savedReportRes.employee_logs) && savedReportRes.employee_logs.length > 0 ? savedReportRes.employee_logs : (localParsed.employeeLogs || []),
           vehicleLogs: Array.isArray(savedReportRes.vehicle_logs) && savedReportRes.vehicle_logs.length > 0 ? savedReportRes.vehicle_logs : (localParsed.vehicleLogs || []),
@@ -108,16 +132,29 @@ export function useDailyReport(reportDateStr) {
         if (Object.keys(localParsed).length > 0) {
           setManualInputs(localParsed);
         } else {
+          // No saved report for this date yet (DB or local). Carry forward
+          // yesterday's (or the most recent prior day's) closing cash/bank
+          // balances as today's opening balances, instead of silently
+          // starting from zero as if the till and bank account were empty.
+          // bankDepositToday, cashDepositedToday, cheques and withdrawals
+          // are genuinely day-scoped activity and always start fresh. Only
+          // carry forward as "confirmed" if the prior day's own cash figure
+          // was itself a real confirmed entry, not just an unconfirmed
+          // auto-calculated guess that never got saved explicitly.
+          const priorConfirmed = !!previousReportRes?.cash_on_hand_confirmed;
           setManualInputs({
             brineCubes: 0,
+            brineCubesConfirmed: false,
             freeIssue: 0,
             damagedCubes: 0,
             pmProductionQty: 0,
             otherReceipts: 0,
-            bankDepositAmount: 0,
+            bankDepositAmount: previousReportRes?.bank_deposit_amount ?? 0,
             bankDepositToday: 0,
-            cashOnHand: 0,
-            chequesOnHand: 0,
+            cashDepositedToday: 0,
+            cashOnHand: priorConfirmed ? (previousReportRes?.cash_on_hand ?? 0) : 0,
+            cashOnHandConfirmed: priorConfirmed,
+            chequesOnHand: previousReportRes?.cheques_on_hand ?? 0,
             employeeLogs: [],
             vehicleLogs: [],
             chequeEntries: [],
@@ -208,14 +245,30 @@ export function useDailyReport(reportDateStr) {
     const todaysSalesRecords = sales.filter(s => isSameDate(s.sale_date));
     const todaysSalesQty = todaysSalesRecords.reduce((sum, s) => sum + (Number(s.quantity) || 0), 0);
 
-    // Prev Balance = Total current inventory stock (Production Cubes + Purchases Cubes + Brine Cubes)
-    const previousDayBalance = inventory.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
-
     // Brine Cubes = Brine cubes added today or manual entry
-    const brineCubes = Number(manualInputs.brineCubes) > 0 ? Number(manualInputs.brineCubes) : brineTxnAdditions;
+    // A manager explicitly entering 0 to correct the auto-calculated value
+    // must be honored — checking `> 0` would treat that 0 as "not entered"
+    // and silently revert to the auto value. brineCubesConfirmed is the
+    // explicit signal for "this was actually saved", set only when the
+    // Daily Manager Report form itself is saved.
+    const brineCubes = manualInputs.brineCubesConfirmed ? (Number(manualInputs.brineCubes) || 0) : brineTxnAdditions;
     const freeIssue = Number(manualInputs.freeIssue) || 0;
     const damagedCubes = Number(manualInputs.damagedCubes) || 0;
 
+    // `inventory.quantity` is a LIVE figure — it already reflects today's
+    // production, purchases, brine additions, and sales the moment they
+    // happen (via the atomic RPCs). So the true opening ("previous day")
+    // balance is today's live total with today's movements backed OUT, not
+    // the live total itself. Re-adding those same movements on top of the
+    // live total (the old behavior) double-counted every day there was any
+    // activity — see Audit_Issues_And_Fixes.md #4.1.
+    const currentTotalStock = inventory.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+    const previousDayBalance = currentTotalStock - todaysProduction - todaysPurchase - brineCubes + todaysSalesQty;
+
+    // closingBalance therefore reduces to currentTotalStock minus whatever
+    // was reported as free-issued/damaged — those are pure manual report
+    // entries that never touch the actual inventory table, so they're the
+    // only genuine adjustment left to apply on top of the live total.
     const closingBalance = previousDayBalance + todaysProduction + todaysPurchase + brineCubes - freeIssue - damagedCubes - todaysSalesQty;
 
     // 2. Income Details
@@ -249,7 +302,11 @@ export function useDailyReport(reportDateStr) {
     // 4. Credit Amount Collection / Repayment
     const creditCollectionList = todaysSettlements.map(setl => {
       const cust = setl.customer || customers.find(c => Number(c.id) === Number(setl.customer_id));
-      const matchingDebt = debts.find(d => Number(d.customer_id) === Number(setl.customer_id));
+      // Match by debt_id (the settlement's actual debt), not customer_id — a
+      // customer can have multiple debts, and matching by customer alone
+      // could pick a different (possibly already-settled) debt, reporting
+      // the wrong outstanding balance for this specific repayment.
+      const matchingDebt = debts.find(d => Number(d.id) === Number(setl.debt_id));
       return {
         name: cust?.name || 'Customer',
         method: 'Cash',
@@ -319,7 +376,9 @@ export function useDailyReport(reportDateStr) {
       cashDetails: {
         bankDepositAmount: Number(manualInputs.bankDepositAmount) || 0,
         bankDepositToday: Number(manualInputs.bankDepositToday) || 0,
+        cashDepositedToday: Number(manualInputs.cashDepositedToday) || 0,
         cashOnHand: Number(manualInputs.cashOnHand) || 0,
+        cashOnHandConfirmed: !!manualInputs.cashOnHandConfirmed,
         chequesOnHand: Number(manualInputs.chequesOnHand) || totalChequesValue,
         cashWithdrawals,
         bankWithdrawals,
@@ -348,13 +407,16 @@ export function useDailyReport(reportDateStr) {
     const dbPayload = {
       report_date: targetDateStr,
       brine_cubes: Number(payload.brineCubes) || 0,
+      brine_cubes_confirmed: !!payload.brineCubesConfirmed,
       free_issue: Number(payload.freeIssue) || 0,
       damaged_cubes: Number(payload.damagedCubes) || 0,
       pm_production_qty: Number(payload.pmProductionQty) || 0,
       other_receipts: Number(payload.otherReceipts) || 0,
       bank_deposit_amount: Number(payload.bankDepositAmount) || 0,
       bank_deposit_today: Number(payload.bankDepositToday) || 0,
+      cash_deposited_today: Number(payload.cashDepositedToday) || 0,
       cash_on_hand: Number(payload.cashOnHand) || 0,
+      cash_on_hand_confirmed: !!payload.cashOnHandConfirmed,
       cheques_on_hand: Number(payload.chequesOnHand) || 0,
       employee_logs: payload.employeeLogs || [],
       vehicle_logs: payload.vehicleLogs || [],
@@ -378,13 +440,16 @@ export function useDailyReport(reportDateStr) {
         const basicPayload = {
           report_date: targetDateStr,
           brine_cubes: Number(payload.brineCubes) || 0,
+          brine_cubes_confirmed: !!payload.brineCubesConfirmed,
           free_issue: Number(payload.freeIssue) || 0,
           damaged_cubes: Number(payload.damagedCubes) || 0,
           pm_production_qty: Number(payload.pmProductionQty) || 0,
           other_receipts: Number(payload.otherReceipts) || 0,
           bank_deposit_amount: Number(payload.bankDepositAmount) || 0,
           bank_deposit_today: Number(payload.bankDepositToday) || 0,
+          cash_deposited_today: Number(payload.cashDepositedToday) || 0,
           cash_on_hand: Number(payload.cashOnHand) || 0,
+          cash_on_hand_confirmed: !!payload.cashOnHandConfirmed,
           cheques_on_hand: Number(payload.chequesOnHand) || 0,
           employee_logs: payload.employeeLogs || [],
           vehicle_logs: payload.vehicleLogs || [],

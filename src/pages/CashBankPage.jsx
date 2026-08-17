@@ -35,6 +35,7 @@ export function CashBankPage() {
   const [cashOnHand, setCashOnHand] = useState(0);
   const [bankDepositAmount, setBankDepositAmount] = useState(0);
   const [bankDepositToday, setBankDepositToday] = useState(0);
+  const [cashDepositedToday, setCashDepositedToday] = useState(0);
   const [chequesOnHand, setChequesOnHand] = useState(0);
   const [chequeEntries, setChequeEntries] = useState([]);
   const [withdrawals, setWithdrawals] = useState([]);
@@ -67,18 +68,28 @@ export function CashBankPage() {
       const cashWithdrawals = (manualInputs.withdrawals || [])
         .filter(w => w.source === 'cash')
         .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
-      
-      const bankDeposits = Number(manualInputs.bankDepositAmount) || 0;
-      const defaultCalculatedCash = Math.max(0, calculatedCashInflow - bankDeposits - cashWithdrawals);
 
-      const activeCash = (manualInputs.cashOnHand !== undefined && manualInputs.cashOnHand !== 0)
-        ? Number(manualInputs.cashOnHand)
+      // Only cash physically banked today should reduce today's calculated
+      // cash balance — a cheque deposit never touched physical cash, so it
+      // must not be subtracted here even though it does increase
+      // bankDepositAmount (the running bank total).
+      const cashDepositsToday = Number(manualInputs.cashDepositedToday) || 0;
+      const defaultCalculatedCash = Math.max(0, calculatedCashInflow - cashDepositsToday - cashWithdrawals);
+
+      // A deliberately-confirmed cash balance of exactly 0 (e.g. "we banked
+      // everything, the till is empty") must be trusted as-is — it must not
+      // be treated the same as "nobody has entered anything yet" just
+      // because 0 happens to also be the default. cashOnHandConfirmed is the
+      // explicit signal that distinguishes the two.
+      const activeCash = manualInputs.cashOnHandConfirmed
+        ? (Number(manualInputs.cashOnHand) || 0)
         : defaultCalculatedCash;
 
       setCashOnHand(activeCash);
       setCashInput(activeCash.toString());
       setBankDepositAmount(manualInputs.bankDepositAmount || 0);
       setBankDepositToday(manualInputs.bankDepositToday || 0);
+      setCashDepositedToday(manualInputs.cashDepositedToday || 0);
       setChequesOnHand(manualInputs.chequesOnHand || 0);
       setChequeEntries(Array.isArray(manualInputs.chequeEntries) ? manualInputs.chequeEntries : []);
       setWithdrawals(Array.isArray(manualInputs.withdrawals) ? manualInputs.withdrawals : []);
@@ -107,6 +118,7 @@ export function CashBankPage() {
         cashOnHand: Number(cashOnHand) || 0,
         bankDepositAmount: Number(bankDepositAmount) || 0,
         bankDepositToday: Number(bankDepositToday) || 0,
+        cashDepositedToday: Number(cashDepositedToday) || 0,
         chequesOnHand: totalChequesValue,
         chequeEntries,
         withdrawals,
@@ -132,7 +144,7 @@ export function CashBankPage() {
     }
 
     setCashOnHand(val);
-    await saveDailyReport({ cashOnHand: val });
+    await saveDailyReport({ cashOnHand: val, cashOnHandConfirmed: true });
     toast.success(`Physical Cash Balance saved as LKR ${val.toLocaleString()}`);
   };
 
@@ -145,12 +157,23 @@ export function CashBankPage() {
       return;
     }
 
+    // Can't physically deposit more cash than is actually in the till —
+    // reject instead of silently clamping cash to 0 while still crediting
+    // the full (over-)amount to the bank balance.
+    const currentCash = Number(cashOnHand) || 0;
+    if (amount > currentCash) {
+      toast.error(`Deposit cannot exceed current Cash Balance (LKR ${currentCash.toLocaleString()}).`);
+      return;
+    }
+
     const newBankBalance = (Number(bankDepositAmount) || 0) + amount;
     const newBankDepositToday = (Number(bankDepositToday) || 0) + amount;
-    const newCashBalance = Math.max(0, (Number(cashOnHand) || 0) - amount);
+    const newCashDepositedToday = (Number(cashDepositedToday) || 0) + amount;
+    const newCashBalance = currentCash - amount;
 
     setBankDepositAmount(newBankBalance);
     setBankDepositToday(newBankDepositToday);
+    setCashDepositedToday(newCashDepositedToday);
     setCashOnHand(newCashBalance);
     setCashInput(newCashBalance.toString());
 
@@ -160,7 +183,9 @@ export function CashBankPage() {
     await saveDailyReport({
       bankDepositAmount: newBankBalance,
       bankDepositToday: newBankDepositToday,
-      cashOnHand: newCashBalance
+      cashDepositedToday: newCashDepositedToday,
+      cashOnHand: newCashBalance,
+      cashOnHandConfirmed: true
     });
 
     toast.success(`Deposited LKR ${amount.toLocaleString()} into Bank! Cash Balance updated.`);
@@ -212,15 +237,21 @@ export function CashBankPage() {
     const amount = Number(targetCheque.amount) || 0;
     const updatedCheques = chequeEntries.filter(c => c.id !== chequeId);
     const newBankBalance = (Number(bankDepositAmount) || 0) + amount;
+    // A cheque deposit is still a deposit made into the bank today — it must
+    // count toward "Amount Deposited Today" the same way a cash deposit
+    // does, or that figure understates the day's real bank activity.
+    const newBankDepositToday = (Number(bankDepositToday) || 0) + amount;
     const newChequeTotal = updatedCheques.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
 
     setChequeEntries(updatedCheques);
     setBankDepositAmount(newBankBalance);
+    setBankDepositToday(newBankDepositToday);
     setChequesOnHand(newChequeTotal);
 
     await saveDailyReport({
       chequeEntries: updatedCheques,
       bankDepositAmount: newBankBalance,
+      bankDepositToday: newBankDepositToday,
       chequesOnHand: newChequeTotal
     });
 
@@ -279,6 +310,10 @@ export function CashBankPage() {
     await saveDailyReport({
       cashOnHand: newCashBalance,
       bankDepositAmount: newBankBalance,
+      // Only include this key for cash withdrawals — an explicit `undefined`
+      // here would still overwrite the existing confirmed flag when spread
+      // into the save payload, incorrectly resetting it for bank withdrawals.
+      ...(withdrawType === 'cash' ? { cashOnHandConfirmed: true } : {}),
       withdrawals: updatedWithdrawals
     });
 

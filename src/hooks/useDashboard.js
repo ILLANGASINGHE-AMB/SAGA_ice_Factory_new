@@ -146,8 +146,14 @@ export function useDashboard() {
         }
       });
       
+      // The `|| 1` placeholder exists only so the pie chart renders
+      // something when there's truly no sales data at all — it must not
+      // fire just because cash sales happen to be legitimately 0 while debt
+      // sales aren't (previously showed "Cash: LKR 1" instead of 0 on a
+      // debt-only day).
+      const noSalesAtAll = cashTotal === 0 && debtTotal === 0;
       const pieData = [
-        { name: 'Cash Sales', value: cashTotal || 1 },
+        { name: 'Cash Sales', value: noSalesAtAll ? 1 : cashTotal },
         { name: 'Debt Sales', value: debtTotal }
       ];
 

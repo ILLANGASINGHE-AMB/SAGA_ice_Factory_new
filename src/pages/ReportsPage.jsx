@@ -10,21 +10,28 @@ import { generateReportPDF } from '../utils/pdfGenerator';
 import { DailyManagerReportView } from '../components/DailyManagerReportView';
 import { FileBarChart2, FileText, Download, Calendar, UserCheck, CreditCard, SlidersHorizontal, ClipboardCheck } from 'lucide-react';
 
+// Standard ISO-8601 week number (yyyy-Www) for a given date, using the
+// "nearest Thursday" anchor method. Kept as the single source of truth for
+// "what week is this date in" so the default selected week and
+// getDatesOfWeek() (which converts a week string back to a date range) never
+// disagree — they previously used two different, inconsistent algorithms.
+function getISOWeekString(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7; // Monday=1..Sunday=7
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum); // shift to the Thursday of this ISO week
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+}
+
 export function ReportsPage() {
   const { settings } = useSettings();
   const toast = useToast();
 
   const [activeReport, setActiveReport] = useState('weekly'); // 'weekly', 'monthly', 'full', 'debtors', 'customers'
-  
+
   // Date parameter states
-  const [selectedWeek, setSelectedWeek] = useState(() => {
-    // Current week date format: yyyy-Www (e.g. 2026-W24)
-    const d = new Date();
-    const oneJan = new Date(d.getFullYear(), 0, 1);
-    const numberOfDays = Math.floor((d - oneJan) / (24 * 60 * 60 * 1000));
-    const weekVal = Math.ceil((d.getDay() + 1 + numberOfDays) / 7);
-    return `${d.getFullYear()}-W${String(weekVal).padStart(2, '0')}`;
-  });
+  const [selectedWeek, setSelectedWeek] = useState(() => getISOWeekString(new Date()));
 
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const d = new Date();
@@ -258,7 +265,10 @@ export function ReportsPage() {
         const cSales = sales.filter(s => s.customer_id === c.id);
         const totalPurchased = cSales.reduce((sum, s) => sum + s.total_amount, 0);
         const cubesCount = cSales.reduce((sum, s) => sum + s.quantity, 0);
-        
+        const cashPurchased = cSales.filter(s => s.payment_type === 'cash').reduce((sum, s) => sum + s.total_amount, 0);
+        const mfcCubes = cSales.filter(s => s.cube_type === 'manufactured').reduce((sum, s) => sum + s.quantity, 0);
+        const rscCubes = cSales.filter(s => s.cube_type === 'resell').reduce((sum, s) => sum + s.quantity, 0);
+
         // Outstanding
         const cDebts = debts.filter(d => d.customer_id === c.id);
         const debtOwed = cDebts.reduce((sum, d) => sum + d.remaining_amount, 0);
@@ -267,6 +277,9 @@ export function ReportsPage() {
           ...c,
           totalPurchased,
           cubesCount,
+          cashPurchased,
+          mfcCubes,
+          rscCubes,
           debtOwed,
           purchasesCount: cSales.length
         };
@@ -437,7 +450,8 @@ export function ReportsPage() {
           newCustomersCount: 0,
           totalSettled: 0
         },
-        settings
+        settings,
+        false // Debtors report: matches the on-screen preview, which also hides this summary strip
       );
     } else if (activeReport === 'customers') {
       const formattedSales = previewData.customers.map(c => ({
@@ -455,14 +469,15 @@ export function ReportsPage() {
         formattedSales,
         {
           totalRevenue: previewData.customers.reduce((sum, c) => sum + c.totalPurchased, 0),
-          cashRevenue: 0,
+          cashRevenue: previewData.customers.reduce((sum, c) => sum + c.cashPurchased, 0),
           debtRevenue: previewData.customers.reduce((sum, c) => sum + c.debtOwed, 0),
-          mfcSold: previewData.customers.reduce((sum, c) => sum + c.cubesCount, 0),
-          rscSold: 0,
+          mfcSold: previewData.customers.reduce((sum, c) => sum + c.mfcCubes, 0),
+          rscSold: previewData.customers.reduce((sum, c) => sum + c.rscCubes, 0),
           newCustomersCount: previewData.customers.length,
           totalSettled: 0
         },
-        settings
+        settings,
+        false // Customer Details report: matches the on-screen preview, which also hides this summary strip
       );
     } else {
       doc = generateReportPDF(

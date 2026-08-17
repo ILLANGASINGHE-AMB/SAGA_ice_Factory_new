@@ -59,62 +59,45 @@ export function useDebts() {
       throw new Error("Settlement amount must be a positive number");
     }
 
-    const { data: debt, error: getErr } = await supabase
-      .from('debts')
-      .select('*')
-      .eq('id', debtId)
-      .single();
-
-    if (getErr || !debt) throw new Error("Debt record not found");
-    
-    if (amountPaid > debt.remaining_amount) {
-      throw new Error(`Payment exceeds outstanding debt. Max payable: LKR ${debt.remaining_amount}`);
-    }
-
-    const newPaid = Number(debt.paid_amount) + amountPaid;
-    const newRemaining = Number(debt.total_amount) - newPaid;
-    const newStatus = newRemaining <= 0 ? 'settled' : 'partial';
-
-    const { error: updateErr } = await supabase
-      .from('debts')
-      .update({
-        paid_amount: newPaid,
-        remaining_amount: newRemaining,
-        status: newStatus
-      })
-      .eq('id', debtId);
-
-    if (updateErr) throw new Error(updateErr.message);
-
-    // Auto-generate atomic settlement_code
-    let settlement_code = null;
-    const { data: codeData, error: codeErr } = await supabase.rpc('get_next_code', {
-      p_entity: 'settlement',
-      p_prefix: 'D'
+    // Atomically lock the debt row, validate the payment against the current
+    // remaining_amount, update paid/remaining/status, and insert the
+    // debt_settlements audit row — all in one DB transaction. This prevents
+    // two concurrent settlements (or a double-click) from both reading the
+    // same "remaining_amount" and one silently overwriting the other's
+    // payment, and prevents a failed audit insert from leaving the debt
+    // updated with no matching settlement record (which previously caused
+    // retries to double-apply a payment).
+    const { data: settlement, error: settleErr } = await supabase.rpc('settle_debt_transaction', {
+      p_debt_id: debtId,
+      p_amount_paid: amountPaid,
+      p_created_by: createdBy
     });
 
-    if (!codeErr && codeData) {
-      settlement_code = codeData;
-    } else {
-      const { count } = await supabase
-        .from('debt_settlements')
-        .select('*', { count: 'exact', head: true });
-      const newCount = count !== null ? count : 0;
-      const now = new Date();
-      const dateSuffix = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getFullYear()).slice(-2)}`;
-      settlement_code = `D-${newCount + 1}-${dateSuffix}`;
+    if (settleErr || !settlement) {
+      throw new Error(settleErr?.message || "Failed to settle debt");
     }
+
+    const {
+      id: settlementId,
+      settlement_code,
+      customer_id,
+      sale_id,
+      amount_paid,
+      remaining_amount: newRemaining,
+      status: newStatus,
+      settlement_date
+    } = settlement;
 
     const { data: customer } = await supabase
       .from('customers')
       .select('*')
-      .eq('id', debt.customer_id)
+      .eq('id', customer_id)
       .single();
 
     const { data: sale } = await supabase
       .from('sales')
       .select('*')
-      .eq('id', debt.sale_id)
+      .eq('id', sale_id)
       .single();
 
     const { data: settings } = await supabase
@@ -125,17 +108,19 @@ export function useDebts() {
 
     let bill_pdf_url = null;
 
-    // Generate settlement receipt PDF and upload to private storage bucket
+    // Generate settlement receipt PDF and upload to private storage bucket.
+    // This is best-effort — the financial settlement above already succeeded
+    // and is not rolled back if PDF generation/upload fails.
     try {
       const settlementObj = {
         settlement_code,
         debt_id: debtId,
         customer,
         sale,
-        amount_paid: amountPaid,
+        amount_paid,
         remaining_amount: newRemaining,
         status: newStatus,
-        settlement_date: new Date().toISOString(),
+        settlement_date,
         created_by: createdBy
       };
 
@@ -157,32 +142,18 @@ export function useDebts() {
 
         if (signedData?.signedUrl) {
           bill_pdf_url = signedData.signedUrl;
+          await supabase.from('debt_settlements').update({ bill_pdf_url }).eq('id', settlementId);
         }
       }
     } catch (pdfErr) {
       console.warn("Settlement PDF generation skipped:", pdfErr);
     }
 
-    const { data: newSettlement, error: insertErr } = await supabase
-      .from('debt_settlements')
-      .insert({
-        debt_id: debtId,
-        customer_id: debt.customer_id,
-        amount_paid: amountPaid,
-        settlement_date: new Date().toISOString(),
-        bill_pdf_url,
-        created_by: createdBy
-      })
-      .select('*')
-      .single();
-
-    if (insertErr) throw new Error(insertErr.message);
-
     return {
-      id: newSettlement.id,
+      id: settlementId,
       settlement_code,
       debt_id: debtId,
-      amount_paid: amountPaid,
+      amount_paid,
       remaining_amount: newRemaining,
       status: newStatus,
       bill_pdf_url,

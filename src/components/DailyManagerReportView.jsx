@@ -71,6 +71,7 @@ export function DailyManagerReportView() {
       setIsSaving(true);
       await saveDailyReport({
         brineCubes: Number(brineCubes) || 0,
+        brineCubesConfirmed: true,
         freeIssue: Number(freeIssue) || 0,
         damagedCubes: Number(damagedCubes) || 0,
         pmProductionQty: Number(pmProductionQty) || 0,

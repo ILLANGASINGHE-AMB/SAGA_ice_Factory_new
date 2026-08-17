@@ -79,13 +79,22 @@ export function useInventory() {
     });
 
     if (rpcErr) {
-      // Fallback if RPC not created yet
+      // Only fall back to the unlocked read-then-write below when the RPC
+      // genuinely doesn't exist yet (Postgres 42883 = undefined_function).
+      // Any other error (insufficient stock, RLS denial, etc.) is the RPC's
+      // own correct, atomic validation — propagate it directly rather than
+      // retrying with a path that can lose updates under concurrent stock
+      // changes (two adds reading the same starting quantity).
+      if (rpcErr.code !== '42883') {
+        throw new Error(rpcErr.message);
+      }
+
       const { data: item, error: getErr } = await supabase
         .from('inventory')
         .select('*')
         .eq('id', id)
         .single();
-      
+
       if (getErr || !item) throw new Error("Item not found");
 
       const prevQty = item.quantity;
@@ -138,7 +147,15 @@ export function useInventory() {
     });
 
     if (rpcErr) {
-      // Fallback if RPC not created yet
+      // Same reasoning as addStock above: only fall back when the RPC is
+      // genuinely missing, never on a real validation error, and never
+      // silently — this fallback's unlocked check-then-write can otherwise
+      // let two concurrent removals both pass the stock check and drive
+      // quantity negative.
+      if (rpcErr.code !== '42883') {
+        throw new Error(rpcErr.message);
+      }
+
       const { data: item, error: getErr } = await supabase
         .from('inventory')
         .select('*')
@@ -188,8 +205,8 @@ export function useInventory() {
   };
 
   const updatePrice = async (id, price) => {
-    if (price === null || price === undefined || price < 0) {
-      throw new Error("Price must be a non-negative decimal value");
+    if (price === null || price === undefined || price <= 0) {
+      throw new Error("Price must be a positive decimal value");
     }
 
     // Call atomic PostgreSQL RPC function

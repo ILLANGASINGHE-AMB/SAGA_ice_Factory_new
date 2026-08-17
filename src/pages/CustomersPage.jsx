@@ -15,7 +15,7 @@ import { Plus, Search, Edit2, Trash2 } from 'lucide-react';
 // Zod schema matching System_Functions.md validation rules
 const customerSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters" }),
-  whatsapp_number: z.string().regex(/^\d{10}$/, { message: "WhatsApp number must be exactly 10 digits (numeric only)" }),
+  whatsapp_number: z.string().regex(/^0\d{9}$/, { message: "WhatsApp number must be exactly 10 digits and start with 0 (e.g. 0771234567)" }),
   address: z.string().optional(),
   email: z.string().refine(val => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val), {
     message: "Invalid email format"

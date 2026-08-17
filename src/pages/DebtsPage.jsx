@@ -98,10 +98,17 @@ export function DebtsPage() {
     const amount = settlementReceiptRecord.amount_paid;
     const remaining = settlementReceiptRecord.remaining_amount;
     
+    if (!phone) {
+      toast.error("This customer has no WhatsApp number on file — can't send a notification.");
+      setWhatsappPromptOpen(false);
+      setSettlementReceiptRecord(null);
+      return;
+    }
+
     // Receipt WhatsApp message format
     const mockPDFURL = `https://sagaciouscube.com/receipt/${settlementReceiptRecord.settlement_code}`;
     const text = `Hello ${name}, your settlement receipt for ${saleCode} is ready. Amount Paid: LKR ${amount.toLocaleString()}. Remaining: LKR ${remaining.toLocaleString()}. View/Download: ${mockPDFURL}`;
-    
+
     const waURL = `https://wa.me/94${phone.substring(1)}?text=${encodeURIComponent(text)}`;
     window.open(waURL, '_blank');
     

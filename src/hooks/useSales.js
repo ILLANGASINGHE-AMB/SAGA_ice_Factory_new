@@ -56,7 +56,9 @@ export function useSales() {
     if (!cube_type || (cube_type !== 'manufactured' && cube_type !== 'resell')) {
       throw new Error("Invalid cube type selected");
     }
-    if (!quantity || quantity <= 0) throw new Error("Quantity must be a positive integer");
+    if (!quantity || quantity <= 0 || !Number.isInteger(Number(quantity))) {
+      throw new Error("Quantity must be a positive integer");
+    }
     if (price_per_cube === null || price_per_cube === undefined || price_per_cube <= 0) {
       throw new Error("Price per cube must be set before placing a sale");
     }
@@ -85,50 +87,39 @@ export function useSales() {
       total_amount = rpcData.total_amount;
       sale_date = rpcData.sale_date;
       debtId = rpcData.debt_id;
+      // Reflect the server-enforced price (may differ from what was
+      // submitted if a non-admin's cached inventory price was stale) so the
+      // generated bill always matches what was actually charged.
+      price_per_cube = rpcData.price_per_cube;
     } else {
-      // Fallback if RPC is not deployed yet
+      // Fallback if the atomic RPC is not deployed yet. Only the atomic,
+      // row-locked deduct RPC is used here — if that also fails, we do NOT
+      // fall further back to an unsynchronized read-then-write, since that
+      // path can double-sell stock under concurrent orders (two sales both
+      // reading the same quantity before either write lands). Safer to block
+      // the sale and ask the operator to retry.
       const { error: deductErr } = await supabase.rpc('deduct_inventory_stock_by_type', {
         p_cube_type: cube_type,
         p_amount: quantity
       });
 
       if (deductErr) {
-        const { data: inventoryItem, error: invErr } = await supabase
-          .from('inventory')
-          .select('*')
-          .eq('type', cube_type)
-          .single();
-
-        if (invErr || !inventoryItem) throw new Error(`Inventory item for ${cube_type} not found`);
-        if (inventoryItem.quantity - quantity < 0) {
-          throw new Error(`Insufficient stock. Available: ${inventoryItem.quantity}`);
-        }
-
-        const { error: updateInvErr } = await supabase
-          .from('inventory')
-          .update({
-            quantity: inventoryItem.quantity - quantity,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', inventoryItem.id);
-
-        if (updateInvErr) throw new Error(updateInvErr.message);
+        throw new Error(`Unable to process order: inventory update failed (${deductErr.message}). Please try again.`);
       }
 
-      const { data: codeData } = await supabase.rpc('get_next_code', {
+      // No count(*)-based fallback here — it's not a true "highest code
+      // issued" (a deleted record makes the count under-represent it), so it
+      // can regenerate a code that already exists against the `unique`
+      // constraint. Refuse cleanly instead of guessing.
+      const { data: codeData, error: codeErr } = await supabase.rpc('get_next_code', {
         p_entity: 'sale',
         p_prefix: 'S'
       });
 
-      if (codeData) {
-        sale_code = codeData;
-      } else {
-        const { count } = await supabase.from('sales').select('*', { count: 'exact', head: true });
-        const newCount = count !== null ? count : 0;
-        const now = new Date();
-        const dateSuffix = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getFullYear()).slice(-2)}`;
-        sale_code = `S-${newCount + 1}-${dateSuffix}`;
+      if (codeErr || !codeData) {
+        throw new Error("Unable to generate a sale code. Please try again.");
       }
+      sale_code = codeData;
 
       const { data: newSale, error: saleErr } = await supabase
         .from('sales')
@@ -164,7 +155,20 @@ export function useSales() {
           .select('id')
           .single();
 
-        if (debtErr) throw new Error(debtErr.message);
+        if (debtErr) {
+          // The sale (and its stock deduction) already committed. Without a
+          // matching debt record, the customer's owed amount would be
+          // permanently invisible to the system. Roll both back rather than
+          // leave a "debt sale" with no debt.
+          await supabase.from('sales').delete().eq('id', saleId);
+          await supabase.rpc('add_inventory_stock_by_type', {
+            p_cube_type: cube_type,
+            p_amount: quantity,
+            p_reference_code: sale_code,
+            p_created_by: created_by
+          }).catch(() => {});
+          throw new Error(debtErr.message || "Failed to create the debt record. The order was not completed — please try again.");
+        }
         debtId = newDebt.id;
       }
     }

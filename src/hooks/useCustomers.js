@@ -43,8 +43,8 @@ export function useCustomers() {
     if (!name || name.trim().length < 2) {
       throw new Error("Name is required and must be at least 2 characters");
     }
-    if (!whatsapp_number || !/^\d{10}$/.test(whatsapp_number)) {
-      throw new Error("WhatsApp number must be exactly 10 digits");
+    if (!whatsapp_number || !/^0\d{9}$/.test(whatsapp_number)) {
+      throw new Error("WhatsApp number must be exactly 10 digits and start with 0 (e.g. 0771234567)");
     }
 
     // Check duplicate WhatsApp
@@ -58,22 +58,19 @@ export function useCustomers() {
       throw new Error("A customer with this WhatsApp number already exists");
     }
 
-    // Auto-generate atomic customer_code
-    let customer_code = null;
+    // Auto-generate atomic customer_code. No count(*)-based fallback — a
+    // deleted customer makes the count under-represent the highest code
+    // already issued, so it can regenerate a code that collides with the
+    // `unique` constraint. Refuse cleanly instead of guessing.
     const { data: codeData, error: codeErr } = await supabase.rpc('get_next_code', {
       p_entity: 'customer',
       p_prefix: 'CUST'
     });
 
-    if (!codeErr && codeData) {
-      customer_code = codeData;
-    } else {
-      const { count } = await supabase
-        .from('customers')
-        .select('*', { count: 'exact', head: true });
-      const newCount = count !== null ? count : 0;
-      customer_code = `CUST-${String(newCount + 1).padStart(4, '0')}`;
+    if (codeErr || !codeData) {
+      throw new Error("Unable to generate a customer code. Please try again.");
     }
+    const customer_code = codeData;
 
     const { data, error: insertErr } = await supabase
       .from('customers')
@@ -97,8 +94,8 @@ export function useCustomers() {
     if (!name || name.trim().length < 2) {
       throw new Error("Name is required and must be at least 2 characters");
     }
-    if (!whatsapp_number || !/^\d{10}$/.test(whatsapp_number)) {
-      throw new Error("WhatsApp number must be exactly 10 digits");
+    if (!whatsapp_number || !/^0\d{9}$/.test(whatsapp_number)) {
+      throw new Error("WhatsApp number must be exactly 10 digits and start with 0 (e.g. 0771234567)");
     }
 
     // Check duplicate WhatsApp
@@ -126,6 +123,24 @@ export function useCustomers() {
   };
 
   const deleteCustomer = async (id) => {
+    // Debts (and their settlement history) cascade-delete with the customer.
+    // Block removal while any non-settled debt exists so outstanding money
+    // owed can never be silently erased.
+    const { data: openDebts, error: debtsErr } = await supabase
+      .from('debts')
+      .select('remaining_amount')
+      .eq('customer_id', id)
+      .neq('status', 'settled');
+
+    if (debtsErr) throw new Error(debtsErr.message);
+
+    if (openDebts && openDebts.length > 0) {
+      const totalOwed = openDebts.reduce((sum, d) => sum + Number(d.remaining_amount || 0), 0);
+      throw new Error(
+        `Cannot delete this customer: they have ${openDebts.length} unsettled debt(s) totaling LKR ${totalOwed.toLocaleString()}. Settle or clear these debts first.`
+      );
+    }
+
     const { error } = await supabase
       .from('customers')
       .delete()
