@@ -10,13 +10,19 @@ import {
   LineChart, Line,
   PieChart, Pie, Cell
 } from 'recharts';
-import { 
-  Boxes, 
-  TrendingUp, 
-  AlertCircle, 
+import {
+  Boxes,
+  TrendingUp,
+  AlertCircle,
   ArrowUpRight,
   ShieldAlert,
-  Wrench
+  Wrench,
+  Package,
+  Recycle,
+  Layers,
+  Wallet,
+  Landmark,
+  CreditCard
 } from 'lucide-react';
 
 export function DashboardPage() {
@@ -37,7 +43,7 @@ export function DashboardPage() {
       <div className="space-y-4 sm:space-y-6">
         {/* Metric Cards Loading */}
         <div className="grid grid-cols-2 lg:grid-cols-4 landscape:grid-cols-4 gap-3 sm:gap-5">
-          {Array.from({ length: 4 }).map((_, i) => (
+          {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-24 sm:h-28 rounded-2xl" />
           ))}
         </div>
@@ -53,7 +59,10 @@ export function DashboardPage() {
 
   const { stats, charts, tables } = dashboardData;
 
+  const money = (val) => `LKR ${(Number(val) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
   const cardItems = [
+    // Row 1 — cube counts
     {
       title: 'Sold Today',
       value: `${stats.totalCubesSoldToday.toLocaleString()} Cubes`,
@@ -61,21 +70,46 @@ export function DashboardPage() {
       bg: 'bg-sky-50 dark:bg-sky-950/30 border-sky-100 dark:border-sky-900/50 text-sky-500'
     },
     {
-      title: 'Total Stock',
-      value: `${stats.totalInventory.toLocaleString()} Cubes`,
-      icon: <Boxes size={20} className="text-indigo-500" />,
+      title: 'Production Cubes',
+      value: `${stats.mfcInventory.toLocaleString()} Cubes`,
+      icon: <Package size={20} className="text-cyan-500" />,
+      bg: 'bg-cyan-50 dark:bg-cyan-950/30 border-cyan-100 dark:border-cyan-900/50 text-cyan-500'
+    },
+    {
+      title: 'Resell Cubes',
+      value: `${stats.rscInventory.toLocaleString()} Cubes`,
+      icon: <Recycle size={20} className="text-indigo-500" />,
       bg: 'bg-indigo-50 dark:bg-indigo-950/30 border-indigo-100 dark:border-indigo-900/50 text-indigo-500'
     },
     {
-      title: 'Total Revenue',
-      value: `LKR ${stats.totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      title: 'Total Cubes',
+      value: `${stats.totalProductionResellCubes.toLocaleString()} Cubes`,
+      icon: <Layers size={20} className="text-violet-500" />,
+      bg: 'bg-violet-50 dark:bg-violet-950/30 border-violet-100 dark:border-violet-900/50 text-violet-500'
+    },
+    // Row 2 — money
+    {
+      title: 'Monthly Revenue',
+      value: money(stats.monthlyRevenue),
       icon: <TrendingUp size={20} className="text-emerald-500" />,
       bg: 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-100 dark:border-emerald-900/50 text-emerald-500'
     },
     {
-      title: 'Pending Debts',
-      value: `${stats.pendingDebtsCount} Customers`,
-      icon: <AlertCircle size={20} className="text-rose-500" />,
+      title: 'Total Revenue',
+      value: money(stats.totalRevenue),
+      icon: <Wallet size={20} className="text-teal-500" />,
+      bg: 'bg-teal-50 dark:bg-teal-950/30 border-teal-100 dark:border-teal-900/50 text-teal-500'
+    },
+    {
+      title: 'Monthly Cash Flow',
+      value: money(stats.monthlyCashFlow),
+      icon: <Landmark size={20} className="text-blue-500" />,
+      bg: 'bg-blue-50 dark:bg-blue-950/30 border-blue-100 dark:border-blue-900/50 text-blue-500'
+    },
+    {
+      title: 'Total Debts',
+      value: money(stats.totalOutstandingDebts),
+      icon: <CreditCard size={20} className="text-rose-500" />,
       bg: 'bg-rose-50 dark:bg-rose-950/30 border-rose-100 dark:border-rose-900/50 text-rose-500'
     }
   ];
@@ -133,22 +167,22 @@ export function DashboardPage() {
       {/* 2. Charts Section - Landscape Side-by-Side */}
       <div className="grid grid-cols-1 lg:grid-cols-3 landscape:grid-cols-3 gap-4 sm:gap-5">
         
-        {/* Weekly Sales & Production Chart */}
+        {/* Monthly Sales & Production Chart */}
         <div className="bg-white dark:bg-slate-900/90 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] backdrop-blur-md lg:col-span-2 landscape:col-span-2 space-y-3">
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
             <h3 className="text-xs sm:text-sm font-bold font-heading text-slate-800 dark:text-slate-100">
-              Weekly Cube Production Sales
+              Monthly Cube Production Sales
             </h3>
             <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
-              Last 7 Days
+              Last 30 Days
             </span>
           </div>
           <div className="h-44 sm:h-52 md:h-56">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={charts.weekly} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <BarChart data={charts.monthly} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" className="dark:hidden" />
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.06)" className="hidden dark:block" />
-                <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} tickLine={false} />
+                <XAxis dataKey="date" stroke="#94a3b8" fontSize={9} tickLine={false} interval={2} />
                 <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} />
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)', fontSize: '11px' }}
@@ -166,7 +200,7 @@ export function DashboardPage() {
         <div className="bg-white dark:bg-slate-900/90 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] backdrop-blur-md space-y-3 flex flex-col justify-between">
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
             <h3 className="text-xs sm:text-sm font-bold font-heading text-slate-800 dark:text-slate-100">
-              Sales Distribution
+              Sales Distribution (Monthly)
             </h3>
             <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
               Cash vs Credit

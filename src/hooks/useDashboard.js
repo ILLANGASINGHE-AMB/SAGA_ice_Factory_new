@@ -7,12 +7,17 @@ const defaultDashboardData = {
     rscSoldToday: 0,
     totalCubesSoldToday: 0,
     totalInventory: 0,
+    mfcInventory: 0,
+    rscInventory: 0,
+    totalProductionResellCubes: 0,
     revenueToday: 0,
     totalRevenue: 0,
+    monthlyRevenue: 0,
+    monthlyCashFlow: 0,
+    totalOutstandingDebts: 0,
     pendingDebtsCount: 0
   },
   charts: {
-    weekly: [],
     monthly: [],
     pie: [{ name: 'Cash Sales', value: 1 }, { name: 'Debt Sales', value: 0 }]
   },
@@ -47,6 +52,10 @@ export function useDashboard() {
       const startOfToday = new Date();
       startOfToday.setHours(0, 0, 0, 0);
 
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+
       const custMap = new Map(customersList.map(c => [c.id, c]));
       const salesMap = new Map(salesList.map(s => [s.id, s]));
 
@@ -54,6 +63,8 @@ export function useDashboard() {
       let rscSoldToday = 0;
       let revenueToday = 0;
       let totalRevenue = 0;
+      let monthlyRevenue = 0;
+      let monthlyCashSales = 0;
 
       salesList.forEach(sale => {
         const amt = Number(sale.total_amount) || 0;
@@ -68,33 +79,55 @@ export function useDashboard() {
           }
           revenueToday += amt;
         }
+
+        if (saleDate >= startOfMonth) {
+          monthlyRevenue += amt;
+          if (sale.payment_type === 'cash') {
+            monthlyCashSales += amt;
+          }
+        }
       });
 
       const totalCubesSoldToday = mfcSoldToday + rscSoldToday;
       const totalInventory = inventoryList.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+      const mfcInventory = Number(inventoryList.find(i => i.type === 'manufactured')?.quantity) || 0;
+      const rscInventory = Number(inventoryList.find(i => i.type === 'resell')?.quantity) || 0;
+      const totalProductionResellCubes = mfcInventory + rscInventory;
 
       const pendingDebtsCount = debtsList.filter(d => d.status === 'pending' || d.status === 'partial').length;
+      const totalOutstandingDebts = debtsList
+        .filter(d => d.status === 'pending' || d.status === 'partial')
+        .reduce((sum, d) => sum + (Number(d.remaining_amount) || 0), 0);
 
-      const weeklyData = [];
-      const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      
-      for (let i = 6; i >= 0; i--) {
+      let monthlyDebtSettled = 0;
+      settlementsList.forEach(setl => {
+        const sDate = new Date(setl.settlement_date);
+        if (sDate >= startOfMonth) {
+          monthlyDebtSettled += Number(setl.amount_paid) || 0;
+        }
+      });
+      const monthlyCashFlow = monthlyCashSales + monthlyDebtSettled;
+
+      // 30-day Manufactured/Resell cube sales + daily revenue, in one pass
+      // (bar chart and revenue line chart both read this same array).
+      const monthlyData = [];
+      for (let i = 29; i >= 0; i--) {
         const d = new Date();
         d.setDate(d.getDate() - i);
-        const dayName = weekdays[d.getDay()];
         const dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-        
-        let mfcQty = 0;
-        let rscQty = 0;
-        
+
         const dayStart = new Date(d);
         dayStart.setHours(0, 0, 0, 0);
         const dayEnd = new Date(d);
         dayEnd.setHours(23, 59, 59, 999);
-        
+
+        let dayRev = 0;
+        let mfcQty = 0;
+        let rscQty = 0;
         salesList.forEach(sale => {
           const sDate = new Date(sale.sale_date);
           if (sDate >= dayStart && sDate <= dayEnd) {
+            dayRev += Number(sale.total_amount) || 0;
             if (sale.cube_type === 'manufactured') {
               mfcQty += Number(sale.quantity) || 0;
             } else if (sale.cube_type === 'resell') {
@@ -102,50 +135,29 @@ export function useDashboard() {
             }
           }
         });
-        
-        weeklyData.push({
-          name: dayName,
+
+        monthlyData.push({
           date: dateStr,
+          Revenue: dayRev,
           Manufactured: mfcQty,
           Resell: rscQty
         });
       }
 
-      const monthlyData = [];
-      for (let i = 29; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        const dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-        
-        const dayStart = new Date(d);
-        dayStart.setHours(0, 0, 0, 0);
-        const dayEnd = new Date(d);
-        dayEnd.setHours(23, 59, 59, 999);
-        
-        let dayRev = 0;
-        salesList.forEach(sale => {
-          const sDate = new Date(sale.sale_date);
-          if (sDate >= dayStart && sDate <= dayEnd) {
-            dayRev += Number(sale.total_amount) || 0;
-          }
-        });
-        
-        monthlyData.push({
-          date: dateStr,
-          Revenue: dayRev
-        });
-      }
-
+      // Sales Distribution (Monthly): cash vs debt sales for the current
+      // calendar month only, not all-time.
       let cashTotal = 0;
       let debtTotal = 0;
       salesList.forEach(sale => {
+        const saleDate = new Date(sale.sale_date);
+        if (saleDate < startOfMonth) return;
         if (sale.payment_type === 'cash') {
           cashTotal += Number(sale.total_amount) || 0;
         } else if (sale.payment_type === 'debt') {
           debtTotal += Number(sale.total_amount) || 0;
         }
       });
-      
+
       // The `|| 1` placeholder exists only so the pie chart renders
       // something when there's truly no sales data at all — it must not
       // fire just because cash sales happen to be legitimately 0 while debt
@@ -195,12 +207,17 @@ export function useDashboard() {
           rscSoldToday,
           totalCubesSoldToday,
           totalInventory,
+          mfcInventory,
+          rscInventory,
+          totalProductionResellCubes,
           revenueToday,
           totalRevenue,
+          monthlyRevenue,
+          monthlyCashFlow,
+          totalOutstandingDebts,
           pendingDebtsCount
         },
         charts: {
-          weekly: weeklyData,
           monthly: monthlyData,
           pie: pieData
         },
