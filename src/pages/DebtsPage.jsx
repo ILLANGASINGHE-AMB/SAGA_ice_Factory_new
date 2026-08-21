@@ -8,7 +8,7 @@ import { Button } from '../components/Button';
 import { Modal } from '../components/Modal';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Input, Select, TextArea } from '../components/FormFields';
-import { generateSettlementReceiptPDF, generateBillPDF } from '../utils/pdfGenerator';
+import { generateSettlementReceiptPDF, generateDebtStatementPDF } from '../utils/pdfGenerator';
 import { DollarSign, RefreshCcw, FileDown, Users, History } from 'lucide-react';
 
 export function DebtsPage() {
@@ -152,9 +152,11 @@ export function DebtsPage() {
     setSettlementReceiptRecord(null);
   };
 
-  // Debt History: preview a debt's original sale bill (generated, not auto-downloaded)
+  // Debt History: preview the debt statement — total debt amount, full paid
+  // history, and (once settled) the settled amount/date — generated, not
+  // auto-downloaded.
   const handleViewBill = (debt) => {
-    const doc = generateBillPDF(debt.sale, settings);
+    const doc = generateDebtStatementPDF(debt, settings);
     const blobUrl = doc.output('bloburl');
     setBillPdfUrl(blobUrl);
     setBillDebt(debt);
@@ -163,8 +165,8 @@ export function DebtsPage() {
 
   const downloadBill = (debt) => {
     if (!debt) return;
-    const doc = generateBillPDF(debt.sale, settings);
-    doc.save(`${debt.sale?.sale_code || 'bill'}_invoice.pdf`);
+    const doc = generateDebtStatementPDF(debt, settings);
+    doc.save(`${debt.sale?.sale_code || `DEBT-${debt.id}`}_statement.pdf`);
   };
 
   const closeBillPreview = () => {
@@ -645,18 +647,18 @@ export function DebtsPage() {
         </div>
       </Modal>
 
-      {/* --- Debt History Bill Preview Modal --- */}
+      {/* --- Debt History Statement Preview Modal --- */}
       <Modal
         isOpen={billPreviewOpen}
         onClose={closeBillPreview}
-        title={`Bill Preview ${billDebt?.sale ? `— ${billDebt.sale.sale_code}` : ''}`}
+        title={`Debt Statement ${billDebt?.sale ? `— ${billDebt.sale.sale_code}` : ''}`}
         size="2xl"
       >
         <div className="space-y-3">
           {billPdfUrl && (
             <iframe
               src={billPdfUrl}
-              title="Bill PDF Preview"
+              title="Debt Statement PDF Preview"
               className="w-full h-[70vh] rounded-xl border border-slate-200 dark:border-slate-800"
             />
           )}

@@ -10,7 +10,7 @@ export function useDebts() {
     try {
       const { data, error } = await supabase
         .from('debts')
-        .select('*, customer:customers(*), sale:sales(*, customer:customers(*), sale_items(*)), debt_settlements(*)')
+        .select('*, customer:customers(*), sale:sales(*), debt_settlements(*)')
         .order('created_at', { ascending: false });
 
       if (error) throw error;

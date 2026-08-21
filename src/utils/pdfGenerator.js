@@ -222,6 +222,117 @@ export function generateBillPDFBlob(sale, settings) {
   return doc.output('blob');
 }
 
+// 1b. Generate Debt Statement PDF — the Debt History "Download PDF": shows
+// the debt's total amount and its full paid history, and (once settled)
+// the settled amount/date instead of an outstanding balance.
+export function generateDebtStatementPDF(debt, settings) {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const isSettled = debt.status === 'settled';
+
+  drawHeader(doc, settings, 'Debt Statement', debt.sale?.sale_code || `DEBT-${debt.id}`);
+
+  // Customer Section
+  doc.setTextColor(15, 23, 42);
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('CUSTOMER DETAILS:', 14, 62);
+
+  doc.setFont('Helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(`Customer Name: ${debt.customer?.name || 'Walk-in Customer'}`, 14, 67);
+  doc.text(`WhatsApp: ${debt.customer?.whatsapp_number || debt.customer?.contact_number || 'N/A'}`, 14, 72);
+  doc.text(`Address: ${debt.customer?.address || 'N/A'}`, 14, 77);
+
+  // Debt Meta Section
+  doc.setFont('Helvetica', 'bold');
+  doc.text('DEBT DETAILS:', 130, 62);
+  doc.setFont('Helvetica', 'normal');
+  doc.text(`Sale Reference: ${debt.sale?.sale_code || 'N/A'}`, 130, 67);
+  doc.text(`Date Issued: ${new Date(debt.created_at).toLocaleDateString()}`, 130, 72);
+  doc.text(`Total Debt Amount: LKR ${Number(debt.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 130, 77);
+  doc.text(`Status: ${debt.status?.toUpperCase() || 'N/A'}`, 130, 82);
+
+  // Paid History
+  const settlements = (debt.debt_settlements || [])
+    .slice()
+    .sort((a, b) => new Date(a.settlement_date) - new Date(b.settlement_date));
+
+  const tableData = settlements.length
+    ? settlements.map(s => [
+        new Date(s.settlement_date).toLocaleDateString(),
+        `LKR ${Number(s.amount_paid).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+        (s.payment_method || 'cash').replace('_', ' ').toUpperCase(),
+        s.notes || '-'
+      ])
+    : [['-', '-', '-', 'No payments recorded yet']];
+
+  doc.autoTable({
+    startY: 90,
+    head: [['Date', 'Amount Paid', 'Method', 'Note']],
+    body: tableData,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 9
+    },
+    bodyStyles: {
+      fontSize: 8.5,
+      textColor: [51, 65, 85]
+    },
+    columnStyles: {
+      0: { width: 30 },
+      1: { halign: 'right', width: 35 },
+      2: { halign: 'center', width: 35 },
+      3: { width: 76 }
+    }
+  });
+
+  // Summary Box: settled amount/date when settled, otherwise the running balance
+  const finalY = doc.lastAutoTable.finalY + 10;
+  const boxHeight = isSettled ? 28 : 20;
+
+  doc.setDrawColor(226, 232, 240);
+  doc.setFillColor(248, 250, 252);
+  doc.rect(120, finalY, 80, boxHeight, 'FD');
+
+  doc.setFont('Helvetica', 'bold');
+  doc.setTextColor(71, 85, 105);
+  doc.setFontSize(9);
+
+  if (isSettled) {
+    const lastSettlement = settlements[settlements.length - 1];
+    doc.text('Settled Amount:', 124, finalY + 7);
+    doc.text('Settled Date:', 124, finalY + 14);
+    doc.text('Remaining Debt:', 124, finalY + 21);
+
+    doc.setFont('Helvetica', 'normal');
+    doc.text(`LKR ${Number(debt.paid_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 196, finalY + 7, { align: 'right' });
+    doc.text(lastSettlement ? new Date(lastSettlement.settlement_date).toLocaleDateString() : 'N/A', 196, finalY + 14, { align: 'right' });
+    doc.setFont('Helvetica', 'bold');
+    doc.setTextColor(15, 118, 110);
+    doc.text('LKR 0.00', 196, finalY + 21, { align: 'right' });
+  } else {
+    doc.text('Amount Paid:', 124, finalY + 7);
+    doc.text('Remaining Debt:', 124, finalY + 14);
+
+    doc.setFont('Helvetica', 'normal');
+    doc.text(`LKR ${Number(debt.paid_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 196, finalY + 7, { align: 'right' });
+    doc.setFont('Helvetica', 'bold');
+    doc.setTextColor(185, 28, 28);
+    doc.text(`LKR ${Number(debt.remaining_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 196, finalY + 14, { align: 'right' });
+  }
+
+  drawFooter(doc);
+  return doc;
+}
+
 
 // 2. Generate Debt Settlement Receipt PDF
 export function generateSettlementReceiptPDF(settlement, settings) {
