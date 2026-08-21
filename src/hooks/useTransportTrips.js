@@ -39,11 +39,11 @@ export function useTransportTrips() {
     };
   }, []);
 
-  const startTrip = async ({ vehicle_id, driver_id, start_odometer, start_datetime, description = '' }, createdBy = 'Operator') => {
+  const startTrip = async ({ vehicle_id, employee_id, start_odometer, start_datetime, description = '' }, createdBy = 'Operator') => {
     const start = Number(start_odometer);
 
     if (!vehicle_id) throw new Error("Vehicle is required");
-    if (!driver_id) throw new Error("Driver is required");
+    if (!employee_id) throw new Error("Driver is required");
     if (!start_datetime) throw new Error("Start Date and Time is required");
     if (isNaN(start) || start < 0) throw new Error("Start KM must be a valid non-negative number");
 
@@ -51,7 +51,7 @@ export function useTransportTrips() {
       .from('transport_trips')
       .insert({
         vehicle_id,
-        driver_id,
+        employee_id,
         start_odometer: start,
         start_datetime: new Date(start_datetime).toISOString(),
         description: description.trim(),

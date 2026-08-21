@@ -18,11 +18,10 @@ const employeeSchema = z.object({
     message: "Phone number must be exactly 10 digits and start with 0 (e.g. 0771234567)"
   }),
   address: z.string(),
-  job_type: z.string(),
   status: z.enum(['active', 'inactive'])
 });
 
-const emptyValues = { name: '', nic: '', phone: '', address: '', job_type: '', status: 'active' };
+const emptyValues = { name: '', nic: '', phone: '', address: '', status: 'active' };
 
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Active' },
@@ -43,7 +42,6 @@ export function EmployeeFormModal({ isOpen, onClose, editingEmployee, addEmploye
         nic: editingEmployee.nic,
         phone: editingEmployee.phone || '',
         address: editingEmployee.address || '',
-        job_type: editingEmployee.job_type || '',
         status: editingEmployee.status || 'active'
       });
     } else {
@@ -101,23 +99,13 @@ export function EmployeeFormModal({ isOpen, onClose, editingEmployee, addEmploye
           {...register('nic')}
         />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Input
-            label="Phone"
-            name="phone"
-            placeholder="e.g. 0771234567"
-            error={errors.phone}
-            {...register('phone')}
-          />
-
-          <Input
-            label="Job Type"
-            name="job_type"
-            placeholder="e.g. Machine Operator"
-            error={errors.job_type}
-            {...register('job_type')}
-          />
-        </div>
+        <Input
+          label="Phone"
+          name="phone"
+          placeholder="e.g. 0771234567"
+          error={errors.phone}
+          {...register('phone')}
+        />
 
         <Input
           label="Address"

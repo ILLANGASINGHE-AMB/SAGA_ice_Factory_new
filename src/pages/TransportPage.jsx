@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useVehicles } from '../hooks/useVehicles';
-import { useDrivers } from '../hooks/useDrivers';
+import { useEmployees } from '../hooks/useEmployees';
 import { useTransportTrips } from '../hooks/useTransportTrips';
 import { useToast } from '../components/Toast';
 import { Table } from '../components/Table';
@@ -41,7 +41,7 @@ function toDateInput(date) { return `${date.getFullYear()}-${pad(date.getMonth()
 
 export function TransportPage() {
   const { vehicles, isLoading: vehiclesLoading } = useVehicles();
-  const { drivers, isLoading: driversLoading, addDriver } = useDrivers();
+  const { employees, isLoading: employeesLoading } = useEmployees();
   const { trips, isLoading: tripsLoading, startTrip, endTrip } = useTransportTrips();
   const toast = useToast();
 
@@ -59,7 +59,7 @@ export function TransportPage() {
   const [graphGranularity, setGraphGranularity] = useState('daily'); // 'daily' | 'monthly' | 'yearly'
 
   const vehicleById = useMemo(() => new Map(vehicles.map(v => [Number(v.id), v])), [vehicles]);
-  const driverById = useMemo(() => new Map(drivers.map(d => [Number(d.id), d])), [drivers]);
+  const employeeById = useMemo(() => new Map(employees.map(e => [Number(e.id), e])), [employees]);
 
   const applyPeriod = (period) => {
     const today = new Date();
@@ -89,7 +89,7 @@ export function TransportPage() {
   const filteredTrips = useMemo(() => {
     return trips.filter(t => {
       if (vehicleFilter && Number(t.vehicle_id) !== Number(vehicleFilter)) return false;
-      if (driverFilter && Number(t.driver_id) !== Number(driverFilter)) return false;
+      if (driverFilter && Number(t.employee_id) !== Number(driverFilter)) return false;
       if (!isWithinRange(t.start_datetime, dateFrom, dateTo)) return false;
       return true;
     });
@@ -216,7 +216,7 @@ export function TransportPage() {
         className="px-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none font-semibold"
       >
         <option value="">All Drivers</option>
-        {drivers.map(d => <option key={d.id} value={d.id}>{d.driver_name}</option>)}
+        {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
       </select>
 
       {(statusFilter !== 'all' || activePeriod || dateFrom || dateTo || vehicleFilter || driverFilter) && (
@@ -230,7 +230,7 @@ export function TransportPage() {
     </div>
   );
 
-  const isLoading = vehiclesLoading || driversLoading || tripsLoading;
+  const isLoading = vehiclesLoading || employeesLoading || tripsLoading;
 
   return (
     <div className="space-y-6">
@@ -270,7 +270,7 @@ export function TransportPage() {
             <tr key={trip.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
               <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono font-medium text-navy-600 dark:text-navy-400">TRP-{String(trip.id).padStart(6, '0')}</td>
               <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono font-semibold text-slate-900 dark:text-slate-100">{vehicleById.get(Number(trip.vehicle_id))?.vehicle_no || '—'}</td>
-              <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-slate-700 dark:text-slate-300">{driverById.get(Number(trip.driver_id))?.driver_name || '—'}</td>
+              <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-slate-700 dark:text-slate-300">{employeeById.get(Number(trip.employee_id))?.name || '—'}</td>
               <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-slate-500 whitespace-nowrap">{formatDateTime(trip.start_datetime)}</td>
               <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono">{Number(trip.start_odometer).toLocaleString()}</td>
               <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-slate-600 dark:text-slate-300">{trip.description || '—'}</td>
@@ -338,7 +338,7 @@ export function TransportPage() {
               <tr key={trip.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
                 <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono font-medium text-navy-600 dark:text-navy-400">TRP-{String(trip.id).padStart(6, '0')}</td>
                 <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono font-semibold text-slate-900 dark:text-slate-100">{vehicleById.get(Number(trip.vehicle_id))?.vehicle_no || '—'}</td>
-                <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-slate-700 dark:text-slate-300">{driverById.get(Number(trip.driver_id))?.driver_name || '—'}</td>
+                <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-slate-700 dark:text-slate-300">{employeeById.get(Number(trip.employee_id))?.name || '—'}</td>
                 <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-slate-500 whitespace-nowrap">{formatDateTime(trip.start_datetime)}</td>
                 <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono">{Number(trip.start_odometer).toLocaleString()}</td>
                 <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono">{trip.end_odometer != null ? Number(trip.end_odometer).toLocaleString() : '—'}</td>
@@ -422,9 +422,8 @@ export function TransportPage() {
         isOpen={newTripOpen}
         onClose={() => setNewTripOpen(false)}
         vehicles={vehicles}
-        drivers={drivers}
+        employees={employees}
         trips={trips}
-        addDriver={addDriver}
         onSubmit={handleStartTrip}
       />
 

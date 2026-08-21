@@ -2,8 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Modal } from './Modal';
 import { Button } from './Button';
 import { Input, Select, TextArea } from './FormFields';
-import { DriverFormModal } from './DriverFormModal';
-import { UserPlus } from 'lucide-react';
 
 function toLocalDateTimeInput(date) {
   const pad = (n) => String(n).padStart(2, '0');
@@ -12,17 +10,16 @@ function toLocalDateTimeInput(date) {
 
 const emptyValues = {
   vehicle_id: '',
-  driver_id: '',
+  employee_id: '',
   start_odometer: '',
   start_datetime: toLocalDateTimeInput(new Date()),
   description: ''
 };
 
-export function TransportTripFormModal({ isOpen, onClose, vehicles, drivers, trips, addDriver, onSubmit }) {
+export function TransportTripFormModal({ isOpen, onClose, vehicles, employees, trips, onSubmit }) {
   const [values, setValues] = useState(emptyValues);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [driverModalOpen, setDriverModalOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -38,8 +35,8 @@ export function TransportTripFormModal({ isOpen, onClose, vehicles, drivers, tri
 
   const driverOptions = useMemo(() => [
     { value: '', label: 'Select Driver' },
-    ...drivers.map(d => ({ value: String(d.id), label: d.driver_name }))
-  ], [drivers]);
+    ...employees.map(e => ({ value: String(e.id), label: e.name }))
+  ], [employees]);
 
   // Suggest Start KM: last completed trip's end odometer for this vehicle, else the vehicle's initial odometer.
   useEffect(() => {
@@ -60,10 +57,6 @@ export function TransportTripFormModal({ isOpen, onClose, vehicles, drivers, tri
     setValues(prev => ({ ...prev, [field]: e.target.value }));
   };
 
-  const handleDriverAdded = (driver) => {
-    setValues(prev => ({ ...prev, driver_id: String(driver.id) }));
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -72,7 +65,7 @@ export function TransportTripFormModal({ isOpen, onClose, vehicles, drivers, tri
       setError("Please select a Vehicle");
       return;
     }
-    if (!values.driver_id) {
+    if (!values.employee_id) {
       setError("Please select a Driver");
       return;
     }
@@ -90,7 +83,7 @@ export function TransportTripFormModal({ isOpen, onClose, vehicles, drivers, tri
     try {
       await onSubmit({
         vehicle_id: Number(values.vehicle_id),
-        driver_id: Number(values.driver_id),
+        employee_id: Number(values.employee_id),
         start_odometer: start,
         start_datetime: values.start_datetime,
         description: values.description
@@ -104,100 +97,75 @@ export function TransportTripFormModal({ isOpen, onClose, vehicles, drivers, tri
   };
 
   return (
-    <>
-      <Modal isOpen={isOpen} onClose={onClose} title="New Trip" size="md">
-        <form onSubmit={handleSubmit} className="space-y-3">
+    <Modal isOpen={isOpen} onClose={onClose} title="New Trip" size="md">
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <Input
+          label="Trip ID"
+          name="trip_id"
+          value="Auto-generated on save"
+          disabled
+        />
+
+        <Select
+          label="Vehicle"
+          name="vehicle_id"
+          required
+          options={vehicleOptions}
+          value={values.vehicle_id}
+          onChange={handleChange('vehicle_id')}
+        />
+
+        <Select
+          label="Driver"
+          name="employee_id"
+          required
+          options={driverOptions}
+          value={values.employee_id}
+          onChange={handleChange('employee_id')}
+        />
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Input
-            label="Trip ID"
-            name="trip_id"
-            value="Auto-generated on save"
-            disabled
-          />
-
-          <Select
-            label="Vehicle"
-            name="vehicle_id"
+            label="Start KM"
+            name="start_odometer"
+            type="number"
+            min="0"
             required
-            options={vehicleOptions}
-            value={values.vehicle_id}
-            onChange={handleChange('vehicle_id')}
+            placeholder="e.g. 12000"
+            value={values.start_odometer}
+            onChange={handleChange('start_odometer')}
           />
-
-          <div>
-            <div className="flex items-end gap-2">
-              <div className="flex-1">
-                <Select
-                  label="Driver"
-                  name="driver_id"
-                  required
-                  options={driverOptions}
-                  value={values.driver_id}
-                  onChange={handleChange('driver_id')}
-                />
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                size="md"
-                onClick={() => setDriverModalOpen(true)}
-                className="flex items-center space-x-1.5 shrink-0"
-                title="Add New Driver"
-              >
-                <UserPlus size={14} />
-              </Button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Input
-              label="Start KM"
-              name="start_odometer"
-              type="number"
-              min="0"
-              required
-              placeholder="e.g. 12000"
-              value={values.start_odometer}
-              onChange={handleChange('start_odometer')}
-            />
-            <Input
-              label="Start Date and Time"
-              name="start_datetime"
-              type="datetime-local"
-              required
-              value={values.start_datetime}
-              onChange={handleChange('start_datetime')}
-            />
-          </div>
-
-          <TextArea
-            label="Description"
-            name="description"
-            placeholder="e.g. Delivery to Colombo 03"
-            value={values.description}
-            onChange={handleChange('description')}
+          <Input
+            label="Start Date and Time"
+            name="start_datetime"
+            type="datetime-local"
+            required
+            value={values.start_datetime}
+            onChange={handleChange('start_datetime')}
           />
+        </div>
 
-          {error && (
-            <p className="text-xs text-red-500 font-medium">{error}</p>
-          )}
+        <TextArea
+          label="Description"
+          name="description"
+          placeholder="e.g. Delivery to Colombo 03"
+          value={values.description}
+          onChange={handleChange('description')}
+        />
 
-          <div className="flex justify-end space-x-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-            <Button type="button" variant="secondary" onClick={onClose} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" isLoading={isSubmitting}>
-              Save Trip
-            </Button>
-          </div>
-        </form>
-      </Modal>
+        {error && (
+          <p className="text-xs text-red-500 font-medium">{error}</p>
+        )}
 
-      <DriverFormModal
-        isOpen={driverModalOpen}
-        onClose={() => setDriverModalOpen(false)}
-        addDriver={addDriver}
-        onSaved={handleDriverAdded}
-      />
-    </>
+        <div className="flex justify-end space-x-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+          <Button type="button" variant="secondary" onClick={onClose} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" isLoading={isSubmitting}>
+            Save Trip
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
