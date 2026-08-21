@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useCashBank } from '../hooks/useCashBank';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
@@ -13,7 +13,9 @@ import {
   ArrowDownLeft,
   Plus,
   Trash2,
-  Clock
+  Clock,
+  History,
+  ArrowLeft
 } from 'lucide-react';
 
 const nowLocalDatetime = () => {
@@ -26,6 +28,21 @@ const fmtDateTime = (iso) => {
   if (!iso) return '—';
   const d = new Date(iso);
   return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+};
+
+const toLocalDateStr = (iso) => {
+  const d = new Date(iso);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const ACTION_LABELS = {
+  cash_receive: 'Cash Receive',
+  bank_deposit: 'Bank Deposit',
+  cheque_received: 'Cheque Received',
+  withdrawal: 'Withdrawal'
 };
 
 const money = (n) => `LKR ${(Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
@@ -58,6 +75,15 @@ export function CashBankPage() {
   const [savingSection, setSavingSection] = useState(null);
   const [confirmTarget, setConfirmTarget] = useState(null); // { type, id, label }
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Cash Flow History view
+  const [viewMode, setViewMode] = useState('sections'); // 'sections' | 'history'
+  const [periodType, setPeriodType] = useState('all'); // 'all' | 'daily' | 'monthly' | 'yearly'
+  const [periodDate, setPeriodDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [periodMonth, setPeriodMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [periodYear, setPeriodYear] = useState(() => String(new Date().getFullYear()));
+  const [historyActionFilter, setHistoryActionFilter] = useState('all');
+  const [historyUserFilter, setHistoryUserFilter] = useState('all');
 
   // Section 01: Other Cash Receives
   const [receiveAmount, setReceiveAmount] = useState('');
@@ -183,25 +209,145 @@ export function CashBankPage() {
     cheques: 'Cash Received From Cheques (Already Deposited)'
   };
 
+  const historyUsers = useMemo(
+    () => Array.from(new Set(cb.historyEntries.map(e => e.doneBy))).sort(),
+    [cb.historyEntries]
+  );
+
+  const filteredHistory = useMemo(() => {
+    return cb.historyEntries.filter(e => {
+      if (periodType === 'daily' && toLocalDateStr(e.occurredAt) !== periodDate) return false;
+      if (periodType === 'monthly' && toLocalDateStr(e.occurredAt).slice(0, 7) !== periodMonth) return false;
+      if (periodType === 'yearly' && String(new Date(e.occurredAt).getFullYear()) !== periodYear) return false;
+      if (historyActionFilter !== 'all' && e.actionType !== historyActionFilter) return false;
+      if (historyUserFilter !== 'all' && e.doneBy !== historyUserFilter) return false;
+      return true;
+    });
+  }, [cb.historyEntries, periodType, periodDate, periodMonth, periodYear, historyActionFilter, historyUserFilter]);
+
   return (
     <div className="space-y-6">
 
       {/* Header Bar */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs">
-        <div className="flex items-center space-x-2">
-          <Landmark className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
-          <h2 className="text-xl font-bold font-heading text-slate-900 dark:text-slate-100">
-            Cash & Bank Management
-          </h2>
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <div className="flex items-center space-x-2">
+            <Landmark className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+            <h2 className="text-xl font-bold font-heading text-slate-900 dark:text-slate-100">
+              Cash & Bank Management
+            </h2>
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Live running balances across Cash, Bank Deposits, Cheques and Withdrawals — every entry is saved permanently.
+          </p>
         </div>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          Live running balances across Cash, Bank Deposits, Cheques and Withdrawals — every entry is saved permanently.
-        </p>
+
+        <Button
+          variant={viewMode === 'history' ? 'secondary' : 'primary'}
+          onClick={() => setViewMode(viewMode === 'history' ? 'sections' : 'history')}
+          className="flex items-center space-x-2 shrink-0"
+        >
+          {viewMode === 'history' ? <ArrowLeft size={16} /> : <History size={16} />}
+          <span>{viewMode === 'history' ? 'Back to Cash & Bank' : 'View All Cash Flow History'}</span>
+        </Button>
       </div>
 
       {cb.isLoading ? (
         <div className="p-12 text-center text-slate-500 animate-pulse">
           Loading Cash & Bank Management...
+        </div>
+      ) : viewMode === 'history' ? (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
+          <div className="flex items-center space-x-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+            <History className="w-5 h-5 text-navy-600 dark:text-sky-400" />
+            <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100">
+              All Cash Flow History
+            </h3>
+          </div>
+
+          {/* Filter Bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Select
+              label="Period"
+              value={periodType}
+              onChange={(e) => setPeriodType(e.target.value)}
+              options={[
+                { value: 'all', label: 'All Time' },
+                { value: 'daily', label: 'Daily' },
+                { value: 'monthly', label: 'Monthly' },
+                { value: 'yearly', label: 'Yearly' }
+              ]}
+            />
+
+            {periodType === 'daily' && (
+              <Input label="Date" type="date" value={periodDate} onChange={(e) => setPeriodDate(e.target.value)} />
+            )}
+            {periodType === 'monthly' && (
+              <Input label="Month" type="month" value={periodMonth} onChange={(e) => setPeriodMonth(e.target.value)} />
+            )}
+            {periodType === 'yearly' && (
+              <Input label="Year" type="number" value={periodYear} onChange={(e) => setPeriodYear(e.target.value)} />
+            )}
+
+            <Select
+              label="Action Type"
+              value={historyActionFilter}
+              onChange={(e) => setHistoryActionFilter(e.target.value)}
+              options={[
+                { value: 'all', label: 'All Actions' },
+                { value: 'cash_receive', label: ACTION_LABELS.cash_receive },
+                { value: 'bank_deposit', label: ACTION_LABELS.bank_deposit },
+                { value: 'cheque_received', label: ACTION_LABELS.cheque_received },
+                { value: 'withdrawal', label: ACTION_LABELS.withdrawal }
+              ]}
+            />
+
+            <Select
+              label="User"
+              value={historyUserFilter}
+              onChange={(e) => setHistoryUserFilter(e.target.value)}
+              options={[
+                { value: 'all', label: 'All Users' },
+                ...historyUsers.map(u => ({ value: u, label: u }))
+              ]}
+            />
+          </div>
+
+          {filteredHistory.length === 0 ? (
+            <p className="text-xs text-slate-400 text-center py-6">No matching cash flow history found.</p>
+          ) : (
+            <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="sticky top-0 bg-white dark:bg-slate-900">
+                  <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px]">
+                    <th className="py-1.5 pr-2">Date & Time</th>
+                    <th className="py-1.5 pr-2">Action</th>
+                    <th className="py-1.5 pr-2 text-right">Amount</th>
+                    <th className="py-1.5">Done By</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {filteredHistory.map((e) => (
+                    <tr key={e.id}>
+                      <td className="py-1.5 pr-2 text-slate-500 whitespace-nowrap flex items-center gap-1">
+                        <Clock size={10} />{fmtDateTime(e.occurredAt)}
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">{ACTION_LABELS[e.actionType]}</span>
+                        <span className="block text-[11px] text-slate-400">{e.detail}</span>
+                      </td>
+                      <td className={`py-1.5 pr-2 text-right font-bold whitespace-nowrap ${
+                        e.direction === 'in' ? 'text-emerald-600' : e.direction === 'out' ? 'text-rose-600' : 'text-amber-600'
+                      }`}>
+                        {e.direction === 'in' ? '+' : e.direction === 'out' ? '−' : ''}{money(e.amount)}
+                      </td>
+                      <td className="py-1.5 font-medium text-slate-700 dark:text-slate-300">{e.doneBy}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       ) : (
         <div className="space-y-6">

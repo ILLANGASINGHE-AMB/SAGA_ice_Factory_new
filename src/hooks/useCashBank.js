@@ -147,6 +147,69 @@ export function useCashBank() {
     [cashSalesTotal, debtSettlementsTotal, cashReceivesTotal, cashDepositedTotal]
   );
 
+  // Combined, normalized audit trail across all 4 ledgers — every entry ever
+  // saved to cash_receives / bank_deposits / cheque_records / bank_withdrawals
+  // shows up here, independent of the per-section history tables. A deposited
+  // cheque intentionally produces two entries (its own "received" row, plus
+  // the bank_deposits row created when it was deposited) since those are two
+  // distinct real-world events at two different times.
+  const historyEntries = useMemo(() => {
+    const entries = [];
+
+    for (const r of cashReceives) {
+      entries.push({
+        id: `receive-${r.id}`,
+        actionType: 'cash_receive',
+        occurredAt: r.received_at,
+        amount: Number(r.amount) || 0,
+        direction: 'in',
+        doneBy: r.created_by || 'Admin',
+        detail: r.receive_type === 'head_office' ? 'Received by Head Office' : 'Other Receives'
+      });
+    }
+
+    for (const d of bankDeposits) {
+      entries.push({
+        id: `deposit-${d.id}`,
+        actionType: 'bank_deposit',
+        occurredAt: d.deposited_at,
+        amount: Number(d.amount) || 0,
+        direction: 'in',
+        doneBy: d.created_by || 'Admin',
+        detail: [
+          d.cash_method === 'sales' ? 'Cash Received From Sales' : d.cash_method === 'other' ? 'Cash Received From Other' : 'Cash Received From Cheques',
+          d.bank_name
+        ].filter(Boolean).join(' — ')
+      });
+    }
+
+    for (const c of chequeRecords) {
+      entries.push({
+        id: `cheque-${c.id}`,
+        actionType: 'cheque_received',
+        occurredAt: c.received_at,
+        amount: Number(c.amount) || 0,
+        direction: 'neutral',
+        doneBy: c.created_by || 'Admin',
+        detail: `Cheque No. ${c.cheque_no} — ${c.bank_name} (${c.payer_name})`
+      });
+    }
+
+    for (const w of bankWithdrawals) {
+      entries.push({
+        id: `withdrawal-${w.id}`,
+        actionType: 'withdrawal',
+        occurredAt: w.withdrawn_at,
+        amount: Number(w.amount) || 0,
+        direction: 'out',
+        doneBy: w.created_by || 'Admin',
+        detail: `${w.purpose} — ${w.bank_name}`
+      });
+    }
+
+    return entries.sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt));
+  }, [cashReceives, bankDeposits, chequeRecords, bankWithdrawals]);
+
   const bankBalance = useMemo(
     () => bankDepositsTotal - bankWithdrawalsTotal,
     [bankDepositsTotal, bankWithdrawalsTotal]
@@ -319,6 +382,7 @@ export function useCashBank() {
     chequesPending,
     chequesPendingTotal,
     handChequesTotal,
+    historyEntries,
     cashReceives,
     bankDeposits,
     chequeRecords,
