@@ -55,6 +55,7 @@ export function CustomerProfilePage() {
   // View / filter state
   const [viewMode, setViewMode] = useState('sales'); // 'sales' | 'payments' | 'graph'
   const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'debt' | 'cash'
+  const [granularity, setGranularity] = useState('daily'); // 'daily' | 'monthly' | 'yearly' — graph bucket size
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
@@ -80,20 +81,13 @@ export function CustomerProfilePage() {
   const totalPayments = filteredPayments.reduce((sum, p) => sum + Number(p.amount_paid || 0), 0);
   const totalOutstandingDebt = customerDebts.reduce((sum, d) => sum + Number(d.remaining_amount || 0), 0);
 
-  // Graph data: buckets sized to the effective date span (day/month/year)
+  // Graph data: buckets sized by the selected granularity (Daily/Monthly/Yearly)
   const graphData = useMemo(() => {
-    const allDates = [...filteredSales.map(s => s.sale_date), ...filteredPayments.map(p => p.settlement_date)];
-    if (allDates.length === 0) return [];
-
-    const rangeStart = dateFrom ? new Date(dateFrom) : new Date(Math.min(...allDates.map(d => new Date(d).getTime())));
-    const rangeEnd = dateTo ? new Date(dateTo) : new Date(Math.max(...allDates.map(d => new Date(d).getTime())));
-    const spanDays = Math.max(1, (rangeEnd - rangeStart) / 86400000);
-
     let keyFn, labelFn;
-    if (spanDays <= 31) {
+    if (granularity === 'daily') {
       keyFn = (d) => d.toISOString().slice(0, 10);
       labelFn = (d) => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    } else if (spanDays <= 366) {
+    } else if (granularity === 'monthly') {
       keyFn = (d) => `${d.getFullYear()}-${d.getMonth()}`;
       labelFn = (d) => d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
     } else {
@@ -118,7 +112,7 @@ export function CustomerProfilePage() {
     });
 
     return Array.from(buckets.values()).sort((a, b) => a.sortDate - b.sortDate);
-  }, [filteredSales, filteredPayments, dateFrom, dateTo]);
+  }, [filteredSales, filteredPayments, granularity]);
 
   const handleViewSale = (sale) => {
     const doc = generateBillPDF(sale, settings);
@@ -317,6 +311,20 @@ export function CustomerProfilePage() {
               {opt === 'all' ? 'All' : opt === 'debt' ? 'Debt Orders' : 'Cash Orders'}
             </button>
           ))}
+          <span className="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-0.5" />
+          {['daily', 'monthly', 'yearly'].map(opt => (
+            <button
+              key={opt}
+              onClick={() => setGranularity(opt)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border ${
+                granularity === opt
+                  ? 'bg-navy-600 text-white border-navy-600 shadow-xs'
+                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+              }`}
+            >
+              {opt === 'daily' ? 'Daily' : opt === 'monthly' ? 'Monthly' : 'Yearly'}
+            </button>
+          ))}
           <input
             type="date"
             value={dateFrom}
@@ -422,7 +430,12 @@ export function CustomerProfilePage() {
 
         {viewMode === 'graph' && (
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5">
-            <h3 className="text-sm font-bold font-heading text-slate-800 dark:text-slate-100 mb-3">Orders vs Payments</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold font-heading text-slate-800 dark:text-slate-100">Orders vs Payments</h3>
+              <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 capitalize">
+                {granularity} view
+              </span>
+            </div>
             <div className="h-64 sm:h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={graphData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>

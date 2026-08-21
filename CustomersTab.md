@@ -42,7 +42,7 @@ Debt Details - LKR Total Debt
 ---------------------------------------------------------------------------------------------------------------------------
 |Sales History|     |Payment History|       |Graph View|
 
-|Filter Options - |All| |Debt Orders| |Cash Orders|  |Date Range for selected method| |
+|Filter Options - |All| |Debt Orders| |Cash Orders|  |Daily| |Monthley| |Yearly| |Date Range for selected method|
 
 ==== This is Sales History Table View (do not add this text to system)====
 
