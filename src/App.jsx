@@ -19,7 +19,6 @@ const SalesPage = lazy(() => import('./pages/SalesPage').then(m => ({ default: m
 const DebtsPage = lazy(() => import('./pages/DebtsPage').then(m => ({ default: m.DebtsPage })));
 const ReportsPage = lazy(() => import('./pages/ReportsPage').then(m => ({ default: m.ReportsPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
-const ProductionPage = lazy(() => import('./pages/ProductionPage').then(m => ({ default: m.ProductionPage })));
 const ExpenseLedgerPage = lazy(() => import('./pages/ExpenseLedgerPage').then(m => ({ default: m.ExpenseLedgerPage })));
 const DailyReportPage = lazy(() => import('./pages/DailyReportPage').then(m => ({ default: m.DailyReportPage })));
 const CashBankPage = lazy(() => import('./pages/CashBankPage').then(m => ({ default: m.CashBankPage })));
@@ -81,16 +80,6 @@ function App() {
                   <ProtectedRoute>
                     <AppShell>
                       <DashboardPage />
-                    </AppShell>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/production"
-                element={
-                  <ProtectedRoute>
-                    <AppShell>
-                      <ProductionPage />
                     </AppShell>
                   </ProtectedRoute>
                 }

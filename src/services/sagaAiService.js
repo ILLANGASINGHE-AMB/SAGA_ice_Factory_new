@@ -2,7 +2,7 @@ import { supabase } from '../lib/supabase';
 
 /**
  * Fetch full real-time snapshot of all factory system data
- * (including sensitive financial, customer, production, maintenance, and expense data)
+ * (including sensitive financial, customer, and expense data)
  */
 export async function fetchFullSystemContext() {
   try {
@@ -12,8 +12,6 @@ export async function fetchFullSystemContext() {
       { data: sales },
       { data: debts },
       { data: settlements },
-      { data: productionBatches },
-      { data: maintenanceLogs },
       { data: operatingExpenses },
       { data: settingsData }
     ] = await Promise.all([
@@ -22,8 +20,6 @@ export async function fetchFullSystemContext() {
       supabase.from('sales').select('*').order('sale_date', { ascending: false }).limit(50),
       supabase.from('debts').select('*').order('created_at', { ascending: false }),
       supabase.from('debt_settlements').select('*').order('settlement_date', { ascending: false }).limit(50),
-      supabase.from('production_batches').select('*').order('batch_date', { ascending: false }).limit(30),
-      supabase.from('equipment_maintenance').select('*').order('created_at', { ascending: false }),
       supabase.from('operating_expenses').select('*').order('expense_date', { ascending: false }).limit(50),
       supabase.from('settings').select('*').limit(1)
     ]);
@@ -39,21 +35,11 @@ export async function fetchFullSystemContext() {
     const expensesList = operatingExpenses || [];
     const totalExpenses = expensesList.reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
 
-    const batchesList = productionBatches || [];
-    const totalCubesProduced = batchesList.reduce((acc, b) => acc + (Number(b.cubes_produced) || 0), 0);
-    const totalEnergyCost = batchesList.reduce((acc, b) => acc + (Number(b.total_energy_cost) || 0), 0);
-    const avgCostPerCube = batchesList.length > 0
-      ? (batchesList.reduce((acc, b) => acc + (Number(b.cost_per_cube) || 0), 0) / batchesList.length).toFixed(4)
-      : '0.0000';
-
-    const maintenanceList = maintenanceLogs || [];
-    const totalMaintenanceCost = maintenanceList.reduce((acc, m) => acc + (Number(m.cost) || 0), 0);
-
     const settingsObj = (settingsData && settingsData.length > 0) ? settingsData[0] : {};
 
     return `
 You are SAGA AI, the intelligent AI executive assistant for Sagacious Ice Factory ("Saga Ice").
-You have full access to analyze all system data including sensitive operational, financial, customer, production, debt, expense, and equipment maintenance metrics.
+You have full access to analyze all system data including sensitive operational, financial, customer, debt, and expense metrics.
 Provide sharp, business-focused insights, answers, calculations, and recommendations based on the real-time factory database snapshot below.
 
 === REAL-TIME FACTORY DATABASE SNAPSHOT ===
@@ -73,8 +59,6 @@ ${JSON.stringify(inventory || [], null, 2)}
 - Outstanding Customer Debts: LKR ${totalOutstandingDebt.toLocaleString()}
 - Recovered Debt Payments: LKR ${totalCollectedDebt.toLocaleString()}
 - Operating Ledger Expenses: LKR ${totalExpenses.toLocaleString()}
-- Equipment Maintenance Expenses: LKR ${totalMaintenanceCost.toLocaleString()}
-- Total Freezing Energy Cost: LKR ${totalEnergyCost.toLocaleString()}
 
 4. CUSTOMERS & DEBTORS DATABASE (Includes Sensitive Data):
 ${JSON.stringify(customers || [], null, 2)}
@@ -88,17 +72,7 @@ ${JSON.stringify(salesList, null, 2)}
 7. DEBT SETTLEMENT HISTORY:
 ${JSON.stringify(settlements || [], null, 2)}
 
-8. FREEZING PRODUCTION BATCHES & ENERGY CONSUMPTION:
-- Total Cubes Freezed: ${totalCubesProduced.toLocaleString()} cubes
-- Average Cost Per Ice Cube: LKR ${avgCostPerCube}
-- Batch History:
-${JSON.stringify(batchesList, null, 2)}
-
-9. MACHINERY & EQUIPMENT MAINTENANCE:
-- Maintenance Logs:
-${JSON.stringify(maintenanceList, null, 2)}
-
-10. OPERATING EXPENSES LEDGER:
+8. OPERATING EXPENSES LEDGER:
 - Expenses:
 ${JSON.stringify(expensesList, null, 2)}
 
@@ -107,9 +81,8 @@ ${JSON.stringify(expensesList, null, 2)}
 GUIDELINES FOR SAGA AI:
 - Address yourself as "SAGA AI".
 - Be professional, highly analytical, clear, and proactive.
-- When asked about financials, profits, debts, production costs, machinery statuses, or customers, use the real figures from the snapshot above.
+- When asked about financials, profits, debts, or customers, use the real figures from the snapshot above.
 - Format responses clearly using markdown bold text, bullet points, and tables when helpful.
-- If data shows equipment maintenance is due or offline, warn the user proactively if relevant.
 - All currency values are in LKR (Sri Lankan Rupees) unless specified otherwise.
 `;
   } catch (err) {

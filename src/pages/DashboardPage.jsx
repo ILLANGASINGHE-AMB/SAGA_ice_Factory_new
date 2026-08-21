@@ -1,11 +1,9 @@
 import React from 'react';
 import { useDashboard } from '../hooks/useDashboard';
-import { useMaintenance } from '../hooks/useMaintenance';
 import { Badge } from '../components/Badge';
 import { Table } from '../components/Table';
 import { Skeleton } from '../components/Skeleton';
-import { useNavigate } from 'react-router-dom';
-import { 
+import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   LineChart, Line,
   PieChart, Pie, Cell
@@ -15,8 +13,6 @@ import {
   TrendingUp,
   AlertCircle,
   ArrowUpRight,
-  ShieldAlert,
-  Wrench,
   Package,
   Recycle,
   Layers,
@@ -27,8 +23,6 @@ import {
 
 export function DashboardPage() {
   const { dashboardData, isLoading } = useDashboard();
-  const { alertItems } = useMaintenance();
-  const navigate = useNavigate();
 
   // Color constants for charts
   const COLORS = {
@@ -116,31 +110,6 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      
-      {/* Downtime & Maintenance Alert Banner */}
-      {alertItems.length > 0 && (
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-amber-500/10 dark:bg-slate-900/90 border border-amber-200 dark:border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm dark:shadow-[0_0_25px_-5px_rgba(245,158,11,0.15)] backdrop-blur-md">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-500 border border-amber-500/30 shrink-0">
-              <ShieldAlert size={18} />
-            </div>
-            <div>
-              <h4 className="text-xs font-bold text-amber-900 dark:text-amber-300 uppercase tracking-wider">
-                Machinery Alerts ({alertItems.length})
-              </h4>
-              <p className="text-xs text-amber-700 dark:text-amber-400 font-medium line-clamp-1">
-                {alertItems.map(i => `${i.equipment_name} (${i.status === 'offline' ? 'OFFLINE' : 'Service Due'})`).join(' • ')}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => navigate('/production')}
-            className="px-3.5 py-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 rounded-xl transition-all shadow-xs shrink-0"
-          >
-            Manage Machinery
-          </button>
-        </div>
-      )}
 
       {/* 1. Summary Cards Row - High Density Landscape 4-Col Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 landscape:grid-cols-4 gap-2.5 sm:gap-4">

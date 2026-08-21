@@ -18,12 +18,10 @@
    - [Module 2: Real-Time Inventory & Stock Audit Logs](#module-2-real-time-inventory--stock-audit-logs)
    - [Module 3: Customer Management & WhatsApp Integration](#module-3-customer-management--whatsapp-integration)
    - [Module 4: Debt Ledger & 30/60/90+ Day Aging Risk Reports](#module-4-debt-ledger--306090-day-aging-risk-reports)
-   - [Module 5: Production & Energy Cost Tracking](#module-5-production--energy-cost-tracking)
-   - [Module 6: Operating Expense Ledger](#module-6-operating-expense-ledger)
-   - [Module 7: Equipment Maintenance & Downtime Manager](#module-7-equipment-maintenance--downtime-manager)
-   - [Module 8: Executive Analytics Dashboard](#module-8-executive-analytics-dashboard)
-   - [Module 9: SAGA AI Assistant (Powered by Gemini AI)](#module-9-saga-ai-assistant-powered-by-gemini-ai)
-   - [Module 10: Global System Search (⌘K / Ctrl+K)](#module-10-global-system-search-k--ctrlk)
+   - [Module 5: Operating Expense Ledger](#module-5-operating-expense-ledger)
+   - [Module 6: Executive Analytics Dashboard](#module-6-executive-analytics-dashboard)
+   - [Module 7: SAGA AI Assistant (Powered by Gemini AI)](#module-7-saga-ai-assistant-powered-by-gemini-ai)
+   - [Module 8: Global System Search (⌘K / Ctrl+K)](#module-8-global-system-search-k--ctrlk)
 5. [Security, Concurrency & Data Protection](#5-security-concurrency--data-protection)
 6. [Client Presentation Script & Video Generation Guide](#6-client-presentation-script--video-generation-guide)
 
@@ -51,8 +49,6 @@ In commercial ice production, facilities process thousands of ice bags daily acr
 | ❌ Stock overselling due to untracked stock deductions | ✅ Atomic PostgreSQL row-locking prevents stock overdrafts |
 | ❌ Uncollected debts and lost credit invoices | ✅ 30/60/90+ day customer debt aging reports with risk indicators |
 | ❌ Manual PDF invoice creation and physical delivery | ✅ Instant auto-generated PDF invoices sent directly to customer WhatsApp |
-| ❌ Unknown cost per ice cube produced | ✅ Exact energy cost-per-cube tracking (Electricity + Diesel allocation) |
-| ❌ Reactive machinery repairs after breakdowns occur | ✅ Scheduled maintenance tracking with service due alerts |
 | ❌ Static quarterly financial reviews | ✅ Live executive analytics & SAGA AI intelligent operational assistant |
 
 ---
@@ -97,7 +93,7 @@ The **Sales & POS Module** is designed for fast, frictionless order processing a
 
 #### Step-by-Step Order Flow:
 1. **Initiate Order:** Click **New Order Wizard** or use shortcut.
-2. **Select Ice Cube Type:** Choose between **Manufactured Ice Cubes** (`MFC`) or **Resell Ice Cubes** (`RSC`). Real-time stock levels are displayed right on the selection card.
+2. **Select Ice Cube Type:** Choose between **Production Ice Cubes** (`MFC`) or **Resell Ice Cubes** (`RSC`). Real-time stock levels are displayed right on the selection card.
 3. **Select or Register Customer:** Search existing customer profiles by name/WhatsApp or fill out the inline **Mini-Registration Form** for new walk-in clients.
 4. **Specify Quantity & Pricing:** Enter quantity of ice bags/cubes. The system automatically pulls the price-per-cube set by administration and calculates the total amount in Sri Lankan Rupees (LKR).
 5. **Select Payment Term:** Choose between **Cash Payment** or **Debt Credit**.
@@ -154,22 +150,9 @@ The system automatically calculates the age of every outstanding invoice from it
 
 ---
 
-### Module 5: Production & Energy Cost Tracking
+### Module 5: Operating Expense Ledger
 
-Ice manufacturing is energy intensive. The **Production & Ops Module** enables factory managers to log freezing batch cycles and track exact energy efficiency.
-
-#### Data Logged Per Batch:
-- Batch code (`BATCH-20260801-01`).
-- Ice cubes produced in batch (e.g., 1,500 cubes).
-- Electricity grid units consumed (kWh) & total grid power cost.
-- Diesel generator liters consumed & fuel cost.
-- **Auto-Calculated Energy Cost Per Cube:** System computes exact unit production cost (e.g., LKR 3.20 per cube) to optimize shift schedules between grid and generator power.
-
----
-
-### Module 6: Operating Expense Ledger
-
-The **Expense Ledger Module** captures all overhead expenses beyond production energy costs to deliver accurate Profit & Loss (P&L) reporting.
+The **Expense Ledger Module** captures all overhead expenses to deliver accurate Profit & Loss (P&L) reporting.
 
 #### Expense Categories:
 - Electricity Power Utility (CEB).
@@ -184,47 +167,33 @@ All entries store payment method (`cash`, `bank_transfer`, `cheque`) and link to
 
 ---
 
-### Module 7: Equipment Maintenance & Downtime Manager
-
-Machinery downtime halts ice production. The **Equipment Maintenance Module** monitors plant assets:
-- Industrial Sabroe Compressors.
-- Ammonia Chiller Units.
-- Backup Diesel Generators (150 kVA).
-- Reverse Osmosis (RO) Water Filtration Systems.
-
-Tracks equipment status (`operational`, `maintenance_due`, `offline`), last service date, next service due date, service costs, and technician notes.
-
----
-
-### Module 8: Executive Analytics Dashboard
+### Module 6: Executive Analytics Dashboard
 
 The **Dashboard Page** provides high-level executive insights at a glance:
 - **KPI Summary Cards:** Total Revenue Today, Cubes Sold, Active Outstanding Debts, Total Inventory Cubes Available.
 - **Interactive Revenue Trends Chart:** Daily and weekly revenue visualization powered by Recharts.
-- **Sales Breakdown Chart:** Manufactured vs. Resell volume distribution.
+- **Sales Breakdown Chart:** Production vs. Resell volume distribution.
 - **Live Real-Time Reactive Updating:** Any sale placed at a counter updates the executive dashboard instantly across all devices.
 
 ---
 
-### Module 9: SAGA AI Assistant (Powered by Gemini AI)
+### Module 7: SAGA AI Assistant (Powered by Gemini AI)
 
 **SAGA AI** is an intelligent embedded AI operational assistant accessible via a floating action button on any page.
 
 #### Features & Security:
-- **Full Context System Analysis:** SAGA AI reads a live snapshot of sales, inventory levels, debt aging, production energy costs, and maintenance alerts.
+- **Full Context System Analysis:** SAGA AI reads a live snapshot of sales, inventory levels, debt aging, and operating expenses.
 - **Operational Questions You Can Ask SAGA AI:**
   - *"Which customers have debts overdue by more than 60 days?"*
-  - *"What was our average energy cost per ice cube this week?"*
-  - *"Compare our manufactured ice sales volume versus resell ice sales."*
-  - *"Which machinery is overdue for maintenance?"*
+  - *"Compare our production ice sales volume versus resell ice sales."*
 - **Server-Side Security Proxy:** AI requests route through a Supabase Edge Function (`saga-ai-proxy`) so API keys remain completely hidden from client browsers.
 
 ---
 
-### Module 10: Global System Search (⌘K / Ctrl+K)
+### Module 8: Global System Search (⌘K / Ctrl+K)
 
 Pressing `⌘K` (Mac) or `Ctrl+K` (Windows) opens an instant global search modal that searches across all database entities simultaneously:
-- Type a customer name, phone number, sale code (`S-101`), customer code (`CUST-0002`), batch code (`BATCH-01`), or expense code (`EXP-001`).
+- Type a customer name, phone number, sale code (`S-101`), customer code (`CUST-0002`), or expense code (`EXP-001`).
 - Results populate instantly with category icons and direct navigation links.
 
 ---
@@ -250,15 +219,15 @@ Pressing `⌘K` (Mac) or `Ctrl+K` (Windows) opens an instant global search modal
 
 #### Scene 1: Introduction (0:00 - 0:45)
 - **Visual:** Smooth pan over the SAGA ICE Executive Dashboard in dark mode showing real-time KPI cards and charts.
-- **Voiceover:** *"Welcome to Sagacious Ice Factory Management System — the premier digital platform built specifically for commercial ice manufacturers. Operating an ice plant requires balancing high-speed sales, inventory control, energy costs, and customer credit. SAGA ICE brings every part of your factory into one intelligent, real-time portal."*
+- **Voiceover:** *"Welcome to Sagacious Ice Factory Management System — the premier digital platform built specifically for commercial ice manufacturers. Operating an ice plant requires balancing high-speed sales, inventory control, and customer credit. SAGA ICE brings every part of your factory into one intelligent, real-time portal."*
 
 #### Scene 2: Point of Sale & Automated Invoicing (0:45 - 1:45)
 - **Visual:** POS Order Wizard step-by-step: selecting manufactured ice cubes, choosing a customer, selecting credit payment, and clicking Complete Order.
 - **Voiceover:** *"Dispatching ice is fast and error-free. Staff select the ice cube category, pick or register the customer, and complete the order in seconds. Behind the scenes, single-transaction database logic locks stock levels atomically to prevent overselling. Instantly, an official PDF invoice is generated and pre-formatted for direct WhatsApp sending to your client."*
 
-#### Scene 3: Inventory Control & Production Cost Tracking (1:45 - 2:30)
-- **Visual:** Inventory audit log table showing stock changes followed by the Production & Energy Module showing electricity/diesel breakdown.
-- **Voiceover:** *"Inventory is updated live across all dispatch counters. Every bag added or removed is logged in an immutable audit trail. In production, managers log freezing cycles alongside electricity units and diesel generator liters. SAGA ICE automatically calculates your exact energy cost per cube, giving you total clarity over manufacturing margins."*
+#### Scene 3: Inventory Control (1:45 - 2:30)
+- **Visual:** Inventory audit log table showing stock changes across Production, Resell, and Brine cube types.
+- **Voiceover:** *"Inventory is updated live across all dispatch counters. Every bag added or removed is logged in an immutable audit trail, giving factory owners total clarity over stock levels at all times."*
 
 #### Scene 4: Debt Ledger & 30/60/90+ Day Aging Reports (2:30 - 3:30)
 - **Visual:** Debts Ledger page highlighting the 4 color-coded Aging Cards (Current, Watchlist, Overdue, Critical Risk) and settling a debt.
@@ -266,7 +235,7 @@ Pressing `⌘K` (Mac) or `Ctrl+K` (Windows) opens an instant global search modal
 
 #### Scene 5: Global Search & SAGA AI Assistant (3:30 - 4:30)
 - **Visual:** Triggering `⌘K` global search and opening the SAGA AI assistant drawer to ask a question.
-- **Voiceover:** *"Need information instantly? Press Command-K to search across customers, sales, stock, and expenses in milliseconds. Plus, with SAGA AI powered by Google Gemini, factory executives have a 24/7 intelligent assistant ready to analyze revenue trends, evaluate energy costs, and answer complex operational queries."*
+- **Voiceover:** *"Need information instantly? Press Command-K to search across customers, sales, stock, and expenses in milliseconds. Plus, with SAGA AI powered by Google Gemini, factory executives have a 24/7 intelligent assistant ready to analyze revenue trends and answer complex operational queries."*
 
 #### Scene 6: Conclusion & Call to Action (4:30 - 5:00)
 - **Visual:** AppShell showing responsive mobile view alongside desktop workspace.

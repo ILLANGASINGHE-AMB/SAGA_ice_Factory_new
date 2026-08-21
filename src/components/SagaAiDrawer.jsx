@@ -27,7 +27,7 @@ export function SagaAiDrawer({ isOpen, onClose }) {
     {
       id: 1,
       role: 'model',
-      content: "Hello! I am **SAGA AI**, your factory executive assistant. I have full access to analyze all system data including inventory, sales, customer debts, freezing production, operating expenses, and machinery maintenance. \n\nHow can I help analyze your plant operations today?",
+      content: "Hello! I am **SAGA AI**, your factory executive assistant. I have full access to analyze all system data including inventory, sales, customer debts, and operating expenses. \n\nHow can I help analyze your plant operations today?",
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   ]);
@@ -52,8 +52,6 @@ export function SagaAiDrawer({ isOpen, onClose }) {
   const quickPrompts = [
     { label: "📊 Profitability & Financials", prompt: "Analyze overall factory business profitability, sales revenues, and major expense overheads." },
     { label: "⚠️ Overdue Customer Debts", prompt: "Identify all customers with overdue debts and list the top owing amounts with phone numbers." },
-    { label: "⚡ Freezing Cost Efficiency", prompt: "Evaluate freezing production batches, electricity vs diesel energy costs, and average cost per cube." },
-    { label: "🔧 Equipment Maintenance", prompt: "Check machinery maintenance logs and alert me about any equipment due for service or currently offline." },
     { label: "📦 Inventory Stock Alert", prompt: "Summarize manufactured ice, resell stock levels, and waste ratio. Are we running low on anything?" }
   ];
 

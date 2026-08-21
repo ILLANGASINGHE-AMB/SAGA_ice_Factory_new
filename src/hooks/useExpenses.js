@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useSales } from './useSales';
-import { useProductionBatches } from './useProductionBatches';
 
 const INITIAL_EXPENSES = [
   {
@@ -50,7 +49,6 @@ export function useExpenses() {
   const [expenses, setExpenses] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const { sales } = useSales();
-  const { batches } = useProductionBatches();
 
   const fetchExpenses = async () => {
     try {
@@ -166,19 +164,16 @@ export function useExpenses() {
     // 1. Total Sales Revenue
     const totalSalesRevenue = sales.reduce((sum, item) => sum + (parseFloat(item.total_amount) || 0), 0);
 
-    // 2. Direct Energy Costs from Production Batches
-    const totalEnergyCosts = batches.reduce((sum, item) => sum + (parseFloat(item.total_energy_cost) || 0), 0);
-
-    // 3. Operating Expenses sum
+    // 2. Operating Expenses sum
     const totalOperatingExpenses = expenses.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
 
-    // 4. Combined Operational Costs
-    const totalCosts = totalOperatingExpenses + totalEnergyCosts;
+    // 3. Combined Operational Costs
+    const totalCosts = totalOperatingExpenses;
 
-    // 5. Net Profit
+    // 4. Net Profit
     const netProfit = totalSalesRevenue - totalCosts;
 
-    // 6. Net Profit Margin (%)
+    // 5. Net Profit Margin (%)
     const netProfitMargin = totalSalesRevenue > 0 ? ((netProfit / totalSalesRevenue) * 100).toFixed(1) : 0;
 
     // Expense breakdown by category
@@ -188,20 +183,15 @@ export function useExpenses() {
       return acc;
     }, {});
 
-    if (totalEnergyCosts > 0) {
-      categoryBreakdown['energy_batches'] = totalEnergyCosts;
-    }
-
     return {
       totalSalesRevenue,
-      totalEnergyCosts,
       totalOperatingExpenses,
       totalCosts,
       netProfit,
       netProfitMargin,
       categoryBreakdown
     };
-  }, [sales, batches, expenses]);
+  }, [sales, expenses]);
 
   return {
     expenses,

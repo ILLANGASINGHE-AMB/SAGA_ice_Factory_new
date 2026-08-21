@@ -316,16 +316,12 @@ export function SettingsPage() {
       await supabase.from('debts').delete().neq('id', -1);
       await supabase.from('sales').delete().neq('id', -1);
       await supabase.from('customers').delete().neq('id', -1);
-      await supabase.from('production_batches').delete().neq('id', -1);
-      await supabase.from('equipment_maintenance').delete().neq('id', -1);
       await supabase.from('operating_expenses').delete().neq('id', -1);
 
       // 2. Reset inventory quantities back to 0
       await supabase.from('inventory').update({ quantity: 0, updated_at: new Date().toISOString() }).neq('id', -1);
 
       // 3. Clear local storage fallbacks
-      localStorage.removeItem('saga_production_batches');
-      localStorage.removeItem('saga_equipment_maintenance');
       localStorage.removeItem('saga_operating_expenses');
 
       toast.success("All factory records and data cleared successfully!");
@@ -773,7 +769,7 @@ export function SettingsPage() {
             </div>
 
             <p className="text-xs text-red-700 dark:text-red-300 font-medium">
-              Irreversibly wipe all operational records (sales, customer database, debts, freezing batches, maintenance logs, expenses) and reset inventory stock to 0.
+              Irreversibly wipe all operational records (sales, customer database, debts, expenses) and reset inventory stock to 0.
             </p>
 
             <button
@@ -809,7 +805,7 @@ export function SettingsPage() {
         onClose={() => setClearConfirmOpen(false)}
         onConfirm={handleClearAllData}
         title="CRITICAL WARNING: Wipe All Factory Database Records?"
-        message="ARE YOU ABSOLUTELY SURE? This will permanently DELETE all customers, sales orders, debt records, debt settlements, freezing batches, machinery logs, and operational expense ledgers. Factory settings and user login accounts will be preserved. This action CANNOT be undone!"
+        message="ARE YOU ABSOLUTELY SURE? This will permanently DELETE all customers, sales orders, debt records, debt settlements, and operational expense ledgers. Factory settings and user login accounts will be preserved. This action CANNOT be undone!"
         confirmLabel="YES, PERMANENTLY CLEAR ALL DATA"
         isLoading={clearLoading}
       />

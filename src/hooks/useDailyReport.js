@@ -9,7 +9,6 @@ export function useDailyReport(reportDateStr) {
   const [sales, setSales] = useState([]);
   const [debts, setDebts] = useState([]);
   const [settlements, setSettlements] = useState([]);
-  const [batches, setBatches] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [inventory, setInventory] = useState([]);
@@ -47,7 +46,6 @@ export function useDailyReport(reportDateStr) {
         salesRes,
         debtsRes,
         settlementsRes,
-        batchesRes,
         expensesRes,
         customersRes,
         inventoryRes,
@@ -58,7 +56,6 @@ export function useDailyReport(reportDateStr) {
         supabase.from('sales').select('*, customer:customers(*)').then(res => res.data || []).catch(() => []),
         supabase.from('debts').select('*, customer:customers(*), sale:sales(*)').then(res => res.data || []).catch(() => []),
         supabase.from('debt_settlements').select('*, customer:customers(*)').then(res => res.data || []).catch(() => []),
-        supabase.from('production_batches').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('operating_expenses').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('customers').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('inventory').select('*').then(res => res.data || []).catch(() => []),
@@ -81,7 +78,6 @@ export function useDailyReport(reportDateStr) {
       setSales(salesRes);
       setDebts(debtsRes);
       setSettlements(settlementsRes);
-      setBatches(batchesRes);
       setExpenses(expensesRes);
       setCustomers(customersRes);
       setInventory(inventoryRes);
@@ -180,7 +176,6 @@ export function useDailyReport(reportDateStr) {
       .channel(`daily-report-realtime-${Math.random()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'debt_settlements' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_batches' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'operating_expenses' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_transactions' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_manager_reports' }, () => fetchData())
@@ -215,9 +210,6 @@ export function useDailyReport(reportDateStr) {
     const wstItem = inventory.find(i => i.type === 'waste');
 
     // 1. Stock / Production Details for targetDateStr
-    const todaysBatches = batches.filter(b => isSameDate(b.batch_date));
-    const batchProductionQty = todaysBatches.reduce((sum, b) => sum + (Number(b.cubes_produced) || 0), 0);
-
     let mfcTxnAdditions = 0;
     let rscTxnAdditions = 0;
     let brineTxnAdditions = 0;
@@ -238,7 +230,7 @@ export function useDailyReport(reportDateStr) {
     });
 
     // Production = Production Cubes added today
-    const todaysProduction = batchProductionQty + mfcTxnAdditions;
+    const todaysProduction = mfcTxnAdditions;
     // Purchases = Resell Cubes added today
     const todaysPurchase = rscTxnAdditions;
 
@@ -390,7 +382,7 @@ export function useDailyReport(reportDateStr) {
       otherDetails: manualInputs.otherDetails || '',
       verifiedBy: manualInputs.verifiedBy || ''
     };
-  }, [targetDateStr, sales, debts, settlements, batches, expenses, customers, inventory, invTransactions, manualInputs]);
+  }, [targetDateStr, sales, debts, settlements, expenses, customers, inventory, invTransactions, manualInputs]);
 
   // Save manual updates with safe column handling
   const saveDailyReport = async (updatedInputs) => {

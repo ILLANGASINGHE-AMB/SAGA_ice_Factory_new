@@ -104,8 +104,7 @@ export function ExpenseLedgerPage() {
   ];
 
   const categoryPieData = Object.entries(pnlMetrics.categoryBreakdown).map(([cat, val]) => {
-    const formattedCat = cat === 'energy_batches' ? 'Energy Batches' : cat.replace('_', ' ').toUpperCase();
-    return { name: formattedCat, value: val };
+    return { name: cat.replace('_', ' ').toUpperCase(), value: val };
   });
 
   const COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899', '#64748b', '#06b6d4'];

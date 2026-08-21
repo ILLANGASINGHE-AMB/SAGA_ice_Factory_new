@@ -6,9 +6,8 @@ import {
   Users, 
   ShoppingCart, 
   DollarSign, 
-  Package, 
-  Zap, 
-  Receipt, 
+  Package,
+  Receipt,
   ArrowRight 
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -21,7 +20,6 @@ export function GlobalSearchModal({ isOpen, onClose }) {
     sales: [],
     debts: [],
     inventory: [],
-    production: [],
     expenses: []
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -38,14 +36,12 @@ export function GlobalSearchModal({ isOpen, onClose }) {
           { data: sales },
           { data: debts },
           { data: inventory },
-          { data: production },
           { data: expenses }
         ] = await Promise.all([
           supabase.from('customers').select('*').limit(100),
           supabase.from('sales').select('*, customer:customers(name)').limit(100),
           supabase.from('debts').select('*, customer:customers(name), sale:sales(sale_code)').limit(100),
           supabase.from('inventory').select('*'),
-          supabase.from('production_batches').select('*').limit(50),
           supabase.from('operating_expenses').select('*').limit(50)
         ]);
 
@@ -54,7 +50,6 @@ export function GlobalSearchModal({ isOpen, onClose }) {
           sales: sales || [],
           debts: debts || [],
           inventory: inventory || [],
-          production: production || [],
           expenses: expenses || []
         });
       } catch (err) {
@@ -135,19 +130,6 @@ export function GlobalSearchModal({ isOpen, onClose }) {
       }
     });
 
-    // Search Production
-    data.production.forEach(p => {
-      if (p.batch_code?.toLowerCase().includes(q) || p.notes?.toLowerCase().includes(q)) {
-        results.push({
-          type: 'Production Batch',
-          icon: <Zap size={16} className="text-purple-500" />,
-          title: p.batch_code,
-          subtitle: `${p.cubes_produced?.toLocaleString()} cubes • Energy Cost: LKR ${p.total_energy_cost?.toLocaleString()}`,
-          path: '/production'
-        });
-      }
-    });
-
     // Search Expenses
     data.expenses.forEach(e => {
       if (e.expense_code?.toLowerCase().includes(q) || e.description?.toLowerCase().includes(q) || e.category?.toLowerCase().includes(q)) {
@@ -187,7 +169,7 @@ export function GlobalSearchModal({ isOpen, onClose }) {
           <input
             type="text"
             autoFocus
-            placeholder="Search customers, sales, debts, stock, production..."
+            placeholder="Search customers, sales, debts, stock..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="w-full py-4 text-sm font-medium bg-transparent border-none text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none"
@@ -217,7 +199,6 @@ export function GlobalSearchModal({ isOpen, onClose }) {
                   { name: 'Customers', path: '/customers' },
                   { name: 'Debt Ledger', path: '/debts' },
                   { name: 'Inventory', path: '/inventory' },
-                  { name: 'Production', path: '/production' },
                   { name: 'Expenses', path: '/expenses' }
                 ].map(chip => (
                   <button
