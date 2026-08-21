@@ -58,16 +58,16 @@ export function SalesPage() {
       return {
         MFC: { qty: 0, price: 0, id: null },
         RSC: { qty: 0, price: 0, id: null },
-        WST: { qty: 0 }
+        BNC: { qty: 0 }
       };
     }
     const mfc = inventory.find(i => i.type === 'manufactured');
     const rsc = inventory.find(i => i.type === 'resell');
-    const wst = inventory.find(i => i.type === 'waste');
+    const bnc = inventory.find(i => i.type === 'waste');
     return {
       MFC: mfc ? { qty: mfc.quantity, price: mfc.price_per_cube || 0, id: mfc.id } : { qty: 0, price: 0, id: null },
       RSC: rsc ? { qty: rsc.quantity, price: rsc.price_per_cube || 0, id: rsc.id } : { qty: 0, price: 0, id: null },
-      WST: wst ? { qty: wst.quantity } : { qty: 0 }
+      BNC: bnc ? { qty: bnc.quantity } : { qty: 0 }
     };
   }, [inventory]);
 
@@ -360,9 +360,9 @@ ${billURL}`;
             </span>
           </div>
           <div className="flex items-center space-x-2">
-            <Badge type="WST" label="WST" />
+            <Badge type="BNC" label="BNC" />
             <span className="text-xs sm:text-sm font-bold font-mono text-slate-800 dark:text-slate-200">
-              {stockMap.WST.qty.toLocaleString()}
+              {stockMap.BNC.qty.toLocaleString()}
             </span>
           </div>
         </div>
@@ -397,6 +397,7 @@ ${billURL}`;
 
       {/* 3. Sales Table */}
       <Table
+        enablePagination={false}
         headers={[
           { key: 'sale_code', label: 'Sale Code', sortable: true },
           { key: 'customerName', label: 'Customer', sortable: true },
@@ -622,7 +623,7 @@ ${billURL}`;
                 label="Cube Type"
                 name="cubeType"
                 options={[
-                  { value: 'manufactured', label: 'Manufactured (MFC)' },
+                  { value: 'manufactured', label: 'Production (MFC)' },
                   { value: 'resell', label: 'Resell (RSC)' }
                 ]}
                 value={cubeType}

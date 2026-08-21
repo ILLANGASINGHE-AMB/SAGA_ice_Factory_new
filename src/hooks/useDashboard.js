@@ -108,7 +108,7 @@ export function useDashboard() {
       });
       const monthlyCashFlow = monthlyCashSales + monthlyDebtSettled;
 
-      // 30-day Manufactured/Resell cube sales + daily revenue, in one pass
+      // 30-day Production/Resell cube sales + daily revenue, in one pass
       // (bar chart and revenue line chart both read this same array).
       const monthlyData = [];
       for (let i = 29; i >= 0; i--) {
@@ -139,7 +139,7 @@ export function useDashboard() {
         monthlyData.push({
           date: dateStr,
           Revenue: dayRev,
-          Manufactured: mfcQty,
+          Production: mfcQty,
           Resell: rscQty
         });
       }

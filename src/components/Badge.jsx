@@ -1,7 +1,7 @@
 import React from 'react';
 
 export function Badge({
-  type, // 'MFC', 'RSC', 'WST', 'pending', 'partial', 'settled', 'cash', 'debt', 'admin', 'user'
+  type, // 'MFC', 'RSC', 'BNC', 'pending', 'partial', 'settled', 'cash', 'debt', 'admin', 'user'
   label,
   className = ''
 }) {
@@ -11,7 +11,7 @@ export function Badge({
     // Inventory types
     MFC: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800',
     RSC: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800',
-    WST: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-200 dark:border-amber-800',
+    BNC: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-200 dark:border-amber-800',
     
     // Payment status / types
     pending: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 border border-red-200 dark:border-red-800',

@@ -281,7 +281,7 @@ export function InventoryPage() {
                   </Button>
                 )}
 
-                {/* Edit Price admin only, hidden/disabled for WST */}
+                {/* Edit Price admin only, hidden/disabled for BNC */}
                 {!isWst ? (
                   isAdmin ? (
                     <Button 
@@ -485,7 +485,7 @@ export function InventoryPage() {
                 <option value="all">All Cube Types</option>
                 <option value="manufactured">Production (MFC)</option>
                 <option value="resell">Purchases (RSC)</option>
-                <option value="waste">Brine Cubes (WST)</option>
+                <option value="waste">Brine Cubes (BNC)</option>
 
               </select>
             </div>

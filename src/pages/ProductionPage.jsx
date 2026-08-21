@@ -487,7 +487,7 @@ export function ProductionPage() {
         <form onSubmit={handleBatchSubmit} className="space-y-3">
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              Manufactured Ice Cubes Produced <span className="text-red-500">*</span>
+              Production Ice Cubes Produced <span className="text-red-500">*</span>
             </label>
             <input
               type="number"
@@ -590,7 +590,7 @@ export function ProductionPage() {
               className="w-4 h-4 text-navy-600 rounded border-slate-300 focus:ring-navy-500"
             />
             <label htmlFor="autoStock" className="text-xs text-slate-700 dark:text-slate-300">
-              Automatically add produced cubes to Manufactured Stock (MFC) inventory
+              Automatically add produced cubes to Production Stock (MFC) inventory
             </label>
           </div>
 

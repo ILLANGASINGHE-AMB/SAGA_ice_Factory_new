@@ -159,6 +159,7 @@ export function CustomersPage() {
 
       {/* Customer Registry Grid */}
       <Table
+        enablePagination={false}
         headers={[
           { key: 'customer_code', label: 'Code' },
           { key: 'name', label: 'Name' },

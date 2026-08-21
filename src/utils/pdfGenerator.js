@@ -398,7 +398,7 @@ export function generateReportPDF(reportTitle, dateStr, salesData, summaryData, 
   doc.text('AGGREGATE STATISTICS:', 14, finalY + 5);
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(8.5);
-  doc.text(`Total Manufactured Cubes Sold: ${summaryData.mfcSold.toLocaleString()} units`, 14, finalY + 11);
+  doc.text(`Total Production Cubes Sold: ${summaryData.mfcSold.toLocaleString()} units`, 14, finalY + 11);
   doc.text(`Total Resell Cubes Sold: ${summaryData.rscSold.toLocaleString()} units`, 14, finalY + 16);
   doc.text(`New Customer Signups: ${summaryData.newCustomersCount} customers`, 130, finalY + 11);
   doc.text(`Settlement Collection Inflow: LKR ${summaryData.totalSettled.toLocaleString()}`, 130, finalY + 16);

@@ -353,6 +353,7 @@ export function DebtsPage() {
 
       {/* Debt ledger List */}
       <Table
+        enablePagination={false}
         headers={[
           { key: 'customerName', label: 'Customer Name', sortable: true },
           { key: 'saleCode', label: 'Sale Code', sortable: true },

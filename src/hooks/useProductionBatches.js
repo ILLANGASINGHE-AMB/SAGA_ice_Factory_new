@@ -137,7 +137,7 @@ export function useProductionBatches() {
     setBatches(updated);
     localStorage.setItem('saga_production_batches', JSON.stringify(updated));
 
-    // Optional stock update for Manufactured Cubes (MFC) — uses the atomic,
+    // Optional stock update for Production Cubes (MFC) — uses the atomic,
     // row-locked RPC instead of a plain read-then-write, which previously
     // allowed two concurrently-logged batches to both read the same starting
     // quantity and have one write silently clobber the other.

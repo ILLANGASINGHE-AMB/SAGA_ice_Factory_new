@@ -189,7 +189,7 @@ export function DashboardPage() {
                   labelStyle={{ fontWeight: 'bold', color: '#38bdf8' }}
                 />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: 10, paddingTop: 4 }} />
-                <Bar dataKey="Manufactured" fill={COLORS.manufactured} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Production" fill={COLORS.manufactured} radius={[4, 4, 0, 0]} />
                 <Bar dataKey="Resell" fill={COLORS.resell} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>

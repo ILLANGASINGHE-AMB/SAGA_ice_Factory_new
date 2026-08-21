@@ -109,7 +109,7 @@ create table if not exists public.inventory_transactions (
 insert into public.inventory (code, type, quantity, price_per_cube) values
 ('MFC-0001', 'manufactured', 2450, 12.00),
 ('RSC-0001', 'resell', 1100, 18.50),
-('WST-0001', 'waste', 120, null)
+('BNC-0001', 'waste', 120, null)
 on conflict (code) do nothing;
 
 insert into public.settings (company_name, company_address, company_phone, company_email) values
@@ -257,7 +257,7 @@ $$ language plpgsql security definer;
 -- Atomic Inventory Add Stock (By Cube Type)
 -- Row-locked mirror of deduct_inventory_stock_by_type, used wherever stock is
 -- added by cube type rather than by a known inventory row id (e.g. production
--- batches crediting Manufactured Cubes). Prevents the lost-update race where
+-- batches crediting Production Cubes). Prevents the lost-update race where
 -- two concurrent adds both read the same starting quantity.
 create or replace function public.add_inventory_stock_by_type(p_cube_type text, p_amount integer, p_reference_code text default 'STOCK_ADD', p_created_by text default 'Operator')
 returns void as $$

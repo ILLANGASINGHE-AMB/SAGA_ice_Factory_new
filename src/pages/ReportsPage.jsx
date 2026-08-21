@@ -689,7 +689,7 @@ export function ReportsPage() {
                     onChange={(e) => setCustomCubeType(e.target.value)}
                     options={[
                       { value: 'all', label: 'All Types' },
-                      { value: 'manufactured', label: 'Manufactured (MFC)' },
+                      { value: 'manufactured', label: 'Production (MFC)' },
                       { value: 'resell', label: 'Resell (RSC)' }
                     ]}
                   />
@@ -826,6 +826,7 @@ export function ReportsPage() {
                   <div className="space-y-3">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Ledger Debtors</h4>
                     <Table
+                      enablePagination={false}
                       headers={[
                         { key: 'code', label: 'Code' },
                         { key: 'name', label: 'Name' },
@@ -848,6 +849,7 @@ export function ReportsPage() {
                   <div className="space-y-3">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Customer Performance Ledger</h4>
                     <Table
+                      enablePagination={false}
                       headers={[
                         { key: 'customer_code', label: 'Code' },
                         { key: 'name', label: 'Customer' },
@@ -874,6 +876,7 @@ export function ReportsPage() {
                   <div className="space-y-3">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Sales Transactions Table</h4>
                     <Table
+                      enablePagination={false}
                       headers={[
                         { key: 'sale_code', label: 'Sale Ref' },
                         { key: 'customerName', label: 'Customer' },
@@ -905,6 +908,7 @@ export function ReportsPage() {
                   <div className="space-y-3 pt-4 border-t border-dashed border-slate-200 dark:border-slate-800">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-rose-500">Associated Outstanding Debts</h4>
                     <Table
+                      enablePagination={false}
                       headers={[
                         { key: 'code', label: 'Code' },
                         { key: 'name', label: 'Customer' },
@@ -934,7 +938,7 @@ export function ReportsPage() {
                   <div className="border-t border-slate-200 dark:border-slate-800 pt-4 grid grid-cols-2 gap-4 text-xs">
                     <div>
                       <span className="text-slate-400 uppercase tracking-wider block text-[10px] mb-1 font-semibold">Production Cube Volumes</span>
-                      <p>Manufactured (MFC) Sold: <span className="font-bold">{previewData.summary.mfcSold.toLocaleString()} units</span></p>
+                      <p>Production (MFC) Sold: <span className="font-bold">{previewData.summary.mfcSold.toLocaleString()} units</span></p>
                       <p>Resell (RSC) Sold: <span className="font-bold">{previewData.summary.rscSold.toLocaleString()} units</span></p>
                     </div>
                     <div className="text-right">

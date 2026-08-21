@@ -237,7 +237,7 @@ export function useDailyReport(reportDateStr) {
       }
     });
 
-    // Production = Manufactured Cubes added today
+    // Production = Production Cubes added today
     const todaysProduction = batchProductionQty + mfcTxnAdditions;
     // Purchases = Resell Cubes added today
     const todaysPurchase = rscTxnAdditions;
