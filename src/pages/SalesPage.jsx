@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useSales } from '../hooks/useSales';
 import { useInventory } from '../hooks/useInventory';
 import { useCustomers } from '../hooks/useCustomers';
@@ -13,7 +14,7 @@ import { Modal } from '../components/Modal';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Input, Select } from '../components/FormFields';
 import { generateBillPDF } from '../utils/pdfGenerator';
-import { ShoppingCart, Search, FileDown, Plus, MessageSquare, ArrowRight, ArrowLeft, Check, Trash2, Eye, Pencil } from 'lucide-react';
+import { ShoppingCart, Search, FileDown, MessageSquare, ArrowRight, ArrowLeft, Check, Trash2, Eye, Pencil } from 'lucide-react';
 
 export function SalesPage() {
   const { sales, isLoading: salesLoading, placeOrder, updateSale, deleteSale } = useSales();
@@ -23,6 +24,8 @@ export function SalesPage() {
   const { settings } = useSettings();
   const { user, isAdmin } = useAuth();
   const toast = useToast();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [sortKey, setSortKey] = useState('sale_date');
@@ -42,13 +45,8 @@ export function SalesPage() {
   const [showMiniCustomerForm, setShowMiniCustomerForm] = useState(false);
   const [customerFieldFocused, setCustomerFieldFocused] = useState(false);
 
-  // Multi-row order items
-  const makeEmptyRow = (stockMap) => ({
-    id: Date.now() + Math.random(),
-    cubeType: 'manufactured',
-    pricePerCube: stockMap?.MFC?.price || 0,
-    quantity: ''
-  });
+  // Order items — fixed two categories (Production/MFC and Resell/RSC),
+  // both always present so the operator never has to pick a category.
   const [orderRows, setOrderRows] = useState([]);
 
   // Post placement prompt state
@@ -102,29 +100,28 @@ export function SalesPage() {
     setNewCustName('');
     setNewCustPhone('');
     setShowMiniCustomerForm(false);
-    setOrderRows([{ id: Date.now(), cubeType: 'manufactured', pricePerCube: stockMap.MFC.price, quantity: '' }]);
+    setOrderRows([
+      { id: 'mfc', cubeType: 'manufactured', pricePerCube: stockMap.MFC.price, quantity: '' },
+      { id: 'rsc', cubeType: 'resell', pricePerCube: stockMap.RSC.price, quantity: '' }
+    ]);
     setWizardOpen(true);
   };
 
-  // Row helpers
+  // Row helpers — only rate/quantity are editable, the cube type per row is fixed.
   const updateRow = (id, field, value) => {
-    setOrderRows(rows => rows.map(r => {
-      if (r.id !== id) return r;
-      const updated = { ...r, [field]: value };
-      if (field === 'cubeType') {
-        updated.pricePerCube = value === 'manufactured' ? stockMap.MFC.price : stockMap.RSC.price;
-      }
-      return updated;
-    }));
+    setOrderRows(rows => rows.map(r => r.id === id ? { ...r, [field]: value } : r));
   };
 
-  const addRow = () => {
-    setOrderRows(rows => [...rows, { id: Date.now() + Math.random(), cubeType: 'manufactured', pricePerCube: stockMap.MFC.price, quantity: '' }]);
-  };
-
-  const removeRow = (id) => {
-    setOrderRows(rows => rows.filter(r => r.id !== id));
-  };
+  // Allow navigating here from other tabs (e.g. Dashboard's "Add New Order")
+  // and land straight in the checkout wizard.
+  useEffect(() => {
+    if (location.state?.openNewOrder) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      handleOpenWizard();
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   // Outstanding debt for the currently selected customer — 'pending' and
   // 'partial' are both still-owed statuses (matches the FIFO offset logic
@@ -187,18 +184,18 @@ export function SalesPage() {
       }
       setStep(3);
     } else if (step === 3) {
-      if (orderRows.length === 0) {
-        toast.error("Add at least one order row.");
+      // Only rows the operator actually filled in (quantity > 0) count toward the order.
+      const activeRows = orderRows.filter(r => (parseInt(r.quantity, 10) || 0) > 0);
+      if (activeRows.length === 0) {
+        toast.error("Enter a quantity for at least one cube type.");
         return;
       }
-      // Tally quantities by cube type to check stock
-      const mfcQty = orderRows.filter(r => r.cubeType === 'manufactured').reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0);
-      const rscQty = orderRows.filter(r => r.cubeType === 'resell').reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0);
-      for (const r of orderRows) {
-        const qty = parseInt(r.quantity, 10);
-        if (isNaN(qty) || qty <= 0) { toast.error("All row quantities must be positive integers."); return; }
-        if (parseFloat(r.pricePerCube) <= 0) { toast.error("All row rates must be positive numbers."); return; }
+      for (const r of activeRows) {
+        if (!parseFloat(r.pricePerCube) || parseFloat(r.pricePerCube) <= 0) { toast.error("All entered rates must be positive numbers."); return; }
       }
+      // Tally quantities by cube type to check stock
+      const mfcQty = activeRows.filter(r => r.cubeType === 'manufactured').reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0);
+      const rscQty = activeRows.filter(r => r.cubeType === 'resell').reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0);
       if (mfcQty > stockMap.MFC.qty) { toast.error(`Insufficient Production stock! Available: ${stockMap.MFC.qty}`); return; }
       if (rscQty > stockMap.RSC.qty) { toast.error(`Insufficient Resell stock! Available: ${stockMap.RSC.qty}`); return; }
       setStep(4);
@@ -224,14 +221,16 @@ export function SalesPage() {
         finalCustomerId = createdCust.id;
       }
 
-      // 2. Place a single order covering every row — one bill, one sale_code
+      // 2. Place a single order covering every filled-in row — one bill, one sale_code
       const sale = await placeOrder({
         customer_id: finalCustomerId,
-        items: orderRows.map(row => ({
-          cube_type: row.cubeType,
-          quantity: parseInt(row.quantity, 10),
-          price_per_cube: parseFloat(row.pricePerCube)
-        })),
+        items: orderRows
+          .filter(row => (parseInt(row.quantity, 10) || 0) > 0)
+          .map(row => ({
+            cube_type: row.cubeType,
+            quantity: parseInt(row.quantity, 10),
+            price_per_cube: parseFloat(row.pricePerCube)
+          })),
         payment_type: paymentType,
         created_by: user?.fullName || 'Staff Operator'
       });
@@ -631,12 +630,30 @@ ${billURL}`;
               />
             ))}
           </div>
-          <span className="text-[11px] sm:text-xs text-slate-400 font-semibold uppercase tracking-wider">
-            {step === 1 && '1. Billing Terms'}
-            {step === 2 && '2. Customer Profile'}
-            {step === 3 && '3. Order Details'}
-            {step === 4 && '4. Review & Confirm'}
-          </span>
+          <div className="flex items-center space-x-3">
+            {step === 3 && (
+              <div className="flex items-center space-x-2.5">
+                <span className="flex items-center space-x-1">
+                  <Badge type="MFC" label="MFC" />
+                  <span className="text-[11px] font-bold font-mono text-slate-600 dark:text-slate-300">
+                    {stockMap.MFC.qty.toLocaleString()}
+                  </span>
+                </span>
+                <span className="flex items-center space-x-1">
+                  <Badge type="RSC" label="RSC" />
+                  <span className="text-[11px] font-bold font-mono text-slate-600 dark:text-slate-300">
+                    {stockMap.RSC.qty.toLocaleString()}
+                  </span>
+                </span>
+              </div>
+            )}
+            <span className="text-[11px] sm:text-xs text-slate-400 font-semibold uppercase tracking-wider">
+              {step === 1 && '1. Billing Terms'}
+              {step === 2 && '2. Customer Profile'}
+              {step === 3 && '3. Order Details'}
+              {step === 4 && '4. Review & Confirm'}
+            </span>
+          </div>
         </div>
 
         {/* Wizard Form Panels */}
@@ -776,33 +793,27 @@ ${billURL}`;
           </div>
         )}
 
-        {/* STEP 3: Order details — Multi-row */}
+        {/* STEP 3: Order details — fixed Production (MFC) / Resell (RSC) rows */}
         {step === 3 && (
           <div className="space-y-3 py-1">
             {/* Column Headers */}
-            <div className="grid grid-cols-[1fr_1fr_1fr_auto_auto] gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1">
+            <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1">
               <span>Cube Type</span>
               <span>Rate / Cube (LKR)</span>
               <span>Qty</span>
               <span>Total</span>
-              <span></span>
             </div>
 
-            {/* Order Rows */}
+            {/* Order Rows — always both categories, no add/remove */}
             <div className="space-y-2">
               {orderRows.map((row) => {
                 const rowTotal = (parseInt(row.quantity, 10) || 0) * (parseFloat(row.pricePerCube) || 0);
                 const availableStock = row.cubeType === 'manufactured' ? stockMap.MFC.qty : stockMap.RSC.qty;
                 return (
-                  <div key={row.id} className="grid grid-cols-[1fr_1fr_1fr_auto_auto] gap-2 items-center">
-                    <select
-                      value={row.cubeType}
-                      onChange={(e) => updateRow(row.id, 'cubeType', e.target.value)}
-                      className="px-2 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-navy-500"
-                    >
-                      <option value="manufactured">Production (MFC)</option>
-                      <option value="resell">Resell (RSC)</option>
-                    </select>
+                  <div key={row.id} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
+                    <div className="flex items-center px-2 py-2">
+                      <Badge type={row.cubeType === 'manufactured' ? 'MFC' : 'RSC'} label={row.cubeType === 'manufactured' ? 'Production (MFC)' : 'Resell (RSC)'} />
+                    </div>
                     <input
                       type="number"
                       step="0.01"
@@ -824,29 +835,10 @@ ${billURL}`;
                     <span className="text-xs font-bold font-mono text-navy-600 dark:text-sky-400 min-w-[70px] text-right">
                       LKR {rowTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => removeRow(row.id)}
-                      disabled={orderRows.length === 1}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition disabled:opacity-30 disabled:cursor-not-allowed"
-                      title="Remove row"
-                    >
-                      <Trash2 size={13} />
-                    </button>
                   </div>
                 );
               })}
             </div>
-
-            {/* Add Row Button */}
-            <button
-              type="button"
-              onClick={addRow}
-              className="flex items-center space-x-1.5 text-xs font-semibold text-navy-600 dark:text-sky-400 hover:text-navy-800 dark:hover:text-sky-200 transition px-1 py-1"
-            >
-              <Plus size={13} />
-              <span>Add Row</span>
-            </button>
 
             {/* Totals + Debt Summary */}
             <div className="space-y-2 pt-1">
@@ -941,8 +933,8 @@ ${billURL}`;
                   LKR {calculatedTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
               </div>
-              {/* Per-row summary */}
-              {orderRows.map((row, idx) => {
+              {/* Per-row summary — only rows the operator actually filled in */}
+              {orderRows.filter(row => (parseInt(row.quantity, 10) || 0) > 0).map((row, idx) => {
                 const rowTotal = (parseInt(row.quantity, 10) || 0) * (parseFloat(row.pricePerCube) || 0);
                 return (
                   <div key={row.id} className="grid grid-cols-2 gap-2 text-xs py-1">

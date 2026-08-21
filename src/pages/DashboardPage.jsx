@@ -1,8 +1,10 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useDashboard } from '../hooks/useDashboard';
 import { Badge } from '../components/Badge';
 import { Table } from '../components/Table';
 import { Skeleton } from '../components/Skeleton';
+import { Button } from '../components/Button';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   LineChart, Line,
@@ -18,11 +20,17 @@ import {
   Layers,
   Wallet,
   Landmark,
-  CreditCard
+  CreditCard,
+  ShoppingCart
 } from 'lucide-react';
 
 export function DashboardPage() {
   const { dashboardData, isLoading } = useDashboard();
+  const navigate = useNavigate();
+
+  const handleAddNewOrder = () => {
+    navigate('/sales', { state: { openNewOrder: true } });
+  };
 
   // Color constants for charts
   const COLORS = {
@@ -110,6 +118,18 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
+
+      {/* Add New Order Trigger */}
+      <div className="flex justify-end">
+        <Button
+          variant="primary"
+          onClick={handleAddNewOrder}
+          className="flex items-center justify-center space-x-2 rounded-xl"
+        >
+          <ShoppingCart size={16} />
+          <span>Add New Order</span>
+        </Button>
+      </div>
 
       {/* 1. Summary Cards Row - High Density Landscape 4-Col Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 landscape:grid-cols-4 gap-2.5 sm:gap-4">
