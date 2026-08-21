@@ -4,6 +4,8 @@ import { useCustomers } from '../hooks/useCustomers';
 import { useDebts } from '../hooks/useDebts';
 import { useSales } from '../hooks/useSales';
 import { useCustomerPayments } from '../hooks/useCustomerPayments';
+import { useCustomerPrices } from '../hooks/useCustomerPrices';
+import { useInventory } from '../hooks/useInventory';
 import { useSettings } from '../hooks/useSettings';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
@@ -12,9 +14,10 @@ import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { CustomerFormModal } from '../components/CustomerFormModal';
+import { CustomerPriceModal } from '../components/CustomerPriceModal';
 import { generateBillPDF } from '../utils/pdfGenerator';
 import {
-  ArrowLeft, Edit2, Trash2, Table2, LineChart as LineChartIcon, FileDown, ExternalLink
+  ArrowLeft, Edit2, Trash2, Table2, LineChart as LineChartIcon, FileDown, ExternalLink, DollarSign
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -44,9 +47,17 @@ export function CustomerProfilePage() {
   const { debts, isLoading: debtsLoading } = useDebts();
   const { sales, isLoading: salesLoading } = useSales();
   const { payments, isLoading: paymentsLoading } = useCustomerPayments(customerId);
+  const { customerPrices, setCustomPrice, clearCustomPrice } = useCustomerPrices();
+  const { inventory } = useInventory();
   const { settings } = useSettings();
   const { isAdmin } = useAuth();
   const toast = useToast();
+
+  const inventoryDefaults = useMemo(() => {
+    const mfc = inventory?.find(i => i.type === 'manufactured');
+    const rsc = inventory?.find(i => i.type === 'resell');
+    return { MFC: mfc?.price_per_cube || 0, RSC: rsc?.price_per_cube || 0 };
+  }, [inventory]);
 
   const customer = useMemo(() => customers.find(c => Number(c.id) === customerId), [customers, customerId]);
   const customerDebts = useMemo(() => debts.filter(d => Number(d.customer_id) === customerId), [debts, customerId]);
@@ -62,6 +73,7 @@ export function CustomerProfilePage() {
   // Modal state
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [priceModalOpen, setPriceModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
   const filteredSales = useMemo(() => {
@@ -135,6 +147,14 @@ export function CustomerProfilePage() {
     }
   };
 
+  const handlePricesSaved = ({ mode, name, error }) => {
+    if (mode === 'error') {
+      toast.error(error);
+    } else {
+      toast.success(`Custom cube prices updated for ${name}`);
+    }
+  };
+
   const handleConfirmDelete = async () => {
     setActionLoading(true);
     try {
@@ -193,6 +213,10 @@ export function CustomerProfilePage() {
           </div>
           {isAdmin ? (
             <div className="flex items-center space-x-2">
+              <Button variant="secondary" size="sm" onClick={() => setPriceModalOpen(true)} className="flex items-center space-x-1.5">
+                <DollarSign size={14} />
+                <span>Custom Prices</span>
+              </Button>
               <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)} className="flex items-center space-x-1.5">
                 <Edit2 size={14} />
                 <span>Edit</span>
@@ -468,6 +492,18 @@ export function CustomerProfilePage() {
         editingCustomer={customer}
         updateCustomer={updateCustomer}
         onSaved={handleSaved}
+      />
+
+      {/* Custom Cube Prices Modal */}
+      <CustomerPriceModal
+        isOpen={priceModalOpen}
+        onClose={() => setPriceModalOpen(false)}
+        customer={customer}
+        customerPrices={customerPrices}
+        inventoryDefaults={inventoryDefaults}
+        setCustomPrice={setCustomPrice}
+        clearCustomPrice={clearCustomPrice}
+        onSaved={handlePricesSaved}
       />
 
       {/* Delete Confirmation Dialog */}
