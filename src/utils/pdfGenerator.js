@@ -118,15 +118,21 @@ export function generateBillPDF(sale, settings) {
   doc.text(`Payment Method: ${sale.payment_type?.toUpperCase()}`, 130, 72);
   doc.text(`Operator: ${sale.created_by || 'System'}`, 130, 77);
 
-  // Itemized table using jspdf-autotable
-  const tableData = [
-    [
-      'Ice Cubes',
-      sale.quantity.toLocaleString(),
-      `LKR ${sale.price_per_cube.toFixed(2)}`,
-      `LKR ${sale.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-    ]
-  ];
+  // Itemized table using jspdf-autotable — one row per line item so a
+  // multi cube-type order (e.g. Production + Resell in one bill) lists each
+  // type separately. Falls back to a single legacy row built from the
+  // scalar sale fields if sale_items wasn't loaded (defensive only — every
+  // sale has at least one line item after the multi-item orders migration).
+  const lineItems = sale.sale_items?.length
+    ? sale.sale_items
+    : [{ cube_type: sale.cube_type, quantity: sale.quantity, price_per_cube: sale.price_per_cube, subtotal: sale.total_amount }];
+
+  const tableData = lineItems.map(item => [
+    `Ice Cubes (${item.cube_type === 'manufactured' ? 'Production' : 'Resell'})`,
+    item.quantity.toLocaleString(),
+    `LKR ${Number(item.price_per_cube).toFixed(2)}`,
+    `LKR ${Number(item.subtotal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  ]);
 
   doc.autoTable({
     startY: 85,
@@ -350,7 +356,7 @@ export function generateReportPDF(reportTitle, dateStr, salesData, summaryData, 
     new Date(sale.sale_date).toLocaleDateString(),
     sale.sale_code,
     sale.customerName || sale.customer?.name || 'Walk-in',
-    sale.cube_type === 'manufactured' ? 'MFC' : 'RSC',
+    sale.cube_type === 'manufactured' ? 'MFC' : sale.cube_type === 'resell' ? 'RSC' : 'MIXED',
     sale.quantity.toLocaleString(),
     `LKR ${sale.total_amount.toLocaleString()}`,
     sale.payment_type.toUpperCase()

@@ -63,7 +63,7 @@ export function ReportsPage() {
     try {
       setDataLoading(true);
       const [salesRes, debtsRes, settlementsRes, customersRes] = await Promise.all([
-        supabase.from('sales').select('*').then(r => r.data || []).catch(() => []),
+        supabase.from('sales').select('*, sale_items(*)').then(r => r.data || []).catch(() => []),
         supabase.from('debts').select('*').then(r => r.data || []).catch(() => []),
         supabase.from('debt_settlements').select('*').then(r => r.data || []).catch(() => []),
         supabase.from('customers').select('*').then(r => r.data || []).catch(() => [])
@@ -266,8 +266,8 @@ export function ReportsPage() {
         const totalPurchased = cSales.reduce((sum, s) => sum + s.total_amount, 0);
         const cubesCount = cSales.reduce((sum, s) => sum + s.quantity, 0);
         const cashPurchased = cSales.filter(s => s.payment_type === 'cash').reduce((sum, s) => sum + s.total_amount, 0);
-        const mfcCubes = cSales.filter(s => s.cube_type === 'manufactured').reduce((sum, s) => sum + s.quantity, 0);
-        const rscCubes = cSales.filter(s => s.cube_type === 'resell').reduce((sum, s) => sum + s.quantity, 0);
+        const mfcCubes = cSales.reduce((sum, s) => sum + (s.sale_items || []).filter(i => i.cube_type === 'manufactured').reduce((s2, i) => s2 + i.quantity, 0), 0);
+        const rscCubes = cSales.reduce((sum, s) => sum + (s.sale_items || []).filter(i => i.cube_type === 'resell').reduce((s2, i) => s2 + i.quantity, 0), 0);
 
         // Outstanding
         const cDebts = debts.filter(d => d.customer_id === c.id);
@@ -319,9 +319,9 @@ export function ReportsPage() {
         filterParts.push('Customer: All');
       }
 
-      // 3. Cube Type filter
+      // 3. Cube Type filter — a sale matches if any of its line items match
       if (customCubeType !== 'all') {
-        filteredSales = filteredSales.filter(s => s.cube_type === customCubeType);
+        filteredSales = filteredSales.filter(s => (s.sale_items || []).some(i => i.cube_type === customCubeType));
         filterParts.push(`Cube: ${customCubeType === 'manufactured' ? 'MFC' : 'RSC'}`);
       } else {
         filterParts.push('Cube: All Types');
@@ -387,11 +387,13 @@ export function ReportsPage() {
         debtRevenue += s.total_amount;
       }
 
-      if (s.cube_type === 'manufactured') {
-        mfcSold += s.quantity;
-      } else {
-        rscSold += s.quantity;
-      }
+      (s.sale_items || []).forEach(item => {
+        if (item.cube_type === 'manufactured') {
+          mfcSold += item.quantity;
+        } else {
+          rscSold += item.quantity;
+        }
+      });
     });
 
     const custMap = new Map(customers.map(c => [c.id, c]));
@@ -892,7 +894,13 @@ export function ReportsPage() {
                         <tr key={sale.id} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 text-xs">
                           <td className="px-6 py-2.5 font-mono font-medium text-navy-600 dark:text-navy-400">{sale.sale_code}</td>
                           <td className="px-6 py-2.5 font-semibold">{sale.customerName}</td>
-                          <td className="px-6 py-2.5"><Badge type={sale.cube_type === 'manufactured' ? 'MFC' : 'RSC'} /></td>
+                          <td className="px-6 py-2.5">
+                            {(sale.sale_items?.length || 0) > 1 ? (
+                              <Badge type="mixed" label="MIXED" />
+                            ) : (
+                              <Badge type={sale.cube_type === 'manufactured' ? 'MFC' : 'RSC'} />
+                            )}
+                          </td>
                           <td className="px-6 py-2.5 font-mono">{sale.quantity.toLocaleString()}</td>
                           <td className="px-6 py-2.5 font-mono font-semibold">LKR {sale.total_amount.toLocaleString()}</td>
                           <td className="px-6 py-2.5"><Badge type={sale.payment_type} /></td>

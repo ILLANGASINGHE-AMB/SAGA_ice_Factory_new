@@ -28,7 +28,7 @@ export function PublicBillPage() {
         // 1. Fetch Sale Record by sale_code
         const { data: saleData, error: saleErr } = await supabase
           .from('sales')
-          .select('*, customer:customers(*)')
+          .select('*, customer:customers(*), sale_items(*)')
           .eq('sale_code', saleCode)
           .single();
 
@@ -38,7 +38,7 @@ export function PublicBillPage() {
           // Retry without join in case join failed
           const { data: saleOnly } = await supabase
             .from('sales')
-            .select('*')
+            .select('*, sale_items(*)')
             .eq('sale_code', saleCode)
             .single();
           
@@ -195,14 +195,32 @@ export function PublicBillPage() {
                 <span className="text-slate-500">Invoice Date:</span>
                 <span className="text-slate-700 dark:text-slate-300">{new Date(sale.sale_date).toLocaleDateString()}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Cube Category:</span>
-                <span className="font-semibold uppercase text-slate-800 dark:text-slate-200">{sale.cube_type}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Quantity:</span>
-                <span className="font-bold text-slate-900 dark:text-slate-100">{sale.quantity.toLocaleString()} cubes</span>
-              </div>
+              {sale.sale_items?.length > 1 ? (
+                <div className="space-y-1 pt-1">
+                  <span className="text-slate-500 block">Items:</span>
+                  {sale.sale_items.map((item, idx) => (
+                    <div key={idx} className="flex justify-between pl-2 text-[11px]">
+                      <span className="text-slate-600 dark:text-slate-300">
+                        {item.cube_type === 'manufactured' ? 'Production' : 'Resell'} × {item.quantity.toLocaleString()}
+                      </span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        LKR {Number(item.subtotal).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Cube Category:</span>
+                    <span className="font-semibold uppercase text-slate-800 dark:text-slate-200">{sale.cube_type}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Quantity:</span>
+                    <span className="font-bold text-slate-900 dark:text-slate-100">{sale.quantity.toLocaleString()} cubes</span>
+                  </div>
+                </>
+              )}
               <div className="flex justify-between">
                 <span className="text-slate-500">Payment Terms:</span>
                 <span className="font-bold uppercase text-navy-600 dark:text-navy-400">{sale.payment_type}</span>

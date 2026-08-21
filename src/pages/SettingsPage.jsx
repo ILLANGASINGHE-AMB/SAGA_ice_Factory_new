@@ -209,6 +209,7 @@ export function SettingsPage() {
         { data: inventory },
         { data: customers },
         { data: sales },
+        { data: saleItems },
         { data: debts },
         { data: settlements },
         { data: settingsData }
@@ -217,6 +218,7 @@ export function SettingsPage() {
         supabase.from('inventory').select('*'),
         supabase.from('customers').select('*'),
         supabase.from('sales').select('*'),
+        supabase.from('sale_items').select('*'),
         supabase.from('debts').select('*'),
         supabase.from('debt_settlements').select('*'),
         supabase.from('settings').select('*')
@@ -227,6 +229,7 @@ export function SettingsPage() {
         inventory:        inventory || [],
         customers:        customers || [],
         sales:            sales || [],
+        sale_items:       saleItems || [],
         debts:            debts || [],
         debt_settlements: settlements || [],
         settings:         settingsData || [],
@@ -274,21 +277,26 @@ export function SettingsPage() {
           throw new Error("Invalid backup schema. Required collections missing.");
         }
 
-        // Deletion in reverse dependency order
+        // Deletion in reverse dependency order (sale_items cascades from
+        // sales' FK, but deleted explicitly here too for parity with the
+        // rest of this list)
         await supabase.from('debt_settlements').delete().neq('id', -1);
         await supabase.from('debts').delete().neq('id', -1);
+        await supabase.from('sale_items').delete().neq('id', -1);
         await supabase.from('sales').delete().neq('id', -1);
         await supabase.from('customers').delete().neq('id', -1);
         await supabase.from('inventory').delete().neq('id', -1);
         await supabase.from('settings').delete().neq('id', -1);
         await supabase.from('profiles').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 
-        // Insertion in dependency order
+        // Insertion in dependency order. sale_items is optional for
+        // backward compatibility with backups exported before it existed.
         if (data.profiles.length) await supabase.from('profiles').insert(data.profiles);
         if (data.settings.length) await supabase.from('settings').insert(data.settings);
         if (data.inventory.length) await supabase.from('inventory').insert(data.inventory);
         if (data.customers.length) await supabase.from('customers').insert(data.customers);
         if (data.sales.length) await supabase.from('sales').insert(data.sales);
+        if (data.sale_items?.length) await supabase.from('sale_items').insert(data.sale_items);
         if (data.debts.length) await supabase.from('debts').insert(data.debts);
         if (data.debt_settlements.length) await supabase.from('debt_settlements').insert(data.debt_settlements);
 

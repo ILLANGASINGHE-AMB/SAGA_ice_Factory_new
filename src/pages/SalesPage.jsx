@@ -40,6 +40,7 @@ export function SalesPage() {
   const [newCustName, setNewCustName] = useState('');
   const [newCustPhone, setNewCustPhone] = useState('');
   const [showMiniCustomerForm, setShowMiniCustomerForm] = useState(false);
+  const [customerFieldFocused, setCustomerFieldFocused] = useState(false);
 
   // Multi-row order items
   const makeEmptyRow = (stockMap) => ({
@@ -134,10 +135,12 @@ export function SalesPage() {
       .reduce((sum, d) => sum + (Number(d.remaining_amount) || 0), 0);
   }, [debts, customerId]);
 
-  // Customers filtered for step 2 dropdown search
+  // Customers for step 2 dropdown: full registry by default, filtered as the
+  // operator types a search term.
   const filteredCustomersForSearch = useMemo(() => {
-    if (!customers || !customerSearchQuery.trim()) return [];
-    const q = customerSearchQuery.toLowerCase();
+    if (!customers) return [];
+    const q = customerSearchQuery.trim().toLowerCase();
+    if (!q) return customers;
     return customers.filter(c =>
       c.name.toLowerCase().includes(q) ||
       c.whatsapp_number?.includes(q) ||
@@ -219,23 +222,17 @@ export function SalesPage() {
         finalCustomerId = createdCust.id;
       }
 
-      // 2. Place one order per row
-      let lastSale = null;
-      let totalApplied = 0;
-      for (const row of orderRows) {
-        const sale = await placeOrder({
-          customer_id: finalCustomerId,
+      // 2. Place a single order covering every row — one bill, one sale_code
+      const sale = await placeOrder({
+        customer_id: finalCustomerId,
+        items: orderRows.map(row => ({
           cube_type: row.cubeType,
           quantity: parseInt(row.quantity, 10),
-          price_per_cube: parseFloat(row.pricePerCube),
-          payment_type: paymentType,
-          created_by: user?.fullName || 'Staff Operator'
-        });
-        lastSale = sale;
-        totalApplied += sale.appliedToOldDebt || 0;
-      }
-      const sale = lastSale;
-      sale.appliedToOldDebt = totalApplied;
+          price_per_cube: parseFloat(row.pricePerCube)
+        })),
+        payment_type: paymentType,
+        created_by: user?.fullName || 'Staff Operator'
+      });
 
       // 3. Immediately trigger PDF generation and download
       const billDoc = generateBillPDF(sale, settings);
@@ -546,11 +543,19 @@ ${billURL}`;
         sortDirection={sortDirection}
         onSort={handleSort}
         emptyMessage="No sales recorded in the system ledger."
-        renderRow={(sale) => (
+        renderRow={(sale) => {
+          const isMultiItem = (sale.sale_items?.length || 0) > 1;
+          return (
           <tr key={sale.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
             <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-medium text-navy-600 dark:text-navy-400">{sale.sale_code}</td>
             <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-semibold text-slate-900 dark:text-slate-100">{sale.customer?.name}</td>
-            <td className="px-2.5 sm:px-4 py-2.5 sm:py-3"><Badge type={sale.cube_type === 'manufactured' ? 'MFC' : 'RSC'} /></td>
+            <td className="px-2.5 sm:px-4 py-2.5 sm:py-3">
+              {isMultiItem ? (
+                <Badge type="mixed" label="MIXED" />
+              ) : (
+                <Badge type={sale.cube_type === 'manufactured' ? 'MFC' : 'RSC'} />
+              )}
+            </td>
             <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono">{sale.quantity.toLocaleString()}</td>
             <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-semibold font-mono text-slate-800 dark:text-slate-200">LKR {sale.total_amount.toLocaleString()}</td>
             <td className="px-2.5 sm:px-4 py-2.5 sm:py-3"><Badge type={sale.payment_type} /></td>
@@ -576,9 +581,10 @@ ${billURL}`;
                 {isAdmin && (
                   <>
                     <button
-                      onClick={() => handleEditClick(sale)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
-                      title="Edit Sale Record"
+                      onClick={() => !isMultiItem && handleEditClick(sale)}
+                      disabled={isMultiItem}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[32px] min-h-[32px] flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                      title={isMultiItem ? "Editing multi-item bills isn't supported yet" : "Edit Sale Record"}
                       aria-label="Edit Sale Record"
                     >
                       <Pencil size={16} />
@@ -596,7 +602,8 @@ ${billURL}`;
               </div>
             </td>
           </tr>
-        )}
+          );
+        }}
       />
 
       {/* --- Checkout Order Wizard Modal --- */}
@@ -688,13 +695,15 @@ ${billURL}`;
                     name="custSearch"
                     placeholder="Enter customer name or phone number..."
                     value={customerSearchQuery}
+                    onFocus={() => setCustomerFieldFocused(true)}
+                    onBlur={() => setCustomerFieldFocused(false)}
                     onChange={(e) => {
                       setCustomerSearchQuery(e.target.value);
                       if (customerId) setCustomerId(''); // Reset ID on retype
                     }}
                   />
-                  {/* Droplist Results */}
-                  {customerSearchQuery.trim() !== '' && !customerId && (
+                  {/* Droplist Results — shows the full registry on focus, filters as you type */}
+                  {customerFieldFocused && !customerId && (
                     <div className="absolute top-full left-0 right-0 mt-1 max-h-36 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 divide-y divide-slate-100 dark:divide-slate-800 touch-scroll">
                       {filteredCustomersForSearch.length === 0 ? (
                         <div className="p-3 text-xs text-slate-400 text-center">
@@ -705,7 +714,7 @@ ${billURL}`;
                           <div
                             key={c.id}
                             className="p-2.5 text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 flex justify-between items-center text-slate-800 dark:text-slate-200"
-                            onClick={() => selectCustomer(c)}
+                            onMouseDown={(e) => { e.preventDefault(); selectCustomer(c); }}
                           >
                             <span className="font-semibold">{c.name}</span>
                             <span className="font-mono text-slate-400">{c.whatsapp_number || c.contact_number}</span>
@@ -847,17 +856,40 @@ ${billURL}`;
                 </span>
               </div>
 
-              {/* Remaining Debts (red) — shown when a customer is selected */}
-              {customerId && customerPendingDebt > 0 && (
+              {/* Existing Debt Amount — shown whenever a customer is selected */}
+              {(customerId || showMiniCustomerForm) && (
                 <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-xl flex justify-between items-center">
-                  <span className="text-xs font-semibold text-red-600 dark:text-red-400">Remaining Debts:</span>
+                  <span className="text-xs font-semibold text-red-600 dark:text-red-400">Existing Debt Amount:</span>
                   <span className="text-sm font-extrabold font-heading text-red-600 dark:text-red-400">
                     LKR {customerPendingDebt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
               )}
 
-              {/* If payment is Debt — show projected total debt */}
+              {/* Cash order — preview how this payment applies FIFO against existing debt.
+                  The sale itself still saves as a full cash order for calculatedTotal;
+                  this box only previews the FIFO offset performed server-side. */}
+              {paymentType === 'cash' && customerPendingDebt > 0 && (
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/50 rounded-xl space-y-1">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">Applied to Existing Debt (FIFO):</span>
+                    <span className="text-sm font-extrabold font-heading text-emerald-700 dark:text-emerald-400">
+                      LKR {Math.min(calculatedTotal, customerPendingDebt).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80">Remaining Debt After:</span>
+                    <span className="text-xs font-bold text-emerald-600/80 dark:text-emerald-400/80">
+                      LKR {Math.max(0, customerPendingDebt - calculatedTotal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-emerald-600/70 dark:text-emerald-400/70 pt-0.5">
+                    This order still saves as a full cash sale of LKR {calculatedTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}.
+                  </p>
+                </div>
+              )}
+
+              {/* Debt order — projected total debt after this order is added */}
               {paymentType === 'debt' && (
                 <div className="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 rounded-xl flex justify-between items-center">
                   <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">Total Debt After Order:</span>
@@ -893,6 +925,18 @@ ${billURL}`;
                 <span className="text-slate-400">Billing Terms</span>
                 <span className="font-bold uppercase text-right text-slate-800 dark:text-slate-200">
                   {paymentType}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs py-1">
+                <span className="text-slate-400">Existing Debt</span>
+                <span className={`font-mono text-right ${customerPendingDebt > 0 ? 'text-red-600 dark:text-red-400 font-bold' : 'text-slate-800 dark:text-slate-200'}`}>
+                  LKR {customerPendingDebt.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs py-1">
+                <span className="text-slate-400">New Order</span>
+                <span className="font-mono text-right text-slate-800 dark:text-slate-200">
+                  LKR {calculatedTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
               </div>
               {/* Per-row summary */}

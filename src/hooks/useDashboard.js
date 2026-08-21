@@ -42,7 +42,7 @@ export function useDashboard() {
         customersList,
         inventoryList
       ] = await Promise.all([
-        supabase.from('sales').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('sales').select('*, sale_items(*)').then(res => res.data || []).catch(() => []),
         supabase.from('debts').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('debt_settlements').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('customers').select('*').then(res => res.data || []).catch(() => []),
@@ -72,11 +72,13 @@ export function useDashboard() {
 
         const saleDate = new Date(sale.sale_date);
         if (saleDate >= startOfToday) {
-          if (sale.cube_type === 'manufactured') {
-            mfcSoldToday += Number(sale.quantity) || 0;
-          } else if (sale.cube_type === 'resell') {
-            rscSoldToday += Number(sale.quantity) || 0;
-          }
+          (sale.sale_items || []).forEach(item => {
+            if (item.cube_type === 'manufactured') {
+              mfcSoldToday += Number(item.quantity) || 0;
+            } else if (item.cube_type === 'resell') {
+              rscSoldToday += Number(item.quantity) || 0;
+            }
+          });
           revenueToday += amt;
         }
 
@@ -128,11 +130,13 @@ export function useDashboard() {
           const sDate = new Date(sale.sale_date);
           if (sDate >= dayStart && sDate <= dayEnd) {
             dayRev += Number(sale.total_amount) || 0;
-            if (sale.cube_type === 'manufactured') {
-              mfcQty += Number(sale.quantity) || 0;
-            } else if (sale.cube_type === 'resell') {
-              rscQty += Number(sale.quantity) || 0;
-            }
+            (sale.sale_items || []).forEach(item => {
+              if (item.cube_type === 'manufactured') {
+                mfcQty += Number(item.quantity) || 0;
+              } else if (item.cube_type === 'resell') {
+                rscQty += Number(item.quantity) || 0;
+              }
+            });
           }
         });
 
