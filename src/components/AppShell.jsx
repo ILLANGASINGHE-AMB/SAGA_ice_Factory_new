@@ -153,7 +153,9 @@ export function AppShell({ children }) {
   const visibleNavItems = navItems.filter(item => !item.adminOnly || isAdmin);
 
   const getPageTitle = () => {
-    const currentItem = navItems.find(item => item.path === location.pathname);
+    const currentItem = navItems.find(item =>
+      item.path === location.pathname || location.pathname.startsWith(`${item.path}/`)
+    );
     return currentItem ? currentItem.name : 'Sagacious Ice';
   };
 

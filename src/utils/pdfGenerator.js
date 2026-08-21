@@ -107,7 +107,7 @@ export function generateBillPDF(sale, settings) {
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(9);
   doc.text(`Customer Name: ${sale.customer?.name || 'Walk-in Customer'}`, 14, 67);
-  doc.text(`WhatsApp: ${sale.customer?.whatsapp_number || 'N/A'}`, 14, 72);
+  doc.text(`WhatsApp: ${sale.customer?.whatsapp_number || sale.customer?.contact_number || 'N/A'}`, 14, 72);
   doc.text(`Address: ${sale.customer?.address || 'N/A'}`, 14, 77);
 
   // Invoice Meta Section
@@ -236,7 +236,7 @@ export function generateSettlementReceiptPDF(settlement, settings) {
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(9);
   doc.text(`Customer Name: ${settlement.customer?.name || 'Walk-in Customer'}`, 14, 67);
-  doc.text(`WhatsApp: ${settlement.customer?.whatsapp_number || 'N/A'}`, 14, 72);
+  doc.text(`WhatsApp: ${settlement.customer?.whatsapp_number || settlement.customer?.contact_number || 'N/A'}`, 14, 72);
   doc.text(`Address: ${settlement.customer?.address || 'N/A'}`, 14, 77);
 
   // Receipt Meta Section
@@ -245,7 +245,8 @@ export function generateSettlementReceiptPDF(settlement, settings) {
   doc.setFont('Helvetica', 'normal');
   doc.text(`Date & Time: ${new Date(settlement.settlement_date).toLocaleString()}`, 130, 67);
   doc.text(`Sale Reference: ${settlement.sale?.sale_code || 'N/A'}`, 130, 72);
-  doc.text(`Authorized By: ${settlement.created_by || 'System'}`, 130, 77);
+  doc.text(`Payment Method: ${(settlement.payment_method || 'cash').replace('_', ' ').toUpperCase()}`, 130, 77);
+  doc.text(`Authorized By: ${settlement.created_by || 'System'}`, 130, 82);
 
   // Summary Table of payments
   const tableData = [
@@ -258,7 +259,7 @@ export function generateSettlementReceiptPDF(settlement, settings) {
   ];
 
   doc.autoTable({
-    startY: 85,
+    startY: 90,
     head: [['Description', 'Amount Paid', 'Remaining Debt', 'New Status']],
     body: tableData,
     theme: 'grid',

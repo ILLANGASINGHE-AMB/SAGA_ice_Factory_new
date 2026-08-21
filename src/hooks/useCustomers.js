@@ -39,23 +39,31 @@ export function useCustomers() {
     };
   }, []);
 
-  const addCustomer = async ({ name, whatsapp_number, address = '', email = '' }) => {
+  const addCustomer = async ({ name, whatsapp_number = '', contact_number = '', address = '' }) => {
     if (!name || name.trim().length < 2) {
       throw new Error("Name is required and must be at least 2 characters");
     }
-    if (!whatsapp_number || !/^0\d{9}$/.test(whatsapp_number)) {
+    if (!whatsapp_number && !contact_number) {
+      throw new Error("Provide at least one number (WhatsApp or Contact)");
+    }
+    if (whatsapp_number && !/^0\d{9}$/.test(whatsapp_number)) {
       throw new Error("WhatsApp number must be exactly 10 digits and start with 0 (e.g. 0771234567)");
+    }
+    if (contact_number && !/^0\d{9}$/.test(contact_number)) {
+      throw new Error("Contact number must be exactly 10 digits and start with 0 (e.g. 0771234567)");
     }
 
     // Check duplicate WhatsApp
-    const { data: existing } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('whatsapp_number', whatsapp_number)
-      .maybeSingle();
+    if (whatsapp_number) {
+      const { data: existing } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('whatsapp_number', whatsapp_number)
+        .maybeSingle();
 
-    if (existing) {
-      throw new Error("A customer with this WhatsApp number already exists");
+      if (existing) {
+        throw new Error("A customer with this WhatsApp number already exists");
+      }
     }
 
     // Auto-generate atomic customer_code. No count(*)-based fallback — a
@@ -77,9 +85,9 @@ export function useCustomers() {
       .insert({
         customer_code,
         name: name.trim(),
-        whatsapp_number,
+        whatsapp_number: whatsapp_number || null,
+        contact_number: contact_number || null,
         address: address.trim(),
-        email: email.trim(),
         created_at: new Date().toISOString()
       })
       .select('id')
@@ -90,32 +98,40 @@ export function useCustomers() {
     return { id: data.id, customer_code };
   };
 
-  const updateCustomer = async (id, { name, whatsapp_number, address = '', email = '' }) => {
+  const updateCustomer = async (id, { name, whatsapp_number = '', contact_number = '', address = '' }) => {
     if (!name || name.trim().length < 2) {
       throw new Error("Name is required and must be at least 2 characters");
     }
-    if (!whatsapp_number || !/^0\d{9}$/.test(whatsapp_number)) {
+    if (!whatsapp_number && !contact_number) {
+      throw new Error("Provide at least one number (WhatsApp or Contact)");
+    }
+    if (whatsapp_number && !/^0\d{9}$/.test(whatsapp_number)) {
       throw new Error("WhatsApp number must be exactly 10 digits and start with 0 (e.g. 0771234567)");
+    }
+    if (contact_number && !/^0\d{9}$/.test(contact_number)) {
+      throw new Error("Contact number must be exactly 10 digits and start with 0 (e.g. 0771234567)");
     }
 
     // Check duplicate WhatsApp
-    const { data: existing } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('whatsapp_number', whatsapp_number)
-      .maybeSingle();
+    if (whatsapp_number) {
+      const { data: existing } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('whatsapp_number', whatsapp_number)
+        .maybeSingle();
 
-    if (existing && Number(existing.id) !== Number(id)) {
-      throw new Error("Another customer with this WhatsApp number already exists");
+      if (existing && Number(existing.id) !== Number(id)) {
+        throw new Error("Another customer with this WhatsApp number already exists");
+      }
     }
 
     const { error: updateErr } = await supabase
       .from('customers')
       .update({
         name: name.trim(),
-        whatsapp_number,
-        address: address.trim(),
-        email: email.trim()
+        whatsapp_number: whatsapp_number || null,
+        contact_number: contact_number || null,
+        address: address.trim()
       })
       .eq('id', id);
 

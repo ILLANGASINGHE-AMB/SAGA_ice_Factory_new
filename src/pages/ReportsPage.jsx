@@ -248,7 +248,7 @@ export function ReportsPage() {
           id: custId,
           code: customer?.customer_code || 'N/A',
           name: customer?.name || 'Unknown',
-          whatsapp: customer?.whatsapp_number || 'N/A',
+          whatsapp: customer?.whatsapp_number || customer?.contact_number || 'N/A',
           amountOwed: custDebtAgg[custId]
         };
       });

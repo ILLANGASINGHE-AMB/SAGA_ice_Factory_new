@@ -80,12 +80,12 @@ export function GlobalSearchModal({ isOpen, onClose }) {
 
     // Search Customers
     data.customers.forEach(c => {
-      if (c.name?.toLowerCase().includes(q) || c.whatsapp_number?.includes(q) || c.customer_code?.toLowerCase().includes(q)) {
+      if (c.name?.toLowerCase().includes(q) || c.whatsapp_number?.includes(q) || c.contact_number?.includes(q) || c.customer_code?.toLowerCase().includes(q)) {
         results.push({
           type: 'Customer',
           icon: <Users size={16} className="text-blue-500" />,
           title: c.name,
-          subtitle: `${c.customer_code} • ${c.whatsapp_number}`,
+          subtitle: `${c.customer_code} • ${c.whatsapp_number || c.contact_number || 'No number'}`,
           path: '/customers'
         });
       }

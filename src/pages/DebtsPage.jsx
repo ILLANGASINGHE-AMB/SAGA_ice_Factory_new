@@ -28,6 +28,7 @@ export function DebtsPage() {
   const [settleModalOpen, setSettleModalOpen] = useState(false);
   const [selectedDebt, setSelectedDebt] = useState(null);
   const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('cash');
   const [actionLoading, setActionLoading] = useState(false);
 
   // WhatsApp Prompt State
@@ -44,6 +45,7 @@ export function DebtsPage() {
   const openSettleModal = (debt) => {
     setSelectedDebt(debt);
     setPaymentAmount('');
+    setPaymentMethod('cash');
     setSettleModalOpen(true);
   };
 
@@ -51,6 +53,7 @@ export function DebtsPage() {
     setSettleModalOpen(false);
     setSelectedDebt(null);
     setPaymentAmount('');
+    setPaymentMethod('cash');
   };
 
   // Submit Settle Debt
@@ -71,7 +74,8 @@ export function DebtsPage() {
       const result = await settleDebt(
         selectedDebt.id,
         amount,
-        user?.fullName || 'Staff Operator'
+        user?.fullName || 'Staff Operator',
+        paymentMethod
       );
 
       // Trigger PDF Receipt Download
@@ -92,7 +96,7 @@ export function DebtsPage() {
   // Send receipt notification via WhatsApp
   const handleSendWhatsAppReceipt = () => {
     if (!settlementReceiptRecord) return;
-    const phone = settlementReceiptRecord.customer?.whatsapp_number;
+    const phone = settlementReceiptRecord.customer?.whatsapp_number || settlementReceiptRecord.customer?.contact_number;
     const name = settlementReceiptRecord.customer?.name;
     const saleCode = settlementReceiptRecord.sale?.sale_code || 'N/A';
     const amount = settlementReceiptRecord.amount_paid;
@@ -454,6 +458,20 @@ export function DebtsPage() {
             placeholder={`Max LKR ${selectedDebt?.remaining_amount}`}
             value={paymentAmount}
             onChange={(e) => setPaymentAmount(e.target.value)}
+          />
+
+          {/* Payment method */}
+          <Select
+            label="Payment Method"
+            name="paymentMethod"
+            options={[
+              { value: 'cash', label: 'Cash' },
+              { value: 'bank_transfer', label: 'Bank Transfer' },
+              { value: 'cheque', label: 'Cheque' },
+              { value: 'other', label: 'Other' }
+            ]}
+            value={paymentMethod}
+            onChange={(e) => setPaymentMethod(e.target.value)}
           />
 
           {/* Preview panel */}

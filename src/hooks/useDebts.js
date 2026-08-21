@@ -54,7 +54,7 @@ export function useDebts() {
     };
   }, []);
 
-  const settleDebt = async (debtId, amountPaid, createdBy) => {
+  const settleDebt = async (debtId, amountPaid, createdBy, paymentMethod = 'cash') => {
     if (!amountPaid || amountPaid <= 0) {
       throw new Error("Settlement amount must be a positive number");
     }
@@ -70,7 +70,8 @@ export function useDebts() {
     const { data: settlement, error: settleErr } = await supabase.rpc('settle_debt_transaction', {
       p_debt_id: debtId,
       p_amount_paid: amountPaid,
-      p_created_by: createdBy
+      p_created_by: createdBy,
+      p_payment_method: paymentMethod
     });
 
     if (settleErr || !settlement) {
@@ -83,6 +84,7 @@ export function useDebts() {
       customer_id,
       sale_id,
       amount_paid,
+      payment_method: settledPaymentMethod,
       remaining_amount: newRemaining,
       status: newStatus,
       settlement_date
@@ -118,6 +120,7 @@ export function useDebts() {
         customer,
         sale,
         amount_paid,
+        payment_method: settledPaymentMethod,
         remaining_amount: newRemaining,
         status: newStatus,
         settlement_date,
@@ -154,6 +157,7 @@ export function useDebts() {
       settlement_code,
       debt_id: debtId,
       amount_paid,
+      payment_method: settledPaymentMethod,
       remaining_amount: newRemaining,
       status: newStatus,
       bill_pdf_url,

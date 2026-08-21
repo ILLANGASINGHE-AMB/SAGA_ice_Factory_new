@@ -100,9 +100,10 @@ export function SalesPage() {
   const filteredCustomersForSearch = useMemo(() => {
     if (!customers || !customerSearchQuery.trim()) return [];
     const q = customerSearchQuery.toLowerCase();
-    return customers.filter(c => 
-      c.name.toLowerCase().includes(q) || 
-      c.whatsapp_number.includes(q)
+    return customers.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      c.whatsapp_number?.includes(q) ||
+      c.contact_number?.includes(q)
     );
   }, [customers, customerSearchQuery]);
 
@@ -216,7 +217,7 @@ export function SalesPage() {
   // WhatsApp redirection
   const handleSendWhatsApp = () => {
     if (!placedSaleRecord) return;
-    const phone = placedSaleRecord.customer?.whatsapp_number;
+    const phone = placedSaleRecord.customer?.whatsapp_number || placedSaleRecord.customer?.contact_number;
     const name = placedSaleRecord.customer?.name;
     const amount = placedSaleRecord.total_amount;
     
@@ -558,7 +559,7 @@ ${billURL}`;
                             onClick={() => selectCustomer(c)}
                           >
                             <span className="font-semibold">{c.name}</span>
-                            <span className="font-mono text-slate-400">{c.whatsapp_number}</span>
+                            <span className="font-mono text-slate-400">{c.whatsapp_number || c.contact_number}</span>
                           </div>
                         ))
                       )}
@@ -685,7 +686,7 @@ ${billURL}`;
               <div className="grid grid-cols-2 gap-2 text-xs py-1">
                 <span className="text-slate-400">WhatsApp Phone</span>
                 <span className="font-mono text-right text-slate-800 dark:text-slate-200">
-                  {showMiniCustomerForm ? newCustPhone : customers.find(c => c.id === Number(customerId))?.whatsapp_number}
+                  {showMiniCustomerForm ? newCustPhone : (customers.find(c => c.id === Number(customerId))?.whatsapp_number || customers.find(c => c.id === Number(customerId))?.contact_number)}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs py-1">

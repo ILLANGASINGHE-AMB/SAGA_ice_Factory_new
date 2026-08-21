@@ -284,7 +284,7 @@ export function useDailyReport(reportDateStr) {
         no: idx + 1,
         location: cust?.address || 'Plant',
         customerName: cust?.name || 'Walk-in',
-        phone: cust?.whatsapp_number || 'N/A',
+        phone: cust?.whatsapp_number || cust?.contact_number || 'N/A',
         quantity: s.quantity,
         amount: Number(s.total_amount)
       };
