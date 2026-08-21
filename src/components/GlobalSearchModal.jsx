@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
+import {
   Search,
   X,
   Users,
+  Contact,
   Truck,
   ShoppingCart,
   DollarSign,
@@ -18,6 +19,7 @@ export function GlobalSearchModal({ isOpen, onClose }) {
   const [query, setQuery] = useState('');
   const [data, setData] = useState({
     customers: [],
+    employees: [],
     vehicles: [],
     sales: [],
     debts: [],
@@ -35,6 +37,7 @@ export function GlobalSearchModal({ isOpen, onClose }) {
       try {
         const [
           { data: customers },
+          { data: employees },
           { data: vehicles },
           { data: sales },
           { data: debts },
@@ -42,6 +45,7 @@ export function GlobalSearchModal({ isOpen, onClose }) {
           { data: expenses }
         ] = await Promise.all([
           supabase.from('customers').select('*').limit(100),
+          supabase.from('employees').select('*').limit(100),
           supabase.from('vehicles').select('*').limit(100),
           supabase.from('sales').select('*, customer:customers(name)').limit(100),
           supabase.from('debts').select('*, customer:customers(name), sale:sales(sale_code)').limit(100),
@@ -51,6 +55,7 @@ export function GlobalSearchModal({ isOpen, onClose }) {
 
         setData({
           customers: customers || [],
+          employees: employees || [],
           vehicles: vehicles || [],
           sales: sales || [],
           debts: debts || [],
@@ -92,6 +97,19 @@ export function GlobalSearchModal({ isOpen, onClose }) {
           title: c.name,
           subtitle: `${c.customer_code} • ${c.whatsapp_number || c.contact_number || 'No number'}`,
           path: '/customers'
+        });
+      }
+    });
+
+    // Search Employees
+    data.employees.forEach(e => {
+      if (e.name?.toLowerCase().includes(q) || e.employee_code?.toLowerCase().includes(q) || e.nic?.toLowerCase().includes(q) || e.job_type?.toLowerCase().includes(q)) {
+        results.push({
+          type: 'Employee',
+          icon: <Contact size={16} className="text-emerald-500" />,
+          title: e.name,
+          subtitle: `${e.employee_code} • ${e.job_type || 'No job type'}`,
+          path: '/employees'
         });
       }
     });
@@ -215,6 +233,7 @@ export function GlobalSearchModal({ isOpen, onClose }) {
                 {[
                   { name: 'Sales POS', path: '/sales' },
                   { name: 'Customers', path: '/customers' },
+                  { name: 'Employees', path: '/employees' },
                   { name: 'Vehicles', path: '/vehicles' },
                   { name: 'Debt Ledger', path: '/debts' },
                   { name: 'Inventory', path: '/inventory' },

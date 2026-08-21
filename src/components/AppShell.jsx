@@ -5,9 +5,10 @@ import { useSettings } from '../hooks/useSettings';
 import { SagaAiDrawer } from './SagaAiDrawer';
 import { GlobalSearchModal } from './GlobalSearchModal';
 import { 
-  LayoutDashboard, 
+  LayoutDashboard,
   Package,
   Users,
+  Contact,
   Truck,
   ShoppingCart,
   DollarSign, 
@@ -144,6 +145,7 @@ export function AppShell({ children }) {
     { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} />, adminOnly: false },
     { name: 'Inventory', path: '/inventory', icon: <Package size={20} />, adminOnly: false },
     { name: 'Customers', path: '/customers', icon: <Users size={20} />, adminOnly: false },
+    { name: 'Employees', path: '/employees', icon: <Contact size={20} />, adminOnly: false },
     { name: 'Vehicles', path: '/vehicles', icon: <Truck size={20} />, adminOnly: false },
     { name: 'Transport', path: '/transport', icon: <Route size={20} />, adminOnly: false },
     { name: 'Sales', path: '/sales', icon: <ShoppingCart size={20} />, adminOnly: false },
