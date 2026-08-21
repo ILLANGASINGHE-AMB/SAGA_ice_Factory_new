@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSales } from '../hooks/useSales';
 import { useInventory } from '../hooks/useInventory';
@@ -101,13 +101,20 @@ export function SalesPage() {
     setNewCustPhone('');
     setShowMiniCustomerForm(false);
     setOrderRows([
-      { id: 'mfc', cubeType: 'manufactured', pricePerCube: stockMap.MFC.price, quantity: '' },
-      { id: 'rsc', cubeType: 'resell', pricePerCube: stockMap.RSC.price, quantity: '' }
+      { id: 'mfc', cubeType: 'manufactured', quantity: '' },
+      { id: 'rsc', cubeType: 'resell', quantity: '' }
     ]);
     setWizardOpen(true);
   };
 
-  // Row helpers — only rate/quantity are editable, the cube type per row is fixed.
+  // Rate per cube is always the live inventory price for that category — not
+  // stored on the row, so it can never go stale or be overridden in the wizard.
+  const getRate = useCallback(
+    (cubeType) => cubeType === 'manufactured' ? stockMap.MFC.price : stockMap.RSC.price,
+    [stockMap]
+  );
+
+  // Row helpers — only quantity is editable, the cube type per row is fixed.
   const updateRow = (id, field, value) => {
     setOrderRows(rows => rows.map(r => r.id === id ? { ...r, [field]: value } : r));
   };
@@ -151,10 +158,10 @@ export function SalesPage() {
   const calculatedTotal = useMemo(() => {
     return orderRows.reduce((sum, r) => {
       const qty = parseInt(r.quantity, 10) || 0;
-      const rate = parseFloat(r.pricePerCube) || 0;
+      const rate = getRate(r.cubeType);
       return sum + qty * rate;
     }, 0);
-  }, [orderRows]);
+  }, [orderRows, getRate]);
 
   // Handle customer selection
   const selectCustomer = (cust) => {
@@ -191,7 +198,10 @@ export function SalesPage() {
         return;
       }
       for (const r of activeRows) {
-        if (!parseFloat(r.pricePerCube) || parseFloat(r.pricePerCube) <= 0) { toast.error("All entered rates must be positive numbers."); return; }
+        if (!(getRate(r.cubeType) > 0)) {
+          toast.error(`No inventory rate set for ${r.cubeType === 'manufactured' ? 'Production (MFC)' : 'Resell (RSC)'}. Set it from the Inventory tab first.`);
+          return;
+        }
       }
       // Tally quantities by cube type to check stock
       const mfcQty = activeRows.filter(r => r.cubeType === 'manufactured').reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0);
@@ -229,7 +239,7 @@ export function SalesPage() {
           .map(row => ({
             cube_type: row.cubeType,
             quantity: parseInt(row.quantity, 10),
-            price_per_cube: parseFloat(row.pricePerCube)
+            price_per_cube: getRate(row.cubeType)
           })),
         payment_type: paymentType,
         created_by: user?.fullName || 'Staff Operator'
@@ -807,22 +817,20 @@ ${billURL}`;
             {/* Order Rows — always both categories, no add/remove */}
             <div className="space-y-2">
               {orderRows.map((row) => {
-                const rowTotal = (parseInt(row.quantity, 10) || 0) * (parseFloat(row.pricePerCube) || 0);
+                const rate = getRate(row.cubeType);
+                const rowTotal = (parseInt(row.quantity, 10) || 0) * rate;
                 const availableStock = row.cubeType === 'manufactured' ? stockMap.MFC.qty : stockMap.RSC.qty;
                 return (
                   <div key={row.id} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
                     <div className="flex items-center px-2 py-2">
                       <Badge type={row.cubeType === 'manufactured' ? 'MFC' : 'RSC'} label={row.cubeType === 'manufactured' ? 'Production (MFC)' : 'Resell (RSC)'} />
                     </div>
-                    <input
-                      type="number"
-                      step="0.01"
-                      disabled={!isAdmin}
-                      value={row.pricePerCube}
-                      onChange={(e) => updateRow(row.id, 'pricePerCube', e.target.value)}
-                      title={!isAdmin ? 'Editable for Administrators only' : ''}
-                      className={`px-2 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-navy-500 font-mono ${!isAdmin ? 'opacity-70' : ''}`}
-                    />
+                    <div
+                      title="Auto-fetched from current inventory rate"
+                      className="px-2 py-2 text-xs bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 font-mono"
+                    >
+                      {rate > 0 ? rate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                    </div>
                     <div>
                       <input
                         type="number"
@@ -935,12 +943,13 @@ ${billURL}`;
               </div>
               {/* Per-row summary — only rows the operator actually filled in */}
               {orderRows.filter(row => (parseInt(row.quantity, 10) || 0) > 0).map((row, idx) => {
-                const rowTotal = (parseInt(row.quantity, 10) || 0) * (parseFloat(row.pricePerCube) || 0);
+                const rate = getRate(row.cubeType);
+                const rowTotal = (parseInt(row.quantity, 10) || 0) * rate;
                 return (
                   <div key={row.id} className="grid grid-cols-2 gap-2 text-xs py-1">
                     <span className="text-slate-400">Item {idx + 1} ({row.cubeType === 'manufactured' ? 'MFC' : 'RSC'})</span>
                     <span className="font-mono text-right text-slate-800 dark:text-slate-200">
-                      {parseInt(row.quantity, 10).toLocaleString()} × LKR {parseFloat(row.pricePerCube).toFixed(2)} = LKR {rowTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      {parseInt(row.quantity, 10).toLocaleString()} × LKR {rate.toFixed(2)} = LKR {rowTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </span>
                   </div>
                 );
