@@ -222,9 +222,9 @@ export function CashBankPage() {
               subtitle={`${cb.bankDeposits.length} deposit${cb.bankDeposits.length !== 1 ? 's' : ''} on record`}
             />
             <StatCard
-              label="03. Cheques"
+              label="03. Hand Cheques"
               icon={<CreditCard className="w-4 h-4 sm:w-5 sm:h-5 text-amber-500" />}
-              value={cb.chequesPendingTotal}
+              value={cb.handChequesTotal}
               subtitle={`${cb.chequesPending.length} cheque${cb.chequesPending.length !== 1 ? 's' : ''} on hand`}
             />
             <StatCard

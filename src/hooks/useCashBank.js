@@ -119,6 +119,29 @@ export function useCashBank() {
     [chequesPending]
   );
 
+  // A Section 02 deposit made via the per-cheque "Deposit" button is already
+  // linked to that cheque_records row (deposit_id), so it's already reflected
+  // by chequesPendingTotal excluding that now-deposited cheque. A deposit made
+  // instead through the general Section 02 form with method 'cheques' has no
+  // linked cheque record — it still represents cheques-on-hand being banked,
+  // so it must reduce the Hand Cheques card by that amount directly.
+  const linkedChequeDepositIds = useMemo(
+    () => new Set(chequeRecords.filter(c => c.deposit_id != null).map(c => c.deposit_id)),
+    [chequeRecords]
+  );
+
+  const unlinkedChequeDepositsTotal = useMemo(
+    () => bankDeposits
+      .filter(d => d.cash_method === 'cheques' && !linkedChequeDepositIds.has(d.id))
+      .reduce((sum, d) => sum + (Number(d.amount) || 0), 0),
+    [bankDeposits, linkedChequeDepositIds]
+  );
+
+  const handChequesTotal = useMemo(
+    () => Math.max(0, chequesPendingTotal - unlinkedChequeDepositsTotal),
+    [chequesPendingTotal, unlinkedChequeDepositsTotal]
+  );
+
   const cashBalance = useMemo(
     () => Math.max(0, cashSalesTotal + debtSettlementsTotal + cashReceivesTotal - cashDepositedTotal),
     [cashSalesTotal, debtSettlementsTotal, cashReceivesTotal, cashDepositedTotal]
@@ -169,11 +192,11 @@ export function useCashBank() {
       bank_deposit_amount: bankBalance,
       bank_deposit_today: bankDepositedToday,
       cash_deposited_today: cashDepositedToday,
-      cheques_on_hand: chequesPendingTotal
+      cheques_on_hand: handChequesTotal
     }, { onConflict: 'report_date' }).then(({ error }) => {
       if (error) console.warn("Failed to sync Cash & Bank snapshot to daily_manager_reports:", error.message);
     });
-  }, [isLoading, todayStr, cashBalance, bankBalance, bankDepositedToday, cashDepositedToday, chequesPendingTotal]);
+  }, [isLoading, todayStr, cashBalance, bankBalance, bankDepositedToday, cashDepositedToday, handChequesTotal]);
 
   const addCashReceive = async ({ amount, receiveType, receivedAt, createdBy }) => {
     const amt = parseFloat(amount);
@@ -295,6 +318,7 @@ export function useCashBank() {
     bankBalancesByName,
     chequesPending,
     chequesPendingTotal,
+    handChequesTotal,
     cashReceives,
     bankDeposits,
     chequeRecords,
