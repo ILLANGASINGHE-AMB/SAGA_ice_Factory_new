@@ -19,7 +19,6 @@ import {
   Receipt,
   Sparkles,
   Search,
-  ClipboardCheck,
   Landmark,
   PanelLeftClose,
   PanelLeftOpen,
@@ -147,7 +146,6 @@ export function AppShell({ children }) {
     { name: 'Debts', path: '/debts', icon: <DollarSign size={20} />, adminOnly: false },
     { name: 'Expense Ledger', path: '/expenses', icon: <Receipt size={20} />, adminOnly: false },
     { name: 'Cash & Bank Details', path: '/cash-bank', icon: <Landmark size={20} />, adminOnly: false },
-    { name: 'Daily Manager Report', path: '/daily-report', icon: <ClipboardCheck size={20} />, adminOnly: false },
     { name: 'Reports', path: '/reports', icon: <FileBarChart size={20} />, adminOnly: true },
     { name: 'Settings', path: '/settings', icon: <SettingsIcon size={20} />, adminOnly: false }
   ];

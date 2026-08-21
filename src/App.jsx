@@ -20,7 +20,6 @@ const DebtsPage = lazy(() => import('./pages/DebtsPage').then(m => ({ default: m
 const ReportsPage = lazy(() => import('./pages/ReportsPage').then(m => ({ default: m.ReportsPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const ExpenseLedgerPage = lazy(() => import('./pages/ExpenseLedgerPage').then(m => ({ default: m.ExpenseLedgerPage })));
-const DailyReportPage = lazy(() => import('./pages/DailyReportPage').then(m => ({ default: m.DailyReportPage })));
 const CashBankPage = lazy(() => import('./pages/CashBankPage').then(m => ({ default: m.CashBankPage })));
 const PublicBillPage = lazy(() => import('./pages/PublicBillPage').then(m => ({ default: m.PublicBillPage })));
 
@@ -126,16 +125,6 @@ function App() {
               />
 
               {/* Standard Staff & Admin Accessible Pages */}
-              <Route
-                path="/daily-report"
-                element={
-                  <ProtectedRoute>
-                    <AppShell>
-                      <DailyReportPage />
-                    </AppShell>
-                  </ProtectedRoute>
-                }
-              />
               <Route
                 path="/cash-bank"
                 element={

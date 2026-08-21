@@ -6,7 +6,19 @@ import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { Modal } from '../components/Modal';
 import { Input, Select } from '../components/FormFields';
-import { Plus, Minus, Edit, TrendingUp, AlertTriangle, History, Calendar, Clock, Filter, Search } from 'lucide-react';
+import { Plus, Minus, Edit, AlertTriangle, Table2, LineChart as LineChartIcon } from 'lucide-react';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+} from 'recharts';
+
+// Colors kept consistent with Badge.jsx (MFC/RSC/BNC) and the Dashboard chart palette
+const GRAPH_COLORS = {
+  manufactured: '#3b82f6', // Production - blue
+  resell: '#6366f1',       // Resell - indigo
+  waste: '#f59e0b'         // Brine - amber
+};
+
+const CUBE_TYPE_LABELS = { manufactured: 'Production', resell: 'Resell', waste: 'Brine' };
 
 export function InventoryPage() {
   const { inventory, transactions, isLoading, addStock, removeStock, updatePrice } = useInventory();
@@ -14,7 +26,7 @@ export function InventoryPage() {
   const toast = useToast();
 
   // Modal control states
-  const [activeModal, setActiveModal] = useState(null); // 'add' | 'remove' | 'editPrice' | 'history' | null
+  const [activeModal, setActiveModal] = useState(null); // 'add' | 'remove' | 'editPrice' | null
   const [selectedItem, setSelectedItem] = useState(null);
   
   // Input states
@@ -22,7 +34,8 @@ export function InventoryPage() {
   const [priceInput, setPriceInput] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
-  // History Modal States
+  // Production History section states
+  const [historyViewMode, setHistoryViewMode] = useState('table'); // 'table' | 'graph'
   const [historyFilterType, setHistoryFilterType] = useState('daily'); // 'daily' | 'monthly' | 'yearly'
   const [historyDate, setHistoryDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [historyMonth, setHistoryMonth] = useState(() => new Date().toISOString().slice(0, 7));
@@ -113,38 +126,29 @@ export function InventoryPage() {
     }
   };
 
-  // Filtered transactions for History Modal
-  const filteredTransactions = useMemo(() => {
+  // Transactions matching the selected Daily/Monthly/Yearly period, regardless of cube type
+  const dateFilteredTransactions = useMemo(() => {
     if (!transactions) return [];
 
     return transactions.filter(txn => {
       const txnDate = new Date(txn.created_at);
-      
-      // Date filter match
-      let dateMatch = true;
+
       if (historyFilterType === 'daily') {
-        const target = historyDate;
-        const txnStr = txnDate.toISOString().slice(0, 10);
-        dateMatch = txnStr === target;
+        return txnDate.toISOString().slice(0, 10) === historyDate;
       } else if (historyFilterType === 'monthly') {
-        const targetMonth = historyMonth; // YYYY-MM
-        const txnMonthStr = txnDate.toISOString().slice(0, 7);
-        dateMatch = txnMonthStr === targetMonth;
+        return txnDate.toISOString().slice(0, 7) === historyMonth; // YYYY-MM
       } else if (historyFilterType === 'yearly') {
-        const targetYear = historyYear; // YYYY
-        dateMatch = txnDate.getFullYear().toString() === targetYear;
+        return txnDate.getFullYear().toString() === historyYear;
       }
-
-      // Cube Type match
-      let cubeMatch = true;
-      if (historyCubeType !== 'all') {
-        const itemType = txn.inventory?.type;
-        cubeMatch = itemType === historyCubeType;
-      }
-
-      return dateMatch && cubeMatch;
+      return true;
     });
-  }, [transactions, historyFilterType, historyDate, historyMonth, historyYear, historyCubeType]);
+  }, [transactions, historyFilterType, historyDate, historyMonth, historyYear]);
+
+  // Production History table: also narrowed by the Cube Type filter
+  const filteredTransactions = useMemo(() => {
+    if (historyCubeType === 'all') return dateFilteredTransactions;
+    return dateFilteredTransactions.filter(txn => txn.inventory?.type === historyCubeType);
+  }, [dateFilteredTransactions, historyCubeType]);
 
   // Summary stats for filtered history
   const historyStats = useMemo(() => {
@@ -157,6 +161,42 @@ export function InventoryPage() {
     });
     return { added, deducted, net: added - deducted };
   }, [filteredTransactions]);
+
+  // Graph View: net cube movement per cube type, bucketed across the time axis
+  // implied by the selected filter (hours for a day, days for a month, months for a year).
+  // Always uses all three cube types regardless of the Cube Type filter, since the graph
+  // is defined as three colored lines (Production / Resell / Brine).
+  const graphData = useMemo(() => {
+    let buckets;
+    if (historyFilterType === 'daily') {
+      buckets = Array.from({ length: 24 }, (_, h) => ({
+        label: `${h.toString().padStart(2, '0')}:00`, Production: 0, Resell: 0, Brine: 0
+      }));
+    } else if (historyFilterType === 'monthly') {
+      const [y, m] = historyMonth.split('-').map(Number);
+      const daysInMonth = new Date(y, m, 0).getDate();
+      buckets = Array.from({ length: daysInMonth }, (_, d) => ({
+        label: `${d + 1}`, Production: 0, Resell: 0, Brine: 0
+      }));
+    } else {
+      buckets = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        .map(label => ({ label, Production: 0, Resell: 0, Brine: 0 }));
+    }
+
+    dateFilteredTransactions.forEach(txn => {
+      const txnDate = new Date(txn.created_at);
+      const idx = historyFilterType === 'daily' ? txnDate.getHours()
+        : historyFilterType === 'monthly' ? txnDate.getDate() - 1
+        : txnDate.getMonth();
+
+      const bucket = buckets[idx];
+      const seriesKey = CUBE_TYPE_LABELS[txn.inventory?.type];
+      if (!bucket || !seriesKey) return;
+      bucket[seriesKey] += Number(txn.quantity_change) || 0;
+    });
+
+    return buckets;
+  }, [dateFilteredTransactions, historyFilterType, historyMonth]);
 
   if (isLoading) {
     return (
@@ -171,25 +211,14 @@ export function InventoryPage() {
   return (
     <div className="space-y-6">
       
-      {/* Top Bar with History Trigger */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs">
-        <div>
-          <h2 className="text-base sm:text-lg font-bold font-heading text-slate-900 dark:text-slate-100">
-            Inventory & Stock Control
-          </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Real-time stock balances for Production, Purchases, and Brine Cubes.
-          </p>
-        </div>
-
-        <Button 
-          variant="secondary" 
-          onClick={() => setActiveModal('history')}
-          className="flex items-center space-x-2 border border-slate-300 dark:border-slate-700"
-        >
-          <History size={16} className="text-navy-600 dark:text-sky-400" />
-          <span>Stock History</span>
-        </Button>
+      {/* Top Bar */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs">
+        <h2 className="text-base sm:text-lg font-bold font-heading text-slate-900 dark:text-slate-100">
+          Inventory & Stock Control
+        </h2>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+          Real-time stock balances for Production, Purchases, and Brine Cubes.
+        </p>
       </div>
 
       {/* Stock Cards Layout - 3-Column Landscape Grid */}
@@ -314,8 +343,237 @@ export function InventoryPage() {
         })}
       </div>
 
+      {/* Filter Options Bar */}
+      <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col md:flex-row items-center justify-between gap-3">
+
+        {/* View Mode Tabs (Daily / Monthly / Yearly) */}
+        <div className="flex items-center space-x-1 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+          <button
+            onClick={() => setHistoryFilterType('daily')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              historyFilterType === 'daily'
+                ? 'bg-navy-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            Daily
+          </button>
+          <button
+            onClick={() => setHistoryFilterType('monthly')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              historyFilterType === 'monthly'
+                ? 'bg-navy-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            Monthly
+          </button>
+          <button
+            onClick={() => setHistoryFilterType('yearly')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              historyFilterType === 'yearly'
+                ? 'bg-navy-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            Yearly
+          </button>
+        </div>
+
+        {/* Date Range Selector for the chosen method */}
+        <div className="flex items-center space-x-3 w-full md:w-auto">
+          {historyFilterType === 'daily' && (
+            <input
+              type="date"
+              value={historyDate}
+              onChange={(e) => setHistoryDate(e.target.value)}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
+            />
+          )}
+
+          {historyFilterType === 'monthly' && (
+            <input
+              type="month"
+              value={historyMonth}
+              onChange={(e) => setHistoryMonth(e.target.value)}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
+            />
+          )}
+
+          {historyFilterType === 'yearly' && (
+            <select
+              value={historyYear}
+              onChange={(e) => setHistoryYear(e.target.value)}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
+            >
+              <option value="2026">2026</option>
+              <option value="2025">2025</option>
+              <option value="2027">2027</option>
+            </select>
+          )}
+
+          {/* Cube Type Filter */}
+          <select
+            value={historyCubeType}
+            onChange={(e) => setHistoryCubeType(e.target.value)}
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
+          >
+            <option value="all">All Cube Types</option>
+            <option value="manufactured">Production (MFC)</option>
+            <option value="resell">Resell (RSC)</option>
+            <option value="waste">Brine Cubes (BNC)</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Production History / Graph View Toggle */}
+      <div className="flex items-center space-x-1 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-700 w-fit">
+        <button
+          onClick={() => setHistoryViewMode('table')}
+          className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
+            historyViewMode === 'table'
+              ? 'bg-navy-600 text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+          }`}
+        >
+          <Table2 size={14} />
+          <span>Production History</span>
+        </button>
+        <button
+          onClick={() => setHistoryViewMode('graph')}
+          className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
+            historyViewMode === 'graph'
+              ? 'bg-navy-600 text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+          }`}
+        >
+          <LineChartIcon size={14} />
+          <span>Graph View</span>
+        </button>
+      </div>
+
+      {historyViewMode === 'table' ? (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5 space-y-5">
+          {/* History KPI Scorecard */}
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/50 rounded-xl">
+              <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold uppercase">Total Added (+)</span>
+              <p className="font-bold text-base text-emerald-600 dark:text-emerald-400 mt-0.5">
+                +{historyStats.added.toLocaleString()} cubes
+              </p>
+            </div>
+
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 rounded-xl">
+              <span className="text-[10px] text-rose-700 dark:text-rose-400 font-bold uppercase">Total Deducted (-)</span>
+              <p className="font-bold text-base text-rose-600 dark:text-rose-400 mt-0.5">
+                -{historyStats.deducted.toLocaleString()} cubes
+              </p>
+            </div>
+          </div>
+
+          {/* Itemized Transactions Table */}
+          {filteredTransactions.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 text-xs">
+              No inventory stock transactions recorded for the selected filter.
+            </div>
+          ) : (
+            <div className="overflow-x-auto max-h-[50vh] overflow-y-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 text-slate-500 uppercase text-[10px]">
+                  <tr>
+                    <th className="py-2.5 px-3">Date & Time</th>
+                    <th className="py-2.5 px-3">Cube Type</th>
+                    <th className="py-2.5 px-3">Event Type</th>
+                    <th className="py-2.5 px-3 text-right">Qty Change</th>
+                    <th className="py-2.5 px-3 text-right">Prev Stock</th>
+                    <th className="py-2.5 px-3 text-right">New Stock</th>
+                    <th className="py-2.5 px-3">Operator</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {filteredTransactions.map((txn, idx) => {
+                    const change = Number(txn.quantity_change) || 0;
+                    const isPositive = change > 0;
+                    const typeLabel = txn.inventory?.type === 'manufactured' ? 'Production' : txn.inventory?.type === 'resell' ? 'Resell' : txn.inventory?.type === 'waste' ? 'Brine' : txn.inventory?.type || 'Cube';
+
+                    return (
+                      <tr key={txn.id || idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                        <td className="py-2.5 px-3 font-mono text-slate-500">
+                          {new Date(txn.created_at).toLocaleString()}
+                        </td>
+                        <td className="py-2.5 px-3 font-bold uppercase text-slate-700 dark:text-slate-300">
+                          {typeLabel}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            txn.transaction_type === 'add'
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                              : txn.transaction_type === 'sale_deduction'
+                                ? 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300'
+                                : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                          }`}>
+                            {txn.transaction_type.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className={`py-2.5 px-3 text-right font-mono font-bold ${
+                          isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                        }`}>
+                          {isPositive ? `+${change}` : change}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-slate-400">
+                          {txn.previous_quantity}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-bold">
+                          {txn.new_quantity}
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-500">
+                          {txn.created_by || 'Operator'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs sm:text-sm font-bold font-heading text-slate-800 dark:text-slate-100">
+              Cube Movement Trend
+            </h3>
+            <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 capitalize">
+              {historyFilterType} view
+            </span>
+          </div>
+          <div className="h-64 sm:h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={graphData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" className="dark:hidden" />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.06)" className="hidden dark:block" />
+                <XAxis dataKey="label" stroke="#94a3b8" fontSize={9} tickLine={false} />
+                <YAxis
+                  stroke="#94a3b8"
+                  fontSize={9}
+                  tickLine={false}
+                  label={{ value: 'Cubes', angle: -90, position: 'insideLeft', fontSize: 10, fill: '#94a3b8' }}
+                />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)', fontSize: '11px' }}
+                />
+                <Legend wrapperStyle={{ fontSize: '11px' }} />
+                <Line type="monotone" dataKey="Production" stroke={GRAPH_COLORS.manufactured} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+                <Line type="monotone" dataKey="Resell" stroke={GRAPH_COLORS.resell} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+                <Line type="monotone" dataKey="Brine" stroke={GRAPH_COLORS.waste} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
       {/* --- Modals --- */}
-      
+
       {/* 1. Add Stock Modal */}
       <Modal 
         isOpen={activeModal === 'add'} 
@@ -397,191 +655,6 @@ export function InventoryPage() {
             </Button>
           </div>
         </form>
-      </Modal>
-
-      {/* 4. Stock Movement History Modal */}
-      <Modal
-        isOpen={activeModal === 'history'}
-        onClose={closeModal}
-        title="Stock Movement History"
-        size="lg"
-      >
-        <div className="space-y-5">
-          {/* Filter Controls Bar */}
-          <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col md:flex-row items-center justify-between gap-3">
-            
-            {/* View Mode Tabs (Daily / Monthly / Yearly) */}
-            <div className="flex items-center space-x-1 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
-              <button
-                onClick={() => setHistoryFilterType('daily')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                  historyFilterType === 'daily'
-                    ? 'bg-navy-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                }`}
-              >
-                Daily
-              </button>
-              <button
-                onClick={() => setHistoryFilterType('monthly')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                  historyFilterType === 'monthly'
-                    ? 'bg-navy-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                }`}
-              >
-                Monthly
-              </button>
-              <button
-                onClick={() => setHistoryFilterType('yearly')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                  historyFilterType === 'yearly'
-                    ? 'bg-navy-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                }`}
-              >
-                Yearly
-              </button>
-            </div>
-
-            {/* Time Filter Selector */}
-            <div className="flex items-center space-x-3 w-full md:w-auto">
-              {historyFilterType === 'daily' && (
-                <input
-                  type="date"
-                  value={historyDate}
-                  onChange={(e) => setHistoryDate(e.target.value)}
-                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
-                />
-              )}
-
-              {historyFilterType === 'monthly' && (
-                <input
-                  type="month"
-                  value={historyMonth}
-                  onChange={(e) => setHistoryMonth(e.target.value)}
-                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
-                />
-              )}
-
-              {historyFilterType === 'yearly' && (
-                <select
-                  value={historyYear}
-                  onChange={(e) => setHistoryYear(e.target.value)}
-                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
-                >
-                  <option value="2026">2026</option>
-                  <option value="2025">2025</option>
-                  <option value="2027">2027</option>
-                </select>
-              )}
-
-              {/* Cube Type Filter */}
-              <select
-                value={historyCubeType}
-                onChange={(e) => setHistoryCubeType(e.target.value)}
-                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
-              >
-                <option value="all">All Cube Types</option>
-                <option value="manufactured">Production (MFC)</option>
-                <option value="resell">Purchases (RSC)</option>
-                <option value="waste">Brine Cubes (BNC)</option>
-
-              </select>
-            </div>
-          </div>
-
-          {/* History KPI Scorecard */}
-          <div className="grid grid-cols-3 gap-3 text-xs">
-            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/50 rounded-xl">
-              <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold uppercase">Total Added (+)</span>
-              <p className="font-bold text-base text-emerald-600 dark:text-emerald-400 mt-0.5">
-                +{historyStats.added.toLocaleString()} cubes
-              </p>
-            </div>
-
-            <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 rounded-xl">
-              <span className="text-[10px] text-rose-700 dark:text-rose-400 font-bold uppercase">Total Deducted (-)</span>
-              <p className="font-bold text-base text-rose-600 dark:text-rose-400 mt-0.5">
-                -{historyStats.deducted.toLocaleString()} cubes
-              </p>
-            </div>
-
-            <div className="p-3 bg-navy-50 dark:bg-navy-950/40 border border-navy-200 dark:border-navy-900/50 rounded-xl">
-              <span className="text-[10px] text-navy-700 dark:text-sky-300 font-bold uppercase">Net Movement</span>
-              <p className="font-bold text-base text-navy-700 dark:text-sky-300 mt-0.5">
-                {historyStats.net >= 0 ? `+${historyStats.net.toLocaleString()}` : historyStats.net.toLocaleString()} cubes
-              </p>
-            </div>
-          </div>
-
-          {/* Itemized Transactions Table */}
-          {filteredTransactions.length === 0 ? (
-            <div className="py-12 text-center text-slate-400 text-xs">
-              No inventory stock transactions recorded for the selected filter.
-            </div>
-          ) : (
-            <div className="overflow-x-auto max-h-[50vh] overflow-y-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 text-slate-500 uppercase text-[10px]">
-                  <tr>
-                    <th className="py-2.5 px-3">Date & Time</th>
-                    <th className="py-2.5 px-3">Cube Type</th>
-                    <th className="py-2.5 px-3">Event Type</th>
-                    <th className="py-2.5 px-3 text-right">Qty Change</th>
-                    <th className="py-2.5 px-3 text-right">Prev Stock</th>
-                    <th className="py-2.5 px-3 text-right">New Stock</th>
-                    <th className="py-2.5 px-3">Operator</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {filteredTransactions.map((txn, idx) => {
-                    const change = Number(txn.quantity_change) || 0;
-                    const isPositive = change > 0;
-                    const typeLabel = txn.inventory?.type === 'manufactured' ? 'Production' : txn.inventory?.type === 'resell' ? 'Purchases' : txn.inventory?.type === 'waste' ? 'Brine' : txn.inventory?.type || 'Cube';
-
-
-                    return (
-                      <tr key={txn.id || idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                        <td className="py-2.5 px-3 font-mono text-slate-500">
-                          {new Date(txn.created_at).toLocaleString()}
-                        </td>
-                        <td className="py-2.5 px-3 font-bold uppercase text-slate-700 dark:text-slate-300">
-                          {typeLabel}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                            txn.transaction_type === 'add'
-                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                              : txn.transaction_type === 'sale_deduction'
-                                ? 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300'
-                                : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
-                          }`}>
-                            {txn.transaction_type.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className={`py-2.5 px-3 text-right font-mono font-bold ${
-                          isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
-                        }`}>
-                          {isPositive ? `+${change}` : change}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-slate-400">
-                          {txn.previous_quantity}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-bold">
-                          {txn.new_quantity}
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-500">
-                          {txn.created_by || 'Operator'}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
       </Modal>
 
     </div>
