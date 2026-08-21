@@ -16,6 +16,8 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ de
 const InventoryPage = lazy(() => import('./pages/InventoryPage').then(m => ({ default: m.InventoryPage })));
 const CustomersPage = lazy(() => import('./pages/CustomersPage').then(m => ({ default: m.CustomersPage })));
 const CustomerProfilePage = lazy(() => import('./pages/CustomerProfilePage').then(m => ({ default: m.CustomerProfilePage })));
+const VehiclesPage = lazy(() => import('./pages/VehiclesPage').then(m => ({ default: m.VehiclesPage })));
+const VehicleProfilePage = lazy(() => import('./pages/VehicleProfilePage').then(m => ({ default: m.VehicleProfilePage })));
 const SalesPage = lazy(() => import('./pages/SalesPage').then(m => ({ default: m.SalesPage })));
 const DebtsPage = lazy(() => import('./pages/DebtsPage').then(m => ({ default: m.DebtsPage })));
 const ReportsPage = lazy(() => import('./pages/ReportsPage').then(m => ({ default: m.ReportsPage })));
@@ -110,6 +112,26 @@ function App() {
                   <ProtectedRoute>
                     <AppShell>
                       <CustomerProfilePage />
+                    </AppShell>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/vehicles"
+                element={
+                  <ProtectedRoute>
+                    <AppShell>
+                      <VehiclesPage />
+                    </AppShell>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/vehicles/:id"
+                element={
+                  <ProtectedRoute>
+                    <AppShell>
+                      <VehicleProfilePage />
                     </AppShell>
                   </ProtectedRoute>
                 }

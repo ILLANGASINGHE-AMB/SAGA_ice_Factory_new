@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Search, 
-  X, 
-  Users, 
-  ShoppingCart, 
-  DollarSign, 
+  Search,
+  X,
+  Users,
+  Truck,
+  ShoppingCart,
+  DollarSign,
   Package,
   Receipt,
-  ArrowRight 
+  ArrowRight
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -17,6 +18,7 @@ export function GlobalSearchModal({ isOpen, onClose }) {
   const [query, setQuery] = useState('');
   const [data, setData] = useState({
     customers: [],
+    vehicles: [],
     sales: [],
     debts: [],
     inventory: [],
@@ -33,12 +35,14 @@ export function GlobalSearchModal({ isOpen, onClose }) {
       try {
         const [
           { data: customers },
+          { data: vehicles },
           { data: sales },
           { data: debts },
           { data: inventory },
           { data: expenses }
         ] = await Promise.all([
           supabase.from('customers').select('*').limit(100),
+          supabase.from('vehicles').select('*').limit(100),
           supabase.from('sales').select('*, customer:customers(name)').limit(100),
           supabase.from('debts').select('*, customer:customers(name), sale:sales(sale_code)').limit(100),
           supabase.from('inventory').select('*'),
@@ -47,6 +51,7 @@ export function GlobalSearchModal({ isOpen, onClose }) {
 
         setData({
           customers: customers || [],
+          vehicles: vehicles || [],
           sales: sales || [],
           debts: debts || [],
           inventory: inventory || [],
@@ -87,6 +92,19 @@ export function GlobalSearchModal({ isOpen, onClose }) {
           title: c.name,
           subtitle: `${c.customer_code} • ${c.whatsapp_number || c.contact_number || 'No number'}`,
           path: '/customers'
+        });
+      }
+    });
+
+    // Search Vehicles
+    data.vehicles.forEach(v => {
+      if (v.vehicle_no?.toLowerCase().includes(q) || v.vehicle_model?.toLowerCase().includes(q) || v.vehicle_type?.toLowerCase().includes(q)) {
+        results.push({
+          type: 'Vehicle',
+          icon: <Truck size={16} className="text-indigo-500" />,
+          title: v.vehicle_no,
+          subtitle: `${v.vehicle_model} • ${v.vehicle_type === 'lorry' ? 'Lorry' : 'Pickup'}`,
+          path: `/vehicles/${v.id}`
         });
       }
     });
@@ -169,7 +187,7 @@ export function GlobalSearchModal({ isOpen, onClose }) {
           <input
             type="text"
             autoFocus
-            placeholder="Search customers, sales, debts, stock..."
+            placeholder="Search customers, vehicles, sales, debts, stock..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="w-full py-4 text-sm font-medium bg-transparent border-none text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none"
@@ -197,6 +215,7 @@ export function GlobalSearchModal({ isOpen, onClose }) {
                 {[
                   { name: 'Sales POS', path: '/sales' },
                   { name: 'Customers', path: '/customers' },
+                  { name: 'Vehicles', path: '/vehicles' },
                   { name: 'Debt Ledger', path: '/debts' },
                   { name: 'Inventory', path: '/inventory' },
                   { name: 'Expenses', path: '/expenses' }

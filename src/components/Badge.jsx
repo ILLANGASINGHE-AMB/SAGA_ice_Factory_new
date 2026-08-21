@@ -1,7 +1,7 @@
 import React from 'react';
 
 export function Badge({
-  type, // 'MFC', 'RSC', 'BNC', 'pending', 'partial', 'settled', 'cash', 'debt', 'admin', 'user'
+  type, // 'MFC', 'RSC', 'BNC', 'pending', 'partial', 'settled', 'cash', 'debt', 'admin', 'user', 'lorry', 'pickup'
   label,
   className = ''
 }) {
@@ -22,7 +22,11 @@ export function Badge({
     
     // User roles
     admin: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-200 dark:border-purple-800',
-    user: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+    user: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700',
+
+    // Vehicle types
+    lorry: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800',
+    pickup: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300 border border-teal-200 dark:border-teal-800'
   };
 
   const currentStyle = styles[type] || 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700';
