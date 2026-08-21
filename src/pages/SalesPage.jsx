@@ -12,10 +12,10 @@ import { Modal } from '../components/Modal';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Input, Select } from '../components/FormFields';
 import { generateBillPDF } from '../utils/pdfGenerator';
-import { ShoppingCart, Search, FileDown, Plus, MessageSquare, ArrowRight, ArrowLeft, Check, Trash2 } from 'lucide-react';
+import { ShoppingCart, Search, FileDown, Plus, MessageSquare, ArrowRight, ArrowLeft, Check, Trash2, Eye, Pencil } from 'lucide-react';
 
 export function SalesPage() {
-  const { sales, isLoading: salesLoading, placeOrder, deleteSale } = useSales();
+  const { sales, isLoading: salesLoading, placeOrder, updateSale, deleteSale } = useSales();
   const { inventory, isLoading: inventoryLoading } = useInventory();
   const { customers, addCustomer } = useCustomers();
   const { settings } = useSettings();
@@ -51,6 +51,20 @@ export function SalesPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [saleToDelete, setSaleToDelete] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // View bill preview state
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [viewPdfUrl, setViewPdfUrl] = useState(null);
+  const [viewSale, setViewSale] = useState(null);
+
+  // Edit bill state
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [saleToEdit, setSaleToEdit] = useState(null);
+  const [editCubeType, setEditCubeType] = useState('manufactured');
+  const [editPricePerCube, setEditPricePerCube] = useState(0);
+  const [editQuantity, setEditQuantity] = useState('');
+  const [editPaymentType, setEditPaymentType] = useState('cash');
+  const [editLoading, setEditLoading] = useState(false);
 
   // Stock values lookup
   const stockMap = useMemo(() => {
@@ -275,6 +289,89 @@ ${billURL}`;
     toast.info(`Downloaded invoice ${sale.sale_code}`);
   };
 
+  // View bill: render the invoice PDF in-app as a preview, no download required
+  const handleViewClick = (sale) => {
+    const doc = generateBillPDF(sale, settings);
+    const blobUrl = doc.output('bloburl');
+    setViewPdfUrl(blobUrl);
+    setViewSale(sale);
+    setViewModalOpen(true);
+  };
+
+  const handleCloseViewModal = () => {
+    if (viewPdfUrl) URL.revokeObjectURL(viewPdfUrl);
+    setViewModalOpen(false);
+    setViewSale(null);
+    setViewPdfUrl(null);
+  };
+
+  // Edit bill: open the correction form pre-filled with the sale's current values
+  const handleEditClick = (sale) => {
+    setSaleToEdit(sale);
+    setEditCubeType(sale.cube_type);
+    setEditPricePerCube(sale.price_per_cube);
+    setEditQuantity(String(sale.quantity));
+    setEditPaymentType(sale.payment_type);
+    setEditModalOpen(true);
+  };
+
+  const editAvailableStock = useMemo(() => {
+    if (!saleToEdit) return 0;
+    const limit = editCubeType === 'manufactured' ? stockMap.MFC.qty : stockMap.RSC.qty;
+    // The quantity currently held by this sale hasn't been restored to stock
+    // yet, so add it back when previewing "available" for the same type.
+    return editCubeType === saleToEdit.cube_type ? limit + saleToEdit.quantity : limit;
+  }, [saleToEdit, editCubeType, stockMap]);
+
+  const editCalculatedTotal = useMemo(() => {
+    const qty = parseInt(editQuantity, 10) || 0;
+    const rate = parseFloat(editPricePerCube) || 0;
+    return qty * rate;
+  }, [editQuantity, editPricePerCube]);
+
+  const handleEditCubeTypeChange = (type) => {
+    setEditCubeType(type);
+    if (saleToEdit && type !== saleToEdit.cube_type) {
+      setEditPricePerCube(type === 'manufactured' ? stockMap.MFC.price : stockMap.RSC.price);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!saleToEdit) return;
+    const qty = parseInt(editQuantity, 10);
+    if (isNaN(qty) || qty <= 0) {
+      toast.error("Quantity must be a positive integer");
+      return;
+    }
+    if (qty > editAvailableStock) {
+      toast.error(`Insufficient stock! Available: ${editAvailableStock} cubes`);
+      return;
+    }
+    if (!editPricePerCube || editPricePerCube <= 0) {
+      toast.error("Price per cube must be a valid positive number");
+      return;
+    }
+
+    setEditLoading(true);
+    try {
+      await updateSale({
+        id: saleToEdit.id,
+        cube_type: editCubeType,
+        quantity: qty,
+        price_per_cube: parseFloat(editPricePerCube),
+        payment_type: editPaymentType,
+        edited_by: user?.fullName || 'Staff Operator'
+      });
+      toast.success(`Sale ${saleToEdit.sale_code} updated successfully.`);
+      setEditModalOpen(false);
+      setSaleToEdit(null);
+    } catch (err) {
+      toast.error(err.message || "Failed to update sale");
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   // Searching and sorting table records
   const handleSort = (key) => {
     if (sortKey === key) {
@@ -399,6 +496,7 @@ ${billURL}`;
       {/* 3. Sales Table */}
       <Table
         enablePagination={false}
+        compact
         headers={[
           { key: 'sale_code', label: 'Sale Code', sortable: true },
           { key: 'customerName', label: 'Customer', sortable: true },
@@ -417,15 +515,23 @@ ${billURL}`;
         emptyMessage="No sales recorded in the system ledger."
         renderRow={(sale) => (
           <tr key={sale.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
-            <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono font-medium text-navy-600 dark:text-navy-400">{sale.sale_code}</td>
-            <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-semibold text-slate-900 dark:text-slate-100">{sale.customer?.name}</td>
-            <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5"><Badge type={sale.cube_type === 'manufactured' ? 'MFC' : 'RSC'} /></td>
-            <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono">{sale.quantity.toLocaleString()}</td>
-            <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-semibold font-mono text-slate-800 dark:text-slate-200">LKR {sale.total_amount.toLocaleString()}</td>
-            <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5"><Badge type={sale.payment_type} /></td>
-            <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-xs text-slate-400 whitespace-nowrap">{new Date(sale.sale_date).toLocaleString()}</td>
-            <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5">
-              <div className="flex items-center space-x-1.5">
+            <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-medium text-navy-600 dark:text-navy-400">{sale.sale_code}</td>
+            <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-semibold text-slate-900 dark:text-slate-100">{sale.customer?.name}</td>
+            <td className="px-2.5 sm:px-4 py-2.5 sm:py-3"><Badge type={sale.cube_type === 'manufactured' ? 'MFC' : 'RSC'} /></td>
+            <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono">{sale.quantity.toLocaleString()}</td>
+            <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-semibold font-mono text-slate-800 dark:text-slate-200">LKR {sale.total_amount.toLocaleString()}</td>
+            <td className="px-2.5 sm:px-4 py-2.5 sm:py-3"><Badge type={sale.payment_type} /></td>
+            <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 text-xs text-slate-400 whitespace-nowrap">{new Date(sale.sale_date).toLocaleString()}</td>
+            <td className="px-2.5 sm:px-4 py-2.5 sm:py-3">
+              <div className="flex items-center space-x-1">
+                <button
+                  onClick={() => handleViewClick(sale)}
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
+                  title="View Bill Preview"
+                  aria-label="View Bill Preview"
+                >
+                  <Eye size={16} />
+                </button>
                 <button
                   onClick={() => downloadInvoice(sale)}
                   className="p-1.5 rounded-lg text-slate-500 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
@@ -435,14 +541,24 @@ ${billURL}`;
                   <FileDown size={16} />
                 </button>
                 {isAdmin && (
-                  <button
-                    onClick={() => handleDeleteClick(sale)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
-                    title="Delete Sale Record"
-                    aria-label="Delete Sale Record"
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  <>
+                    <button
+                      onClick={() => handleEditClick(sale)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
+                      title="Edit Sale Record"
+                      aria-label="Edit Sale Record"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteClick(sale)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
+                      title="Delete Sale Record"
+                      aria-label="Delete Sale Record"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </>
                 )}
               </div>
             </td>
@@ -809,6 +925,128 @@ ${billURL}`;
             className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 border-emerald-600 hover:border-emerald-700"
           >
             Delete & Restore Stock
+          </Button>
+        </div>
+      </Modal>
+
+      {/* --- View Bill Preview Modal --- */}
+      <Modal
+        isOpen={viewModalOpen}
+        onClose={handleCloseViewModal}
+        title={`Bill Preview ${viewSale ? `— ${viewSale.sale_code}` : ''}`}
+        size="2xl"
+      >
+        <div className="space-y-3">
+          {viewPdfUrl && (
+            <iframe
+              src={viewPdfUrl}
+              title="Bill PDF Preview"
+              className="w-full h-[70vh] rounded-xl border border-slate-200 dark:border-slate-800"
+            />
+          )}
+          <div className="flex justify-end">
+            <Button
+              variant="primary"
+              onClick={() => viewSale && downloadInvoice(viewSale)}
+              className="flex items-center space-x-1.5"
+            >
+              <FileDown size={16} />
+              <span>Download PDF</span>
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* --- Edit Bill Modal --- */}
+      <Modal
+        isOpen={editModalOpen}
+        onClose={() => {
+          setEditModalOpen(false);
+          setSaleToEdit(null);
+        }}
+        title={`Edit Sale ${saleToEdit ? `— ${saleToEdit.sale_code}` : ''}`}
+        size="md"
+      >
+        <div className="space-y-3 py-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Select
+              label="Cube Type"
+              name="editCubeType"
+              options={[
+                { value: 'manufactured', label: 'Production (MFC)' },
+                { value: 'resell', label: 'Resell (RSC)' }
+              ]}
+              value={editCubeType}
+              onChange={(e) => handleEditCubeTypeChange(e.target.value)}
+            />
+            <Select
+              label="Payment Terms"
+              name="editPaymentType"
+              options={[
+                { value: 'cash', label: 'Cash' },
+                { value: 'debt', label: 'Debt' }
+              ]}
+              value={editPaymentType}
+              onChange={(e) => setEditPaymentType(e.target.value)}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="Rate per Cube (LKR)"
+              name="editPrice"
+              type="number"
+              step="0.01"
+              value={editPricePerCube}
+              onChange={(e) => setEditPricePerCube(e.target.value)}
+            />
+            <Input
+              label="Order Quantity"
+              name="editQty"
+              type="number"
+              value={editQuantity}
+              onChange={(e) => setEditQuantity(e.target.value)}
+            />
+          </div>
+
+          <div className="bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 flex justify-between items-center text-xs">
+            <span className="text-slate-400">Available Stock:</span>
+            <span className="font-bold font-mono text-slate-800 dark:text-slate-200">{editAvailableStock.toLocaleString()}</span>
+          </div>
+
+          <div className="p-3.5 bg-navy-50/50 dark:bg-navy-950/20 border border-navy-100 dark:border-navy-900/50 rounded-xl flex justify-between items-center">
+            <span className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-300">Recalculated Total:</span>
+            <span className="text-base sm:text-lg font-extrabold font-heading text-navy-600 dark:text-sky-400">
+              LKR {editCalculatedTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+
+          {saleToEdit?.payment_type === 'debt' && editPaymentType === 'cash' && (
+            <div className="bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 p-3 rounded-lg border border-amber-200/50 dark:border-amber-900/30 text-xs">
+              <strong>Note:</strong> Switching to cash will remove this sale's debt ledger entry. This is only allowed if no payment has been settled against it yet.
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end space-x-2 mt-4 border-t border-slate-100 dark:border-slate-800 pt-3">
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setEditModalOpen(false);
+              setSaleToEdit(null);
+            }}
+            disabled={editLoading}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleSaveEdit}
+            isLoading={editLoading}
+            className="flex items-center space-x-1.5"
+          >
+            <Check size={16} />
+            <span>Save Changes</span>
           </Button>
         </div>
       </Modal>

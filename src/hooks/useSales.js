@@ -253,6 +253,76 @@ export function useSales() {
     };
   };
 
+  const updateSale = async ({
+    id,
+    cube_type,
+    quantity,
+    price_per_cube,
+    payment_type,
+    edited_by
+  }) => {
+    if (!id) throw new Error("Sale id is required");
+    if (!cube_type || (cube_type !== 'manufactured' && cube_type !== 'resell')) {
+      throw new Error("Invalid cube type selected");
+    }
+    if (!quantity || quantity <= 0 || !Number.isInteger(Number(quantity))) {
+      throw new Error("Quantity must be a positive integer");
+    }
+    if (!payment_type || (payment_type !== 'cash' && payment_type !== 'debt')) {
+      throw new Error("Invalid payment type selected");
+    }
+
+    const { data, error } = await supabase.rpc('edit_sale_transaction', {
+      p_sale_id: id,
+      p_cube_type: cube_type,
+      p_quantity: quantity,
+      p_price_per_cube: price_per_cube || null,
+      p_payment_type: payment_type,
+      p_edited_by: edited_by
+    });
+
+    if (error) throw new Error(error.message || "Failed to update sale");
+
+    // Regenerate & re-upload the bill PDF so /bill/:code and WhatsApp links
+    // reflect the corrected figures instead of the stale pre-edit invoice.
+    try {
+      const { data: fullSale } = await supabase
+        .from('sales')
+        .select('*, customer:customers(*)')
+        .eq('id', id)
+        .single();
+
+      const { data: settings } = await supabase
+        .from('settings')
+        .select('*')
+        .limit(1)
+        .single();
+
+      if (fullSale) {
+        const pdfBlob = generateBillPDFBlob(fullSale, settings || {});
+        const fileName = `BILL_${fullSale.sale_code}_${Date.now()}.pdf`;
+
+        const { data: uploadData, error: uploadErr } = await supabase.storage
+          .from('bills')
+          .upload(fileName, pdfBlob, { contentType: 'application/pdf', upsert: true });
+
+        if (!uploadErr && uploadData) {
+          const { data: signedUrlData } = await supabase.storage
+            .from('bills')
+            .createSignedUrl(fileName, 60 * 60 * 24);
+
+          if (signedUrlData?.signedUrl) {
+            await supabase.from('sales').update({ bill_pdf_url: signedUrlData.signedUrl }).eq('id', id);
+          }
+        }
+      }
+    } catch (pdfErr) {
+      console.warn("PDF regeneration / storage upload skipped:", pdfErr);
+    }
+
+    return data;
+  };
+
   const deleteSale = async (saleId, restoreStock = true) => {
     // 1. Fetch sale details to know the type and quantity to restore if requested
     const { data: sale, error: getErr } = await supabase
@@ -298,6 +368,7 @@ export function useSales() {
     sales,
     isLoading,
     placeOrder,
+    updateSale,
     deleteSale
   };
 }

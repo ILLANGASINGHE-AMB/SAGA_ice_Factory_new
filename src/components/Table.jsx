@@ -51,7 +51,7 @@ export function Table({
                   <th
                     key={header.key}
                     scope="col"
-                    className={`px-3.5 sm:px-6 py-3 sm:py-3.5 font-semibold whitespace-nowrap ${
+                    className={`${compact ? 'px-2.5 sm:px-4 py-2.5 sm:py-3' : 'px-3.5 sm:px-6 py-3 sm:py-3.5'} font-semibold whitespace-nowrap ${
                       header.sortable ? 'cursor-pointer select-none hover:text-slate-900 dark:hover:text-slate-100 transition-colors' : ''
                     }`}
                     onClick={() => header.sortable && onSort && onSort(header.key)}
@@ -82,7 +82,7 @@ export function Table({
               Array.from({ length: 5 }).map((_, idx) => (
                 <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10">
                   {headers.map((h, hidx) => (
-                    <td key={hidx} className="px-3.5 sm:px-6 py-3 sm:py-3.5">
+                    <td key={hidx} className={compact ? 'px-2.5 sm:px-4 py-2.5 sm:py-3' : 'px-3.5 sm:px-6 py-3 sm:py-3.5'}>
                       <Skeleton className="h-4 w-3/4 rounded" />
                     </td>
                   ))}
