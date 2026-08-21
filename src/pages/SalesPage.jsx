@@ -126,12 +126,14 @@ export function SalesPage() {
     setOrderRows(rows => rows.filter(r => r.id !== id));
   };
 
-  // Pending debt for the currently selected customer
+  // Outstanding debt for the currently selected customer — 'pending' and
+  // 'partial' are both still-owed statuses (matches the FIFO offset logic
+  // in place_multi_item_order_transaction, which targets both the same way).
   const customerPendingDebt = useMemo(() => {
     const cid = Number(customerId);
     if (!cid || !debts) return 0;
     return debts
-      .filter(d => Number(d.customer_id) === cid && d.status === 'pending')
+      .filter(d => Number(d.customer_id) === cid && (d.status === 'pending' || d.status === 'partial'))
       .reduce((sum, d) => sum + (Number(d.remaining_amount) || 0), 0);
   }, [debts, customerId]);
 
