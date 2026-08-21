@@ -24,7 +24,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Route
 } from 'lucide-react';
 
 export function AppShell({ children }) {
@@ -144,6 +145,7 @@ export function AppShell({ children }) {
     { name: 'Inventory', path: '/inventory', icon: <Package size={20} />, adminOnly: false },
     { name: 'Customers', path: '/customers', icon: <Users size={20} />, adminOnly: false },
     { name: 'Vehicles', path: '/vehicles', icon: <Truck size={20} />, adminOnly: false },
+    { name: 'Transport', path: '/transport', icon: <Route size={20} />, adminOnly: false },
     { name: 'Sales', path: '/sales', icon: <ShoppingCart size={20} />, adminOnly: false },
     { name: 'Debts', path: '/debts', icon: <DollarSign size={20} />, adminOnly: false },
     { name: 'Expense Ledger', path: '/expenses', icon: <Receipt size={20} />, adminOnly: false },
