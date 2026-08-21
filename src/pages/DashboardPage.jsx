@@ -26,8 +26,8 @@ export function DashboardPage() {
 
   // Color constants for charts
   const COLORS = {
-    manufactured: '#0ea5e9', // Icy Blue
-    resell: '#6366f1',       // Indigo
+    manufactured: '#22c55e', // Production - green
+    resell: '#0ea5e9',       // Resell - light blue
     cash: '#10b981',         // Green
     debt: '#f43f5e'          // Rose
   };
@@ -66,14 +66,14 @@ export function DashboardPage() {
     {
       title: 'Production Cubes',
       value: `${stats.mfcInventory.toLocaleString()} Cubes`,
-      icon: <Package size={20} className="text-cyan-500" />,
-      bg: 'bg-cyan-50 dark:bg-cyan-950/30 border-cyan-100 dark:border-cyan-900/50 text-cyan-500'
+      icon: <Package size={20} className="text-green-500" />,
+      bg: 'bg-green-50 dark:bg-green-950/30 border-green-100 dark:border-green-900/50 text-green-500'
     },
     {
       title: 'Resell Cubes',
       value: `${stats.rscInventory.toLocaleString()} Cubes`,
-      icon: <Recycle size={20} className="text-indigo-500" />,
-      bg: 'bg-indigo-50 dark:bg-indigo-950/30 border-indigo-100 dark:border-indigo-900/50 text-indigo-500'
+      icon: <Recycle size={20} className="text-sky-500" />,
+      bg: 'bg-sky-50 dark:bg-sky-950/30 border-sky-100 dark:border-sky-900/50 text-sky-500'
     },
     {
       title: 'Total Cubes',

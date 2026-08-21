@@ -13,9 +13,9 @@ import {
 
 // Colors kept consistent with Badge.jsx (MFC/RSC/BNC) and the Dashboard chart palette
 const GRAPH_COLORS = {
-  manufactured: '#3b82f6', // Production - blue
-  resell: '#6366f1',       // Resell - indigo
-  waste: '#f59e0b'         // Brine - amber
+  manufactured: '#22c55e', // Production - green
+  resell: '#0ea5e9',       // Resell - light blue
+  waste: '#f97316'         // Brine - light orange
 };
 
 const CUBE_TYPE_LABELS = { manufactured: 'Production', resell: 'Resell', waste: 'Brine' };
