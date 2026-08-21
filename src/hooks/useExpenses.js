@@ -1,89 +1,51 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { useSales } from './useSales';
-
-const INITIAL_EXPENSES = [
-  {
-    id: 1,
-    expense_code: 'EXP-001-26',
-    category: 'electricity',
-    description: 'Monthly Industrial Power Bill - CEB',
-    amount: 45000.00,
-    payment_method: 'bank_transfer',
-    expense_date: new Date(Date.now() - 1000 * 60 * 60 * 24 * 4).toISOString(),
-    created_by: 'Admin'
-  },
-  {
-    id: 2,
-    expense_code: 'EXP-002-26',
-    category: 'diesel',
-    description: 'Bulk Diesel Refill for Generator',
-    amount: 15000.00,
-    payment_method: 'cash',
-    expense_date: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
-    created_by: 'Operator'
-  },
-  {
-    id: 3,
-    expense_code: 'EXP-003-26',
-    category: 'salaries',
-    description: 'Plant Staff Weekly Wages',
-    amount: 32000.00,
-    payment_method: 'bank_transfer',
-    expense_date: new Date(Date.now() - 1000 * 60 * 60 * 24 * 1).toISOString(),
-    created_by: 'Admin'
-  },
-  {
-    id: 4,
-    expense_code: 'EXP-004-26',
-    category: 'packaging',
-    description: 'Heavy Duty Ice Bag Rolls (5000 units)',
-    amount: 18500.00,
-    payment_method: 'cheque',
-    expense_date: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString(),
-    created_by: 'Admin'
-  }
-];
 
 export function useExpenses() {
-  const [expenses, setExpenses] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [items, setItems] = useState([]);
+  const [ledgerRows, setLedgerRows] = useState([]);
+  const [amounts, setAmounts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const { sales } = useSales();
 
-  const fetchExpenses = async () => {
+  const fetchAll = async () => {
     try {
-      const { data, error } = await supabase
-        .from('operating_expenses')
-        .select('*')
-        .order('expense_date', { ascending: false });
+      const [
+        { data: cats, error: catsErr },
+        { data: its, error: itsErr },
+        { data: rows, error: rowsErr },
+        { data: amts, error: amtsErr }
+      ] = await Promise.all([
+        supabase.from('expense_categories').select('*').order('position', { ascending: true }),
+        supabase.from('expense_items').select('*').order('position', { ascending: true }),
+        supabase.from('expense_ledger_rows').select('*').order('entry_date', { ascending: false }),
+        supabase.from('expense_amounts').select('*')
+      ]);
 
-      // A genuinely empty table (data === [], no error) is valid data — e.g.
-      // right after deleting the last expense — and must not be treated the
-      // same as a fetch failure, or the stale localStorage cache (from
-      // before the deletion) gets used forever and the "deleted" expense
-      // permanently reappears in the UI.
-      if (error || !data) {
-        const saved = localStorage.getItem('saga_operating_expenses');
-        setExpenses(saved ? JSON.parse(saved) : INITIAL_EXPENSES);
-      } else {
-        setExpenses(data);
-        localStorage.setItem('saga_operating_expenses', JSON.stringify(data));
+      if (catsErr || itsErr || rowsErr || amtsErr) {
+        throw catsErr || itsErr || rowsErr || amtsErr;
       }
+
+      setCategories(cats || []);
+      setItems(its || []);
+      setLedgerRows(rows || []);
+      setAmounts(amts || []);
     } catch (err) {
-      console.warn("Using fallback local operating expenses:", err);
-      const saved = localStorage.getItem('saga_operating_expenses');
-      setExpenses(saved ? JSON.parse(saved) : INITIAL_EXPENSES);
+      console.error("Failed to fetch expenses:", err);
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchExpenses();
+    fetchAll();
 
     const channel = supabase
-      .channel(`operating_expenses-${Math.random()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'operating_expenses' }, () => fetchExpenses())
+      .channel(`expenses-realtime-${Math.random()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_categories' }, () => fetchAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_items' }, () => fetchAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_ledger_rows' }, () => fetchAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_amounts' }, () => fetchAll())
       .subscribe();
 
     return () => {
@@ -91,114 +53,238 @@ export function useExpenses() {
     };
   }, []);
 
-  const addExpense = async ({
-    category,
-    description,
-    amount,
-    payment_method = 'cash',
-    created_by = 'Admin'
-  }) => {
-    const val = parseFloat(amount);
-    if (isNaN(val) || val <= 0) throw new Error("Amount must be a positive number");
-    if (!description) throw new Error("Description is required");
+  const addCategory = async (name) => {
+    const trimmed = (name || '').trim();
+    if (!trimmed) throw new Error("Category name is required");
 
-    // Atomic sequential code (mirrors sale_code/customer_code/settlement
-    // codes). The previous 900-value random suffix had a real chance of
-    // colliding with an existing expense_code (unique constraint), which
-    // used to fail the insert silently — see the insert-error handling below.
+    const { data: category_code, error: codeErr } = await supabase.rpc('get_next_code', {
+      p_entity: 'expense_category',
+      p_prefix: 'CAT'
+    });
+    if (codeErr || !category_code) {
+      throw new Error("Unable to generate a category code. Please try again.");
+    }
+
+    const { data: inserted, error: insertErr } = await supabase
+      .from('expense_categories')
+      .insert([{ category_code, name: trimmed, position: categories.length }])
+      .select('*')
+      .single();
+    if (insertErr) throw new Error(insertErr.message || "Failed to add category");
+    return inserted;
+  };
+
+  const addExpenseItem = async (name, categoryId) => {
+    const trimmed = (name || '').trim();
+    if (!trimmed) throw new Error("Expense name is required");
+    if (!categoryId) throw new Error("Select a category for this expense");
+
     const { data: expense_code, error: codeErr } = await supabase.rpc('get_next_code', {
-      p_entity: 'expense',
+      p_entity: 'expense_item',
       p_prefix: 'EXP'
     });
-
     if (codeErr || !expense_code) {
       throw new Error("Unable to generate an expense code. Please try again.");
     }
 
-    const expenseData = {
-      expense_code,
-      category,
-      description,
-      amount: val,
-      payment_method,
-      expense_date: new Date().toISOString(),
-      created_by
-    };
+    const positionInCategory = items.filter(i => i.category_id === Number(categoryId)).length;
 
-    // A failed insert must be surfaced as an error, not silently replaced
-    // with a client-only fake record that vanishes on the next refetch while
-    // the UI already reported success.
     const { data: inserted, error: insertErr } = await supabase
-      .from('operating_expenses')
-      .insert([expenseData])
+      .from('expense_items')
+      .insert([{ expense_code, name: trimmed, category_id: Number(categoryId), position: positionInCategory }])
       .select('*')
       .single();
-
-    if (insertErr) {
-      throw new Error(insertErr.message || "Failed to save expense");
-    }
-
-    const updated = [inserted, ...expenses];
-    setExpenses(updated);
-    localStorage.setItem('saga_operating_expenses', JSON.stringify(updated));
+    if (insertErr) throw new Error(insertErr.message || "Failed to add expense");
     return inserted;
   };
 
-  const deleteExpense = async (id) => {
-    // Supabase delete calls resolve with { error } rather than throwing on
-    // RLS denial — only checking network-layer exceptions let local state
-    // drop the row even when the server never actually deleted it, so the
-    // "removed" toast would be shown right before a later refetch brings
-    // the row back with no explanation.
-    const { error } = await supabase.from('operating_expenses').delete().eq('id', id);
-    if (error) {
-      throw new Error(error.message || "Failed to delete expense");
-    }
-    const updated = expenses.filter(item => item.id !== id);
-    setExpenses(updated);
-    localStorage.setItem('saga_operating_expenses', JSON.stringify(updated));
+  // Column reordering swaps the `position` of the two categories/items being
+  // dragged rather than reindexing the whole list — cheap (2 updates) and
+  // avoids racing a full reorder against a concurrent add from another tab.
+  const reorderCategories = async (draggedId, targetId) => {
+    if (draggedId === targetId) return;
+    const dragged = categories.find(c => c.id === draggedId);
+    const target = categories.find(c => c.id === targetId);
+    if (!dragged || !target) return;
+
+    const { error: e1 } = await supabase.from('expense_categories').update({ position: target.position }).eq('id', dragged.id);
+    const { error: e2 } = await supabase.from('expense_categories').update({ position: dragged.position }).eq('id', target.id);
+    if (e1 || e2) throw new Error("Failed to reorder categories");
   };
 
-  // Derive P&L financial metrics
-  const pnlMetrics = useMemo(() => {
-    // 1. Total Sales Revenue
-    const totalSalesRevenue = sales.reduce((sum, item) => sum + (parseFloat(item.total_amount) || 0), 0);
+  // Expense (sub-column) reordering is scoped to stay inside its own
+  // category, per the spec — a drop across categories is silently ignored.
+  const reorderExpenseItems = async (draggedId, targetId) => {
+    if (draggedId === targetId) return;
+    const dragged = items.find(i => i.id === draggedId);
+    const target = items.find(i => i.id === targetId);
+    if (!dragged || !target) return;
+    if (dragged.category_id !== target.category_id) return;
 
-    // 2. Operating Expenses sum
-    const totalOperatingExpenses = expenses.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+    const { error: e1 } = await supabase.from('expense_items').update({ position: target.position }).eq('id', dragged.id);
+    const { error: e2 } = await supabase.from('expense_items').update({ position: dragged.position }).eq('id', target.id);
+    if (e1 || e2) throw new Error("Failed to reorder expenses");
+  };
 
-    // 3. Combined Operational Costs
-    const totalCosts = totalOperatingExpenses;
+  // Saves one Cash Book row: upserts the Date/Description row, then upserts
+  // every changed cell amount for it. `amounts` is { [expense_item_id]: value }.
+  const saveLedgerRow = async ({ id, entry_date, description, amounts: rowAmounts, created_by = 'Admin' }) => {
+    if (!entry_date) throw new Error("Date is required");
 
-    // 4. Net Profit
-    const netProfit = totalSalesRevenue - totalCosts;
+    let rowId = id;
+    const isNew = !id || String(id).startsWith('temp-');
 
-    // 5. Net Profit Margin (%)
-    const netProfitMargin = totalSalesRevenue > 0 ? ((netProfit / totalSalesRevenue) * 100).toFixed(1) : 0;
+    if (isNew) {
+      const { data: inserted, error: insertErr } = await supabase
+        .from('expense_ledger_rows')
+        .insert([{ entry_date, description: description || '', created_by }])
+        .select('*')
+        .single();
+      if (insertErr) throw new Error(insertErr.message || "Failed to save row");
+      rowId = inserted.id;
+    } else {
+      const { error: updateErr } = await supabase
+        .from('expense_ledger_rows')
+        .update({ entry_date, description: description || '' })
+        .eq('id', id);
+      if (updateErr) throw new Error(updateErr.message || "Failed to save row");
+    }
 
-    // Expense breakdown by category
-    const categoryBreakdown = expenses.reduce((acc, curr) => {
-      const cat = curr.category || 'other';
-      acc[cat] = (acc[cat] || 0) + parseFloat(curr.amount || 0);
-      return acc;
-    }, {});
+    for (const [expenseItemId, rawAmount] of Object.entries(rowAmounts || {})) {
+      const amount = parseFloat(rawAmount);
+      const { error: amtErr } = await supabase
+        .from('expense_amounts')
+        .upsert(
+          { ledger_row_id: rowId, expense_item_id: Number(expenseItemId), amount: isNaN(amount) ? 0 : amount },
+          { onConflict: 'ledger_row_id,expense_item_id' }
+        );
+      if (amtErr) throw new Error(amtErr.message || "Failed to save amount");
+    }
 
-    return {
-      totalSalesRevenue,
-      totalOperatingExpenses,
-      totalCosts,
-      netProfit,
-      netProfitMargin,
-      categoryBreakdown
-    };
-  }, [sales, expenses]);
+    return rowId;
+  };
+
+  const deleteLedgerRow = async (id) => {
+    const { error } = await supabase.from('expense_ledger_rows').delete().eq('id', id);
+    if (error) throw new Error(error.message || "Failed to delete row");
+  };
+
+  const categoriesWithItems = useMemo(() => {
+    return categories.map(cat => ({
+      ...cat,
+      items: items.filter(i => i.category_id === cat.id).sort((a, b) => a.position - b.position)
+    }));
+  }, [categories, items]);
+
+  const amountsByRow = useMemo(() => {
+    const map = new Map();
+    for (const a of amounts) {
+      if (!map.has(a.ledger_row_id)) map.set(a.ledger_row_id, new Map());
+      map.get(a.ledger_row_id).set(a.expense_item_id, Number(a.amount));
+    }
+    return map;
+  }, [amounts]);
+
+  const gridRows = useMemo(() => {
+    return ledgerRows.map(row => {
+      const rowAmounts = amountsByRow.get(row.id) || new Map();
+      const total = Array.from(rowAmounts.values()).reduce((sum, v) => sum + v, 0);
+      return { ...row, amounts: rowAmounts, total };
+    });
+  }, [ledgerRows, amountsByRow]);
+
+  const columnTotals = useMemo(() => {
+    const totals = new Map();
+    for (const item of items) totals.set(item.id, 0);
+    for (const a of amounts) {
+      totals.set(a.expense_item_id, (totals.get(a.expense_item_id) || 0) + Number(a.amount));
+    }
+    return totals;
+  }, [items, amounts]);
+
+  const grandTotal = useMemo(
+    () => amounts.reduce((sum, a) => sum + Number(a.amount), 0),
+    [amounts]
+  );
+
+  const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+  const categoryById = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories]);
+  const ledgerRowById = useMemo(() => new Map(ledgerRows.map(r => [r.id, r])), [ledgerRows]);
+
+  // Category View is a flat projection of the same cell data used by the
+  // Cash Book grid — only cells with a logged amount become a row.
+  const categoryViewRows = useMemo(() => {
+    return amounts
+      .filter(a => Number(a.amount) > 0)
+      .map(a => {
+        const item = itemById.get(a.expense_item_id);
+        const category = item ? categoryById.get(item.category_id) : null;
+        const row = ledgerRowById.get(a.ledger_row_id);
+        return {
+          id: a.id,
+          expense_code: item?.expense_code || '—',
+          category_id: category?.id ?? null,
+          category_name: category?.name || '—',
+          expense_item_id: item?.id ?? null,
+          expense_name: item?.name || '—',
+          entry_date: row?.entry_date || null,
+          description: row?.description || '',
+          amount: Number(a.amount)
+        };
+      })
+      .sort((x, y) => new Date(y.entry_date) - new Date(x.entry_date));
+  }, [amounts, itemById, categoryById, ledgerRowById]);
+
+  const monthlySummary = useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    let totalThisMonth = 0;
+    const categoryTotalsThisMonth = new Map();
+
+    for (const a of amounts) {
+      const row = ledgerRowById.get(a.ledger_row_id);
+      if (!row?.entry_date) continue;
+      const d = new Date(`${row.entry_date}T00:00:00`);
+      if (d.getFullYear() !== currentYear || d.getMonth() !== currentMonth) continue;
+
+      const amt = Number(a.amount);
+      totalThisMonth += amt;
+
+      const item = itemById.get(a.expense_item_id);
+      if (item) {
+        categoryTotalsThisMonth.set(item.category_id, (categoryTotalsThisMonth.get(item.category_id) || 0) + amt);
+      }
+    }
+
+    let mostExpensiveCategory = null;
+    let mostExpensiveCategoryAmount = 0;
+    for (const [catId, amt] of categoryTotalsThisMonth.entries()) {
+      if (amt > mostExpensiveCategoryAmount) {
+        mostExpensiveCategoryAmount = amt;
+        mostExpensiveCategory = categoryById.get(catId) || null;
+      }
+    }
+
+    return { totalThisMonth, mostExpensiveCategory, mostExpensiveCategoryAmount };
+  }, [amounts, ledgerRowById, itemById, categoryById]);
 
   return {
-    expenses,
+    categories,
+    items,
+    categoriesWithItems,
+    gridRows,
+    columnTotals,
+    grandTotal,
+    categoryViewRows,
+    monthlySummary,
     isLoading,
-    addExpense,
-    deleteExpense,
-    pnlMetrics,
-    refreshExpenses: fetchExpenses
+    addCategory,
+    addExpenseItem,
+    reorderCategories,
+    reorderExpenseItems,
+    saveLedgerRow,
+    deleteLedgerRow
   };
 }

@@ -150,7 +150,7 @@ export function AppShell({ children }) {
     { name: 'Transport', path: '/transport', icon: <Route size={20} />, adminOnly: false },
     { name: 'Sales', path: '/sales', icon: <ShoppingCart size={20} />, adminOnly: false },
     { name: 'Debts', path: '/debts', icon: <DollarSign size={20} />, adminOnly: false },
-    { name: 'Expense Ledger', path: '/expenses', icon: <Receipt size={20} />, adminOnly: false },
+    { name: 'Expenses', path: '/expenses', icon: <Receipt size={20} />, adminOnly: false },
     { name: 'Cash & Bank Details', path: '/cash-bank', icon: <Landmark size={20} />, adminOnly: false },
     { name: 'Reports', path: '/reports', icon: <FileBarChart size={20} />, adminOnly: true },
     { name: 'Settings', path: '/settings', icon: <SettingsIcon size={20} />, adminOnly: false }
