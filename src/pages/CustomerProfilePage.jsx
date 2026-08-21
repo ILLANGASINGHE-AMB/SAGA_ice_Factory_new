@@ -21,7 +21,7 @@ import {
 } from 'recharts';
 
 const GRAPH_COLORS = { orders: '#ef4444', payments: '#22c55e' };
-const PAYMENT_METHOD_LABELS = { cash: 'Cash', bank_transfer: 'Bank Transfer', cheque: 'Cheque', other: 'Other' };
+const PAYMENT_METHOD_LABELS = { cash: 'Cash', card: 'Card', bank_transfer: 'Bank Transfer', cheque: 'Cheque', other: 'Other' };
 
 function money(n) {
   return `LKR ${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

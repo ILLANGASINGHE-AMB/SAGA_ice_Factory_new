@@ -84,7 +84,8 @@ create table public.debt_settlements (
   debt_id bigint references public.debts(id) on delete cascade,
   customer_id bigint references public.customers(id) on delete cascade,
   amount_paid numeric(10, 2) not null,
-  payment_method text not null default 'cash' check (payment_method in ('cash', 'bank_transfer', 'cheque', 'other')),
+  payment_method text not null default 'cash' check (payment_method in ('cash', 'bank_transfer', 'cheque', 'other', 'card')),
+  notes text,
   settlement_date timestamp with time zone default timezone('utc'::text, now()) not null,
   bill_pdf_url text,
   created_by text not null
@@ -816,7 +817,8 @@ create or replace function public.settle_debt_transaction(
   p_debt_id bigint,
   p_amount_paid numeric,
   p_created_by text,
-  p_payment_method text default 'cash'
+  p_payment_method text default 'cash',
+  p_notes text default null
 ) returns jsonb as $$
 declare
   v_total numeric(10, 2);
@@ -862,9 +864,9 @@ begin
   v_settlement_code := public.get_next_code('settlement', 'D');
 
   insert into public.debt_settlements (
-    debt_id, customer_id, amount_paid, payment_method, settlement_date, created_by
+    debt_id, customer_id, amount_paid, payment_method, notes, settlement_date, created_by
   ) values (
-    p_debt_id, v_customer_id, p_amount_paid, coalesce(p_payment_method, 'cash'), v_now, p_created_by
+    p_debt_id, v_customer_id, p_amount_paid, coalesce(p_payment_method, 'cash'), p_notes, v_now, p_created_by
   ) returning id into v_settlement_id;
 
   return jsonb_build_object(
@@ -875,6 +877,7 @@ begin
     'sale_id', v_sale_id,
     'amount_paid', p_amount_paid,
     'payment_method', coalesce(p_payment_method, 'cash'),
+    'notes', p_notes,
     'remaining_amount', v_new_remaining,
     'status', v_new_status,
     'settlement_date', v_now

@@ -246,26 +246,46 @@ export function generateSettlementReceiptPDF(settlement, settings) {
   doc.text(`Address: ${settlement.customer?.address || 'N/A'}`, 14, 77);
 
   // Receipt Meta Section
+  // settlement.settlements, when present, is a per-debt breakdown of a single
+  // customer-level payment applied FIFO across several outstanding sales —
+  // show every covered sale reference instead of just one.
+  const saleRefText = settlement.settlements?.length
+    ? settlement.settlements.map(s => s.sale_code).filter(Boolean).join(', ') || 'N/A'
+    : (settlement.sale?.sale_code || 'N/A');
+
   doc.setFont('Helvetica', 'bold');
   doc.text('SETTLEMENT DETAILS:', 130, 62);
   doc.setFont('Helvetica', 'normal');
   doc.text(`Date & Time: ${new Date(settlement.settlement_date).toLocaleString()}`, 130, 67);
-  doc.text(`Sale Reference: ${settlement.sale?.sale_code || 'N/A'}`, 130, 72);
+  doc.text(`Sale Reference: ${saleRefText}`, 130, 72);
   doc.text(`Payment Method: ${(settlement.payment_method || 'cash').replace('_', ' ').toUpperCase()}`, 130, 77);
   doc.text(`Authorized By: ${settlement.created_by || 'System'}`, 130, 82);
 
+  let tableStartY = 90;
+  if (settlement.notes) {
+    doc.text(`Note: ${settlement.notes}`, 130, 87);
+    tableStartY = 95;
+  }
+
   // Summary Table of payments
-  const tableData = [
-    [
-      `Settlement against Order Reference #${settlement.sale?.sale_code || 'N/A'}`,
-      `LKR ${settlement.amount_paid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      `LKR ${settlement.remaining_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      settlement.status?.toUpperCase()
-    ]
-  ];
+  const tableData = settlement.settlements?.length
+    ? settlement.settlements.map(s => [
+        `Settlement against Order Reference #${s.sale_code || 'N/A'}`,
+        `LKR ${Number(s.amount_applied).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        `LKR ${Number(s.remaining_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        s.status?.toUpperCase()
+      ])
+    : [
+        [
+          `Settlement against Order Reference #${settlement.sale?.sale_code || 'N/A'}`,
+          `LKR ${settlement.amount_paid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          `LKR ${settlement.remaining_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          settlement.status?.toUpperCase()
+        ]
+      ];
 
   doc.autoTable({
-    startY: 90,
+    startY: tableStartY,
     head: [['Description', 'Amount Paid', 'Remaining Debt', 'New Status']],
     body: tableData,
     theme: 'grid',

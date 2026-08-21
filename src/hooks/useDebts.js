@@ -10,7 +10,7 @@ export function useDebts() {
     try {
       const { data, error } = await supabase
         .from('debts')
-        .select('*, customer:customers(*), sale:sales(*)')
+        .select('*, customer:customers(*), sale:sales(*, customer:customers(*), sale_items(*)), debt_settlements(*)')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -54,7 +54,7 @@ export function useDebts() {
     };
   }, []);
 
-  const settleDebt = async (debtId, amountPaid, createdBy, paymentMethod = 'cash') => {
+  const settleDebt = async (debtId, amountPaid, createdBy, paymentMethod = 'cash', notes = null) => {
     if (!amountPaid || amountPaid <= 0) {
       throw new Error("Settlement amount must be a positive number");
     }
@@ -71,7 +71,8 @@ export function useDebts() {
       p_debt_id: debtId,
       p_amount_paid: amountPaid,
       p_created_by: createdBy,
-      p_payment_method: paymentMethod
+      p_payment_method: paymentMethod,
+      p_notes: notes
     });
 
     if (settleErr || !settlement) {
@@ -85,6 +86,7 @@ export function useDebts() {
       sale_id,
       amount_paid,
       payment_method: settledPaymentMethod,
+      notes: settledNotes,
       remaining_amount: newRemaining,
       status: newStatus,
       settlement_date
@@ -121,6 +123,7 @@ export function useDebts() {
         sale,
         amount_paid,
         payment_method: settledPaymentMethod,
+        notes: settledNotes,
         remaining_amount: newRemaining,
         status: newStatus,
         settlement_date,
@@ -158,6 +161,7 @@ export function useDebts() {
       debt_id: debtId,
       amount_paid,
       payment_method: settledPaymentMethod,
+      notes: settledNotes,
       remaining_amount: newRemaining,
       status: newStatus,
       bill_pdf_url,
@@ -166,9 +170,92 @@ export function useDebts() {
     };
   };
 
+  // Settle a customer's outstanding debt as one payment, applied FIFO across
+  // their oldest unpaid sales first — mirrors the cash-to-old-debt-offset
+  // convention already used when a debit-order's cash is applied against a
+  // customer's existing debts. Each covered debt still gets its own
+  // debt_settlements audit row (via settle_debt_transaction), so the ledger
+  // stays accurate per sale; the caller gets back one combined receipt
+  // describing every sale the payment touched.
+  const settleCustomerDebt = async (customerId, amountPaid, createdBy, paymentMethod = 'cash', notes = null) => {
+    if (!amountPaid || amountPaid <= 0) {
+      throw new Error("Settlement amount must be a positive number");
+    }
+
+    const { data: outstandingDebts, error: debtsErr } = await supabase
+      .from('debts')
+      .select('*, sale:sales(*)')
+      .eq('customer_id', customerId)
+      .neq('status', 'settled')
+      .order('created_at', { ascending: true });
+
+    if (debtsErr) throw new Error(debtsErr.message);
+    if (!outstandingDebts || outstandingDebts.length === 0) {
+      throw new Error("This customer has no outstanding debt");
+    }
+
+    const totalOutstanding = outstandingDebts.reduce((sum, d) => sum + Number(d.remaining_amount), 0);
+    if (amountPaid > totalOutstanding) {
+      throw new Error(`Payment amount exceeds total outstanding debt (LKR ${totalOutstanding.toLocaleString()})`);
+    }
+
+    let amountLeft = amountPaid;
+    const lines = [];
+    let lastSettlement = null;
+
+    for (const debt of outstandingDebts) {
+      if (amountLeft <= 0) break;
+      const apply = Math.min(amountLeft, Number(debt.remaining_amount));
+
+      const { data: settlement, error: settleErr } = await supabase.rpc('settle_debt_transaction', {
+        p_debt_id: debt.id,
+        p_amount_paid: apply,
+        p_created_by: createdBy,
+        p_payment_method: paymentMethod,
+        p_notes: notes
+      });
+
+      if (settleErr || !settlement) {
+        throw new Error(settleErr?.message || "Failed to settle debt");
+      }
+
+      lines.push({
+        sale_code: debt.sale?.sale_code || null,
+        amount_applied: apply,
+        remaining_amount: settlement.remaining_amount,
+        status: settlement.status
+      });
+
+      lastSettlement = settlement;
+      amountLeft -= apply;
+    }
+
+    const { data: customer } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('id', customerId)
+      .single();
+
+    return {
+      id: lastSettlement.id,
+      settlement_code: lastSettlement.settlement_code,
+      customer_id: customerId,
+      amount_paid: amountPaid,
+      payment_method: paymentMethod,
+      notes,
+      settlement_date: lastSettlement.settlement_date,
+      created_by: createdBy,
+      customer,
+      settlements: lines,
+      remaining_amount: lines[lines.length - 1]?.remaining_amount ?? 0,
+      status: lines[lines.length - 1]?.status ?? 'settled'
+    };
+  };
+
   return {
     debts,
     isLoading,
-    settleDebt
+    settleDebt,
+    settleCustomerDebt
   };
 }

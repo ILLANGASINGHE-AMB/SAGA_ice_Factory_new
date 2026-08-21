@@ -4,59 +4,74 @@ import { useSettings } from '../hooks/useSettings';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { Table } from '../components/Table';
-import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { Modal } from '../components/Modal';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { Input, Select } from '../components/FormFields';
-import { generateSettlementReceiptPDF } from '../utils/pdfGenerator';
-import { Search, DollarSign, Calendar, RefreshCcw } from 'lucide-react';
+import { Input, Select, TextArea } from '../components/FormFields';
+import { generateSettlementReceiptPDF, generateBillPDF } from '../utils/pdfGenerator';
+import { DollarSign, RefreshCcw, FileDown, Users, History } from 'lucide-react';
 
 export function DebtsPage() {
-  const { debts, isLoading, settleDebt } = useDebts();
+  const { debts, isLoading, settleCustomerDebt } = useDebts();
   const { settings } = useSettings();
   const { user } = useAuth();
   const toast = useToast();
+
+  // Overview mode: 'byCustomer' (grouped debtors ledger) or 'history' (per-sale debt ledger)
+  const [viewMode, setViewMode] = useState('byCustomer');
 
   // Filters state
   const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'pending', 'partial', 'settled'
   const [searchQuery, setSearchQuery] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [agingFilter, setAgingFilter] = useState('all');
 
   // Settlement modal state
   const [settleModalOpen, setSettleModalOpen] = useState(false);
-  const [selectedDebt, setSelectedDebt] = useState(null);
+  const [selectedGroup, setSelectedGroup] = useState(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
+  const [settlementNote, setSettlementNote] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Settlement receipt preview modal state (generated, not auto-downloaded)
+  const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false);
+  const [receiptPdfUrl, setReceiptPdfUrl] = useState(null);
+  const [settlementReceiptRecord, setSettlementReceiptRecord] = useState(null);
+
+  // Debt History bill preview modal state
+  const [billPreviewOpen, setBillPreviewOpen] = useState(false);
+  const [billPdfUrl, setBillPdfUrl] = useState(null);
+  const [billDebt, setBillDebt] = useState(null);
 
   // WhatsApp Prompt State
   const [whatsappPromptOpen, setWhatsappPromptOpen] = useState(false);
-  const [settlementReceiptRecord, setSettlementReceiptRecord] = useState(null);
 
   // Calculate live preview remaining amount in modal
   const remainingPreview = useMemo(() => {
-    if (!selectedDebt) return 0;
+    if (!selectedGroup) return 0;
     const pay = parseFloat(paymentAmount) || 0;
-    return Math.max(0, selectedDebt.remaining_amount - pay);
-  }, [selectedDebt, paymentAmount]);
+    return Math.max(0, selectedGroup.total_debt - pay);
+  }, [selectedGroup, paymentAmount]);
 
-  const openSettleModal = (debt) => {
-    setSelectedDebt(debt);
+  const openSettleModal = (group) => {
+    setSelectedGroup(group);
     setPaymentAmount('');
     setPaymentMethod('cash');
+    setSettlementNote('');
     setSettleModalOpen(true);
   };
 
   const closeSettleModal = () => {
     setSettleModalOpen(false);
-    setSelectedDebt(null);
+    setSelectedGroup(null);
     setPaymentAmount('');
     setPaymentMethod('cash');
+    setSettlementNote('');
   };
 
-  // Submit Settle Debt
+  // Submit Settle Debt (applied FIFO across the customer's oldest debts)
   const handleConfirmSettlement = async (e) => {
     e.preventDefault();
     const amount = parseFloat(paymentAmount);
@@ -64,28 +79,31 @@ export function DebtsPage() {
       toast.error("Please enter a valid positive payment amount");
       return;
     }
-    if (amount > selectedDebt.remaining_amount) {
-      toast.error(`Payment amount exceeds remaining debt (LKR ${selectedDebt.remaining_amount})`);
+    if (amount > selectedGroup.total_debt) {
+      toast.error(`Payment amount exceeds total debt (LKR ${selectedGroup.total_debt.toLocaleString()})`);
       return;
     }
 
     setActionLoading(true);
     try {
-      const result = await settleDebt(
-        selectedDebt.id,
+      const result = await settleCustomerDebt(
+        selectedGroup.customer_id,
         amount,
         user?.fullName || 'Staff Operator',
-        paymentMethod
+        paymentMethod,
+        settlementNote.trim() || null
       );
 
-      // Trigger PDF Receipt Download
+      // Generate the receipt PDF and show it in-app for preview — download is
+      // an explicit user action from the preview modal, not automatic.
       const receiptDoc = generateSettlementReceiptPDF(result, settings);
-      receiptDoc.save(`${result.settlement_code}_receipt.pdf`);
+      const blobUrl = receiptDoc.output('bloburl');
+      setReceiptPdfUrl(blobUrl);
+      setSettlementReceiptRecord(result);
 
       toast.success(`Settlement recorded! Code: ${result.settlement_code}`);
-      setSettlementReceiptRecord(result);
       closeSettleModal();
-      setWhatsappPromptOpen(true); // Open WhatsApp prompt dialog
+      setReceiptPreviewOpen(true);
     } catch (err) {
       toast.error(err.message || "Failed to settle debt");
     } finally {
@@ -93,15 +111,30 @@ export function DebtsPage() {
     }
   };
 
+  const downloadReceipt = () => {
+    if (!settlementReceiptRecord) return;
+    const doc = generateSettlementReceiptPDF(settlementReceiptRecord, settings);
+    doc.save(`${settlementReceiptRecord.settlement_code}_receipt.pdf`);
+  };
+
+  const closeReceiptPreview = () => {
+    if (receiptPdfUrl) URL.revokeObjectURL(receiptPdfUrl);
+    setReceiptPreviewOpen(false);
+    setReceiptPdfUrl(null);
+    setWhatsappPromptOpen(true); // Chain into the WhatsApp prompt
+  };
+
   // Send receipt notification via WhatsApp
   const handleSendWhatsAppReceipt = () => {
     if (!settlementReceiptRecord) return;
     const phone = settlementReceiptRecord.customer?.whatsapp_number || settlementReceiptRecord.customer?.contact_number;
     const name = settlementReceiptRecord.customer?.name;
-    const saleCode = settlementReceiptRecord.sale?.sale_code || 'N/A';
+    const saleRef = settlementReceiptRecord.settlements?.length
+      ? settlementReceiptRecord.settlements.map(s => s.sale_code).filter(Boolean).join(', ')
+      : (settlementReceiptRecord.sale?.sale_code || 'N/A');
     const amount = settlementReceiptRecord.amount_paid;
     const remaining = settlementReceiptRecord.remaining_amount;
-    
+
     if (!phone) {
       toast.error("This customer has no WhatsApp number on file — can't send a notification.");
       setWhatsappPromptOpen(false);
@@ -109,24 +142,43 @@ export function DebtsPage() {
       return;
     }
 
-    // Receipt WhatsApp message format
     const mockPDFURL = `https://sagaciouscube.com/receipt/${settlementReceiptRecord.settlement_code}`;
-    const text = `Hello ${name}, your settlement receipt for ${saleCode} is ready. Amount Paid: LKR ${amount.toLocaleString()}. Remaining: LKR ${remaining.toLocaleString()}. View/Download: ${mockPDFURL}`;
+    const text = `Hello ${name}, your settlement receipt for ${saleRef} is ready. Amount Paid: LKR ${amount.toLocaleString()}. Remaining: LKR ${remaining.toLocaleString()}. View/Download: ${mockPDFURL}`;
 
     const waURL = `https://wa.me/94${phone.substring(1)}?text=${encodeURIComponent(text)}`;
     window.open(waURL, '_blank');
-    
+
     setWhatsappPromptOpen(false);
     setSettlementReceiptRecord(null);
   };
 
-  const [agingFilter, setAgingFilter] = useState('all');
+  // Debt History: preview a debt's original sale bill (generated, not auto-downloaded)
+  const handleViewBill = (debt) => {
+    const doc = generateBillPDF(debt.sale, settings);
+    const blobUrl = doc.output('bloburl');
+    setBillPdfUrl(blobUrl);
+    setBillDebt(debt);
+    setBillPreviewOpen(true);
+  };
+
+  const downloadBill = (debt) => {
+    if (!debt) return;
+    const doc = generateBillPDF(debt.sale, settings);
+    doc.save(`${debt.sale?.sale_code || 'bill'}_invoice.pdf`);
+  };
+
+  const closeBillPreview = () => {
+    if (billPdfUrl) URL.revokeObjectURL(billPdfUrl);
+    setBillPreviewOpen(false);
+    setBillPdfUrl(null);
+    setBillDebt(null);
+  };
 
   // Customer Debt Aging (0-30, 31-60, 61-90, 90+ days)
   const agingSummary = useMemo(() => {
     if (!debts) return { b0_30: 0, b31_60: 0, b61_90: 0, b90_plus: 0, total: 0, count: 0 };
     const now = new Date();
-    
+
     let b0_30 = 0, b31_60 = 0, b61_90 = 0, b90_plus = 0, total = 0, count = 0;
 
     debts.forEach(d => {
@@ -134,7 +186,7 @@ export function DebtsPage() {
       count++;
       const debtDate = new Date(d.created_at);
       const diffDays = Math.floor((now - debtDate) / (1000 * 60 * 60 * 24));
-      
+
       total += d.remaining_amount;
 
       if (diffDays <= 30) b0_30 += d.remaining_amount;
@@ -155,7 +207,7 @@ export function DebtsPage() {
     setToDate('');
   };
 
-  // Filtered debt rows
+  // Filtered debt rows (feeds both the History ledger and the Customers grouping)
   const filteredDebts = useMemo(() => {
     if (!debts) return [];
     let result = debts.slice();
@@ -182,7 +234,7 @@ export function DebtsPage() {
     // 3. Search Query (Customer Name or Sale Code)
     const query = searchQuery.toLowerCase().trim();
     if (query) {
-      result = result.filter(d => 
+      result = result.filter(d =>
         d.customer?.name?.toLowerCase().includes(query) ||
         d.sale?.sale_code?.toLowerCase().includes(query)
       );
@@ -203,16 +255,38 @@ export function DebtsPage() {
     return result;
   }, [debts, statusFilter, agingFilter, searchQuery, fromDate, toDate]);
 
+  // Debt by Customers: group the (already filtered) outstanding debts by customer
+  const customerGroups = useMemo(() => {
+    const map = new Map();
+    filteredDebts.forEach(d => {
+      if (d.status === 'settled') return;
+      const key = d.customer_id;
+      if (!map.has(key)) {
+        map.set(key, { customer_id: key, customer: d.customer, total_debt: 0 });
+      }
+      map.get(key).total_debt += Number(d.remaining_amount);
+    });
+    return Array.from(map.values()).sort((a, b) => b.total_debt - a.total_debt);
+  }, [filteredDebts]);
+
+  // Latest settlement note recorded against a debt, for the History "Note" column
+  const getLatestNote = (debt) => {
+    const settlements = debt.debt_settlements || [];
+    if (!settlements.length) return null;
+    const latest = [...settlements].sort((a, b) => new Date(b.settlement_date) - new Date(a.settlement_date))[0];
+    return latest?.notes || null;
+  };
+
   return (
     <div className="space-y-6">
-      
+
       {/* --- Debt Aging Summary Cards - 4-Column Landscape Grid --- */}
       <div className="grid grid-cols-2 md:grid-cols-4 landscape:grid-cols-4 gap-2.5 sm:gap-4">
-        <div 
+        <div
           onClick={() => setAgingFilter(agingFilter === '0-30' ? 'all' : '0-30')}
           className={`p-3.5 sm:p-4 rounded-2xl border cursor-pointer transition-all ${
-            agingFilter === '0-30' 
-              ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30 shadow-md ring-2 ring-emerald-500/20' 
+            agingFilter === '0-30'
+              ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30 shadow-md ring-2 ring-emerald-500/20'
               : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-300'
           }`}
         >
@@ -225,11 +299,11 @@ export function DebtsPage() {
           </p>
         </div>
 
-        <div 
+        <div
           onClick={() => setAgingFilter(agingFilter === '31-60' ? 'all' : '31-60')}
           className={`p-3.5 sm:p-4 rounded-2xl border cursor-pointer transition-all ${
-            agingFilter === '31-60' 
-              ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/30 shadow-md ring-2 ring-amber-500/20' 
+            agingFilter === '31-60'
+              ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/30 shadow-md ring-2 ring-amber-500/20'
               : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-amber-300'
           }`}
         >
@@ -242,11 +316,11 @@ export function DebtsPage() {
           </p>
         </div>
 
-        <div 
+        <div
           onClick={() => setAgingFilter(agingFilter === '61-90' ? 'all' : '61-90')}
           className={`p-3.5 sm:p-4 rounded-2xl border cursor-pointer transition-all ${
-            agingFilter === '61-90' 
-              ? 'border-orange-500 bg-orange-50/50 dark:bg-orange-950/30 shadow-md ring-2 ring-orange-500/20' 
+            agingFilter === '61-90'
+              ? 'border-orange-500 bg-orange-50/50 dark:bg-orange-950/30 shadow-md ring-2 ring-orange-500/20'
               : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-orange-300'
           }`}
         >
@@ -259,11 +333,11 @@ export function DebtsPage() {
           </p>
         </div>
 
-        <div 
+        <div
           onClick={() => setAgingFilter(agingFilter === '90+' ? 'all' : '90+')}
           className={`p-3.5 sm:p-4 rounded-2xl border cursor-pointer transition-all ${
-            agingFilter === '90+' 
-              ? 'border-rose-500 bg-rose-50/50 dark:bg-rose-950/30 shadow-md ring-2 ring-rose-500/20' 
+            agingFilter === '90+'
+              ? 'border-rose-500 bg-rose-50/50 dark:bg-rose-950/30 shadow-md ring-2 ring-rose-500/20'
               : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-rose-300'
           }`}
         >
@@ -280,7 +354,7 @@ export function DebtsPage() {
       {/* Filters Bar */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-4 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
-          
+
           {/* Status Filter */}
           <Select
             label="Payment Status"
@@ -337,15 +411,15 @@ export function DebtsPage() {
             onChange={(e) => setToDate(e.target.value)}
           />
         </div>
-        
+
         {/* Reset Filter Button */}
         <div className="flex justify-between items-center pt-1">
           <span className="text-xs text-slate-500 font-medium">
             Total Debt Outstanding: <strong className="text-slate-900 dark:text-slate-100">LKR {agingSummary.total.toLocaleString()}</strong> ({agingSummary.count} debtors)
           </span>
-          <Button 
-            variant="secondary" 
-            size="sm" 
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={resetFilters}
             className="flex items-center space-x-1.5"
           >
@@ -355,54 +429,108 @@ export function DebtsPage() {
         </div>
       </div>
 
-      {/* Debt ledger List */}
-      <Table
-        enablePagination={false}
-        headers={[
-          { key: 'customerName', label: 'Customer Name', sortable: true },
-          { key: 'saleCode', label: 'Sale Code', sortable: true },
-          { key: 'total_amount', label: 'Total Amount', sortable: true },
-          { key: 'paid_amount', label: 'Amount Paid', sortable: true },
-          { key: 'remaining_amount', label: 'Outstanding Balance', sortable: true },
-          { key: 'status', label: 'Status', sortable: true },
-          { key: 'created_at', label: 'Date Issued', sortable: true },
-          { key: 'action', label: 'Actions', sortable: false }
-        ]}
-        data={filteredDebts}
-        isLoading={isLoading}
-        emptyMessage="Clear ledger! No outstanding debts matched the parameters."
-        renderRow={(debt) => {
-          const isOutstanding = debt.status !== 'settled';
-          return (
-            <tr key={debt.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
-              <td className="px-6 py-4 font-semibold text-slate-900 dark:text-slate-100">{debt.customer?.name}</td>
-              <td className="px-6 py-4 font-mono font-medium text-navy-600 dark:text-navy-400">{debt.sale?.sale_code}</td>
-              <td className="px-6 py-4 font-mono text-slate-700 dark:text-slate-300">LKR {debt.total_amount.toLocaleString()}</td>
-              <td className="px-6 py-4 font-mono text-emerald-600 dark:text-emerald-400">LKR {debt.paid_amount.toLocaleString()}</td>
-              <td className="px-6 py-4 font-mono font-semibold text-rose-600 dark:text-rose-400">LKR {debt.remaining_amount.toLocaleString()}</td>
-              <td className="px-6 py-4"><Badge type={debt.status} /></td>
-              <td className="px-6 py-4 text-xs text-slate-400">{new Date(debt.created_at).toLocaleDateString()}</td>
-              <td className="px-6 py-4">
-                {isOutstanding ? (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => openSettleModal(debt)}
-                    className="flex items-center space-x-1"
-                  >
-                    <DollarSign size={13} />
-                    <span>Settle</span>
-                  </Button>
-                ) : (
-                  <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider flex items-center">
-                    Cleared
-                  </span>
-                )}
+      {/* Overview Mode Toggle */}
+      <div className="inline-flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 shadow-sm">
+        <button
+          onClick={() => setViewMode('byCustomer')}
+          className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
+            viewMode === 'byCustomer'
+              ? 'bg-navy-600 text-white shadow-sm'
+              : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
+        >
+          <Users size={14} />
+          <span>Debt by Customers</span>
+        </button>
+        <button
+          onClick={() => setViewMode('history')}
+          className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
+            viewMode === 'history'
+              ? 'bg-navy-600 text-white shadow-sm'
+              : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
+        >
+          <History size={14} />
+          <span>Debt History</span>
+        </button>
+      </div>
+
+      {viewMode === 'byCustomer' ? (
+        <Table
+          compact
+          enablePagination={false}
+          headers={[
+            { key: 'customerId', label: 'Customer ID', sortable: false },
+            { key: 'customerName', label: 'Customer Name', sortable: false },
+            { key: 'total_debt', label: 'Total Debt', sortable: false },
+            { key: 'action', label: 'Actions', sortable: false }
+          ]}
+          data={customerGroups}
+          isLoading={isLoading}
+          emptyMessage="Clear ledger! No debtors matched the parameters."
+          renderRow={(group) => (
+            <tr key={group.customer_id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
+              <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono text-navy-600 dark:text-navy-400">{group.customer?.customer_code}</td>
+              <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-semibold text-slate-900 dark:text-slate-100">{group.customer?.name}</td>
+              <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-semibold text-rose-600 dark:text-rose-400">LKR {group.total_debt.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+              <td className="px-2.5 sm:px-4 py-2.5 sm:py-3">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => openSettleModal(group)}
+                  className="flex items-center space-x-1"
+                >
+                  <DollarSign size={13} />
+                  <span>Settle</span>
+                </Button>
               </td>
             </tr>
-          );
-        }}
-      />
+          )}
+        />
+      ) : (
+        <Table
+          compact
+          enablePagination={false}
+          headers={[
+            { key: 'customerName', label: 'Customer Name', sortable: true },
+            { key: 'saleCode', label: 'Sale Code', sortable: true },
+            { key: 'total_amount', label: 'Total Amount', sortable: true },
+            { key: 'paid_amount', label: 'Amount Paid', sortable: true },
+            { key: 'remaining_amount', label: 'Remaining Balance', sortable: true },
+            { key: 'created_at', label: 'Date Issued', sortable: true },
+            { key: 'note', label: 'Note', sortable: false },
+            { key: 'downloadPdf', label: 'Download PDF', sortable: false }
+          ]}
+          data={filteredDebts}
+          isLoading={isLoading}
+          emptyMessage="Clear ledger! No outstanding debts matched the parameters."
+          renderRow={(debt) => {
+            const note = getLatestNote(debt);
+            return (
+              <tr key={debt.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-semibold text-slate-900 dark:text-slate-100">{debt.customer?.name}</td>
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-medium text-navy-600 dark:text-navy-400">{debt.sale?.sale_code}</td>
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono text-slate-700 dark:text-slate-300">LKR {debt.total_amount.toLocaleString()}</td>
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono text-emerald-600 dark:text-emerald-400">LKR {debt.paid_amount.toLocaleString()}</td>
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-semibold text-rose-600 dark:text-rose-400">LKR {debt.remaining_amount.toLocaleString()}</td>
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 text-xs text-slate-400">{new Date(debt.created_at).toLocaleDateString()}</td>
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 text-xs text-slate-500 dark:text-slate-400 max-w-[160px] truncate" title={note || ''}>{note || '—'}</td>
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => handleViewBill(debt)}
+                    className="flex items-center space-x-1"
+                  >
+                    <FileDown size={13} />
+                    <span>Download PDF</span>
+                  </Button>
+                </td>
+              </tr>
+            );
+          }}
+        />
+      )}
 
       {/* --- Settle Debt Modal Dialog --- */}
       <Modal
@@ -411,37 +539,25 @@ export function DebtsPage() {
         title="Register Debt Settlement"
       >
         <form onSubmit={handleConfirmSettlement} className="space-y-4">
-          
+
           {/* Summary Details */}
           <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 divide-y divide-slate-150 dark:divide-slate-800 space-y-2.5">
             <div className="flex justify-between text-xs py-0.5">
               <span className="text-slate-400">Customer</span>
               <span className="font-semibold text-slate-800 dark:text-slate-200">
-                {selectedDebt?.customer?.name}
+                {selectedGroup?.customer?.name}
               </span>
             </div>
             <div className="flex justify-between text-xs py-1">
-              <span className="text-slate-400">Order Invoice Reference</span>
+              <span className="text-slate-400">Customer ID</span>
               <span className="font-mono text-navy-600 dark:text-navy-400">
-                {selectedDebt?.sale?.sale_code}
-              </span>
-            </div>
-            <div className="flex justify-between text-xs py-1">
-              <span className="text-slate-400">Total Indebtedness</span>
-              <span className="font-mono text-slate-800 dark:text-slate-200">
-                LKR {selectedDebt?.total_amount.toLocaleString()}
-              </span>
-            </div>
-            <div className="flex justify-between text-xs py-1">
-              <span className="text-slate-400">Total Previously Settled</span>
-              <span className="font-mono text-emerald-600 dark:text-emerald-400">
-                LKR {selectedDebt?.paid_amount.toLocaleString()}
+                {selectedGroup?.customer?.customer_code}
               </span>
             </div>
             <div className="flex justify-between text-xs py-1 font-bold text-rose-600 dark:text-rose-400">
-              <span>Outstanding Balance</span>
+              <span>Total Debt</span>
               <span className="font-mono">
-                LKR {selectedDebt?.remaining_amount.toLocaleString()}
+                LKR {selectedGroup?.total_debt.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </span>
             </div>
           </div>
@@ -454,8 +570,8 @@ export function DebtsPage() {
             step="0.01"
             required
             min="0.01"
-            max={selectedDebt?.remaining_amount}
-            placeholder={`Max LKR ${selectedDebt?.remaining_amount}`}
+            max={selectedGroup?.total_debt}
+            placeholder={`Max LKR ${selectedGroup?.total_debt}`}
             value={paymentAmount}
             onChange={(e) => setPaymentAmount(e.target.value)}
           />
@@ -466,12 +582,20 @@ export function DebtsPage() {
             name="paymentMethod"
             options={[
               { value: 'cash', label: 'Cash' },
-              { value: 'bank_transfer', label: 'Bank Transfer' },
-              { value: 'cheque', label: 'Cheque' },
-              { value: 'other', label: 'Other' }
+              { value: 'card', label: 'Card' }
             ]}
             value={paymentMethod}
             onChange={(e) => setPaymentMethod(e.target.value)}
+          />
+
+          {/* Note */}
+          <TextArea
+            label="Note (Optional)"
+            name="settlementNote"
+            rows={2}
+            placeholder="Add a note about this payment..."
+            value={settlementNote}
+            onChange={(e) => setSettlementNote(e.target.value)}
           />
 
           {/* Preview panel */}
@@ -491,6 +615,62 @@ export function DebtsPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* --- Settlement Receipt Preview Modal --- */}
+      <Modal
+        isOpen={receiptPreviewOpen}
+        onClose={closeReceiptPreview}
+        title={`Settlement Receipt ${settlementReceiptRecord ? `— ${settlementReceiptRecord.settlement_code}` : ''}`}
+        size="2xl"
+      >
+        <div className="space-y-3">
+          {receiptPdfUrl && (
+            <iframe
+              src={receiptPdfUrl}
+              title="Settlement Receipt PDF Preview"
+              className="w-full h-[70vh] rounded-xl border border-slate-200 dark:border-slate-800"
+            />
+          )}
+          <div className="flex justify-end">
+            <Button
+              variant="primary"
+              onClick={downloadReceipt}
+              className="flex items-center space-x-1.5"
+            >
+              <FileDown size={16} />
+              <span>Download PDF</span>
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* --- Debt History Bill Preview Modal --- */}
+      <Modal
+        isOpen={billPreviewOpen}
+        onClose={closeBillPreview}
+        title={`Bill Preview ${billDebt?.sale ? `— ${billDebt.sale.sale_code}` : ''}`}
+        size="2xl"
+      >
+        <div className="space-y-3">
+          {billPdfUrl && (
+            <iframe
+              src={billPdfUrl}
+              title="Bill PDF Preview"
+              className="w-full h-[70vh] rounded-xl border border-slate-200 dark:border-slate-800"
+            />
+          )}
+          <div className="flex justify-end">
+            <Button
+              variant="primary"
+              onClick={() => downloadBill(billDebt)}
+              className="flex items-center space-x-1.5"
+            >
+              <FileDown size={16} />
+              <span>Download PDF</span>
+            </Button>
+          </div>
+        </div>
       </Modal>
 
       {/* --- WhatsApp Confirmation Receipt Prompt --- */}
