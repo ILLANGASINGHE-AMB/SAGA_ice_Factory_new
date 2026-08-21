@@ -26,7 +26,8 @@ import {
   PanelLeftOpen,
   ChevronLeft,
   ChevronRight,
-  Route
+  Route,
+  StickyNote
 } from 'lucide-react';
 
 export function AppShell({ children }) {
@@ -152,6 +153,7 @@ export function AppShell({ children }) {
     { name: 'Debts', path: '/debts', icon: <DollarSign size={20} />, adminOnly: false },
     { name: 'Expenses', path: '/expenses', icon: <Receipt size={20} />, adminOnly: false },
     { name: 'Cash & Bank Details', path: '/cash-bank', icon: <Landmark size={20} />, adminOnly: false },
+    { name: 'Notes & Messages', path: '/notes', icon: <StickyNote size={20} />, adminOnly: false },
     { name: 'Reports', path: '/reports', icon: <FileBarChart size={20} />, adminOnly: true },
     { name: 'Settings', path: '/settings', icon: <SettingsIcon size={20} />, adminOnly: false }
   ];

@@ -10,6 +10,7 @@ import {
   DollarSign,
   Package,
   Receipt,
+  StickyNote,
   ArrowRight
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -24,7 +25,8 @@ export function GlobalSearchModal({ isOpen, onClose }) {
     sales: [],
     debts: [],
     inventory: [],
-    expenses: []
+    expenses: [],
+    notes: []
   });
   const [isLoading, setIsLoading] = useState(false);
 
@@ -42,7 +44,8 @@ export function GlobalSearchModal({ isOpen, onClose }) {
           { data: sales },
           { data: debts },
           { data: inventory },
-          { data: expenses }
+          { data: expenses },
+          { data: notes }
         ] = await Promise.all([
           supabase.from('customers').select('*').limit(100),
           supabase.from('employees').select('*').limit(100),
@@ -50,7 +53,8 @@ export function GlobalSearchModal({ isOpen, onClose }) {
           supabase.from('sales').select('*, customer:customers(name)').limit(100),
           supabase.from('debts').select('*, customer:customers(name), sale:sales(sale_code)').limit(100),
           supabase.from('inventory').select('*'),
-          supabase.from('operating_expenses').select('*').limit(50)
+          supabase.from('operating_expenses').select('*').limit(50),
+          supabase.from('notes').select('*').limit(100)
         ]);
 
         setData({
@@ -60,7 +64,8 @@ export function GlobalSearchModal({ isOpen, onClose }) {
           sales: sales || [],
           debts: debts || [],
           inventory: inventory || [],
-          expenses: expenses || []
+          expenses: expenses || [],
+          notes: notes || []
         });
       } catch (err) {
         console.error("Global search data fetch failed:", err);
@@ -179,6 +184,19 @@ export function GlobalSearchModal({ isOpen, onClose }) {
       }
     });
 
+    // Search Notes
+    data.notes.forEach(n => {
+      if (n.note_text?.toLowerCase().includes(q) || n.created_by?.toLowerCase().includes(q)) {
+        results.push({
+          type: 'Note',
+          icon: <StickyNote size={16} className="text-sky-500" />,
+          title: n.note_text?.length > 60 ? `${n.note_text.slice(0, 60)}...` : n.note_text,
+          subtitle: `By ${n.created_by} • ${new Date(n.created_at).toLocaleDateString()}`,
+          path: '/notes'
+        });
+      }
+    });
+
     return results.slice(0, 15); // Limit to top 15 matches
   }, [query, data]);
 
@@ -237,7 +255,8 @@ export function GlobalSearchModal({ isOpen, onClose }) {
                   { name: 'Vehicles', path: '/vehicles' },
                   { name: 'Debt Ledger', path: '/debts' },
                   { name: 'Inventory', path: '/inventory' },
-                  { name: 'Expenses', path: '/expenses' }
+                  { name: 'Expenses', path: '/expenses' },
+                  { name: 'Notes & Messages', path: '/notes' }
                 ].map(chip => (
                   <button
                     key={chip.path}
