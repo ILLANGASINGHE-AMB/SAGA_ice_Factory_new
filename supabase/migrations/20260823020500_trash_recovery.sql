@@ -93,10 +93,6 @@ begin
         from public.debts d where d.customer_id = p_id
       ), '[]'::jsonb)
     ));
-    v_children := v_children || jsonb_build_array(jsonb_build_object(
-      'table', 'transport_trips',
-      'rows', coalesce((select jsonb_agg(to_jsonb(t)) from public.transport_trips t where t.customer_id = p_id), '[]'::jsonb)
-    ));
   elsif p_table = 'vehicles' then
     v_children := v_children || jsonb_build_array(jsonb_build_object(
       'table', 'vehicle_trips',

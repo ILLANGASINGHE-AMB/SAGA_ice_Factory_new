@@ -1670,10 +1670,6 @@ begin
         from public.debts d where d.customer_id = p_id
       ), '[]'::jsonb)
     ));
-    v_children := v_children || jsonb_build_array(jsonb_build_object(
-      'table', 'transport_trips',
-      'rows', coalesce((select jsonb_agg(to_jsonb(t)) from public.transport_trips t where t.customer_id = p_id), '[]'::jsonb)
-    ));
   elsif p_table = 'vehicles' then
     v_children := v_children || jsonb_build_array(jsonb_build_object(
       'table', 'vehicle_trips',
@@ -1803,5 +1799,26 @@ end;
 $$;
 
 grant execute on function public.purge_expired_trash() to authenticated;
+
+-- Used by "Clear All Data" (Settings, admin-only) to actually empty trash
+-- during a full wipe: the table has no delete policy of its own (all writes
+-- normally go through purge_trash_item/restore_trash_item above), so a
+-- plain client-side `.delete()` would silently remove zero rows under RLS.
+create or replace function public.purge_all_trash()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'Only admins can permanently delete trash items';
+  end if;
+
+  delete from public.trash;
+end;
+$$;
+
+grant execute on function public.purge_all_trash() to authenticated;
 
 

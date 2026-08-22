@@ -340,23 +340,61 @@ export function SettingsPage() {
   const handleClearAllData = async () => {
     setClearLoading(true);
     try {
-      // 1. Delete records from Supabase tables in reverse dependency order
-      await supabase.from('debt_settlements').delete().neq('id', -1);
-      await supabase.from('debts').delete().neq('id', -1);
-      await supabase.from('sales').delete().neq('id', -1);
-      await supabase.from('customers').delete().neq('id', -1);
-      await supabase.from('operating_expenses').delete().neq('id', -1);
+      // Delete records from every operational table, children before parents
+      // so FK constraints (e.g. transport_trips.employee_id on delete restrict)
+      // never block a step. Master/config tables (settings, profiles,
+      // code_counters, expense_categories, expense_items, inventory rows) are
+      // preserved; inventory quantities are reset to 0 instead of deleted.
+      const tablesInOrder = [
+        'debt_settlements',
+        'debts',
+        'sale_items',
+        'sales',
+        'customer_cube_prices',
+        'customers',
+        'transport_trips',
+        'vehicle_trips',
+        'vehicles',
+        'employee_attendance',
+        'employees',
+        'expense_amounts',
+        'expense_ledger_rows',
+        'daily_manager_reports',
+        'cheque_records',
+        'bank_deposits',
+        'cash_receives',
+        'bank_withdrawals',
+        'notes',
+        'activity_log',
+      ];
 
-      // 2. Reset inventory quantities back to 0
-      await supabase.from('inventory').update({ quantity: 0, updated_at: new Date().toISOString() }).neq('id', -1);
+      for (const table of tablesInOrder) {
+        const { error } = await supabase.from(table).delete().neq('id', -1);
+        if (error) throw new Error(`${table}: ${error.message}`);
+      }
 
-      // 3. Clear local storage fallbacks
+      // `trash` has no delete policy of its own (writes only happen through
+      // the purge_trash_item/restore_trash_item RPCs), so a plain
+      // .delete() here would silently remove zero rows under RLS.
+      const { error: trashError } = await supabase.rpc('purge_all_trash');
+      if (trashError) throw new Error(`trash: ${trashError.message}`);
+
+      // Reset inventory quantities back to 0 (keep the catalog rows)
+      const { error: invError } = await supabase
+        .from('inventory')
+        .update({ quantity: 0, updated_at: new Date().toISOString() })
+        .neq('id', -1);
+      if (invError) throw new Error(`inventory: ${invError.message}`);
+
+      // Clear local storage fallbacks
       localStorage.removeItem('saga_operating_expenses');
 
       toast.success("All factory records and data cleared successfully!");
+      // Logged after the wipe (activity_log itself was just cleared above),
+      // so this becomes the first entry in the fresh log.
       logActivity({ action: 'delete', entityType: 'database', description: 'Cleared all factory records and data' });
       setClearConfirmOpen(false);
-      
+
       // Reload page to refresh all active hooks and state
       setTimeout(() => window.location.reload(), 1000);
     } catch (err) {
@@ -863,7 +901,7 @@ export function SettingsPage() {
             </div>
 
             <p className="text-xs text-red-700 dark:text-red-300 font-medium">
-              Irreversibly wipe all operational records (sales, customer database, debts, expenses) and reset inventory stock to 0.
+              Irreversibly wipe all operational records (customers, sales, debts, vehicles, employees, transport, expenses, cash & bank, notes, activity log) and reset inventory stock to 0.
             </p>
 
             <button
@@ -1002,7 +1040,7 @@ export function SettingsPage() {
         onClose={() => setClearConfirmOpen(false)}
         onConfirm={handleClearAllData}
         title="CRITICAL WARNING: Wipe All Factory Database Records?"
-        message="ARE YOU ABSOLUTELY SURE? This will permanently DELETE all customers, sales orders, debt records, debt settlements, and operational expense ledgers. Factory settings and user login accounts will be preserved. This action CANNOT be undone!"
+        message="ARE YOU ABSOLUTELY SURE? This will permanently DELETE all customers, sales orders, debts, vehicles & trips, employees & attendance, transport trips, expense ledgers, cash & bank records, notes, and the activity log/trash history. Inventory stock will be reset to 0. Factory settings, login accounts, and item/expense category setup will be preserved. This action CANNOT be undone!"
         confirmLabel="YES, PERMANENTLY CLEAR ALL DATA"
         isLoading={clearLoading}
       />
