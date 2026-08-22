@@ -13,7 +13,8 @@ export function Table({
   renderRow, // function (item, index) => ReactNode
   enablePagination = true,
   defaultPageSize = 10,
-  compact = false
+  compact = false,
+  footerRow // optional <tr> of totals, rendered in a <tfoot> beneath the data rows
 }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(defaultPageSize);
@@ -108,6 +109,11 @@ export function Table({
               paginatedData.map((item, index) => renderRow(item, startIndex + index))
             )}
           </tbody>
+          {footerRow && !isLoading && data.length > 0 && (
+            <tfoot className="bg-slate-50 dark:bg-slate-900/90 border-t-2 border-slate-200 dark:border-slate-800 font-sans">
+              {footerRow}
+            </tfoot>
+          )}
         </table>
       </div>
 

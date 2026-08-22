@@ -41,6 +41,7 @@ export function SalesPage() {
   const [toMonth, setToMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [fromYear, setFromYear] = useState(() => String(new Date().getFullYear()));
   const [toYear, setToYear] = useState(() => String(new Date().getFullYear()));
+  const [paymentFilter, setPaymentFilter] = useState('all'); // 'all' | 'cash' | 'debt'
 
   // --- New Order Wizard State ---
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -488,6 +489,11 @@ ${billURL}`;
       });
     }
 
+    // Payment type filter
+    if (paymentFilter !== 'all') {
+      result = result.filter(s => s.payment_type === paymentFilter);
+    }
+
     // Search query filter
     const query = searchQuery.toLowerCase().trim();
     if (query) {
@@ -514,7 +520,16 @@ ${billURL}`;
     });
 
     return result;
-  }, [sales, searchQuery, sortKey, sortDirection, periodType, fromDate, toDate, fromMonth, toMonth, fromYear, toYear]);
+  }, [sales, searchQuery, sortKey, sortDirection, periodType, fromDate, toDate, fromMonth, toMonth, fromYear, toYear, paymentFilter]);
+
+  // Totals across the currently filtered set — shown as a footer row so the
+  // user can see at a glance what a period/payment filter adds up to.
+  const filteredTotals = useMemo(() => {
+    return filteredSales.reduce((acc, s) => ({
+      quantity: acc.quantity + (Number(s.quantity) || 0),
+      amount: acc.amount + (Number(s.total_amount) || 0)
+    }), { quantity: 0, amount: 0 });
+  }, [filteredSales]);
 
   if (salesLoading || inventoryLoading || !customers) {
     return (
@@ -635,6 +650,18 @@ ${billURL}`;
               <Input label="To Year" name="toYear" type="number" value={toYear} onChange={(e) => setToYear(e.target.value)} />
             </>
           )}
+
+          <Select
+            label="Payment"
+            name="paymentFilter"
+            value={paymentFilter}
+            onChange={(e) => setPaymentFilter(e.target.value)}
+            options={[
+              { value: 'all', label: 'All Payments' },
+              { value: 'cash', label: 'Cash' },
+              { value: 'debt', label: 'Debt' }
+            ]}
+          />
         </div>
       </div>
 
@@ -658,6 +685,20 @@ ${billURL}`;
         sortDirection={sortDirection}
         onSort={handleSort}
         emptyMessage="No sales recorded in the system ledger."
+        footerRow={
+          <tr>
+            <td colSpan={3} className="px-2.5 sm:px-4 py-2.5 sm:py-3 text-right font-bold text-slate-600 dark:text-slate-300 uppercase text-[11px] tracking-wider">
+              Total ({filteredSales.length.toLocaleString()} {filteredSales.length === 1 ? 'order' : 'orders'})
+            </td>
+            <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-bold text-slate-900 dark:text-slate-100">
+              {filteredTotals.quantity.toLocaleString()}
+            </td>
+            <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-bold text-slate-900 dark:text-slate-100">
+              LKR {filteredTotals.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </td>
+            <td colSpan={3} className="px-2.5 sm:px-4 py-2.5 sm:py-3"></td>
+          </tr>
+        }
         renderRow={(sale) => {
           const isMultiItem = (sale.sale_items?.length || 0) > 1;
           return (
