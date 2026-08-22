@@ -63,6 +63,11 @@ export function CustomerProfilePage() {
   const customerDebts = useMemo(() => debts.filter(d => Number(d.customer_id) === customerId), [debts, customerId]);
   const customerSales = useMemo(() => sales.filter(s => Number(s.customer_id) === customerId), [sales, customerId]);
 
+  // Lifetime summary cards — unfiltered totals across this customer's full history
+  const totalSalesAmount = useMemo(() => customerSales.reduce((sum, s) => sum + Number(s.total_amount || 0), 0), [customerSales]);
+  const totalCashSalesAmount = useMemo(() => customerSales.filter(s => s.payment_type === 'cash').reduce((sum, s) => sum + Number(s.total_amount || 0), 0), [customerSales]);
+  const totalDebtSalesAmount = useMemo(() => customerSales.filter(s => s.payment_type === 'debt').reduce((sum, s) => sum + Number(s.total_amount || 0), 0), [customerSales]);
+
   // View / filter state
   const [viewMode, setViewMode] = useState('sales'); // 'sales' | 'payments' | 'graph'
   const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'debt' | 'cash'
@@ -263,6 +268,26 @@ export function CustomerProfilePage() {
         </div>
       </div>
 
+      {/* Lifetime Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
+          <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide block truncate">Total Sales</span>
+          <span className="text-sm font-bold font-mono text-slate-900 dark:text-slate-100 block mt-0.5 truncate">{money(totalSalesAmount)}</span>
+        </div>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
+          <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide block truncate">Total Cash Sales</span>
+          <span className="text-sm font-bold font-mono text-emerald-600 dark:text-emerald-400 block mt-0.5 truncate">{money(totalCashSalesAmount)}</span>
+        </div>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
+          <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wide block truncate">Total Debt Sales</span>
+          <span className="text-sm font-bold font-mono text-amber-600 dark:text-amber-400 block mt-0.5 truncate">{money(totalDebtSalesAmount)}</span>
+        </div>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
+          <span className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 uppercase tracking-wide block truncate">Remaining Debt</span>
+          <span className="text-sm font-bold font-mono text-rose-600 dark:text-rose-400 block mt-0.5 truncate">{money(totalOutstandingDebt)}</span>
+        </div>
+      </div>
+
       {/* Debt Details */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5 space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
@@ -273,12 +298,14 @@ export function CustomerProfilePage() {
         </div>
         <Table
           enablePagination={false}
+          compact
           headers={[
             { key: 'sale_code', label: 'Sale Code' },
             { key: 'debt_amount', label: 'Debt Amount' },
             { key: 'settled_amount', label: 'Settled Amount' },
             { key: 'date_added', label: 'Date Added' },
             { key: 'date_settled', label: 'Date Settled' },
+            { key: 'remaining_debt', label: 'Remaining Debt' },
             { key: 'status', label: 'Status' }
           ]}
           data={customerDebts}
@@ -290,14 +317,15 @@ export function CustomerProfilePage() {
               .sort((a, b) => new Date(b.settlement_date) - new Date(a.settlement_date))[0];
             return (
               <tr key={debt.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
-                <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono text-navy-600 dark:text-navy-400">{debt.sale?.sale_code || '—'}</td>
-                <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono">{money(debt.total_amount)}</td>
-                <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono">{money(debt.paid_amount)}</td>
-                <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono text-slate-500">{new Date(debt.created_at).toLocaleDateString()}</td>
-                <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono text-slate-500">
+                <td className="px-2 sm:px-3 py-2 font-mono text-navy-600 dark:text-navy-400">{debt.sale?.sale_code || '—'}</td>
+                <td className="px-2 sm:px-3 py-2 font-mono">{money(debt.total_amount)}</td>
+                <td className="px-2 sm:px-3 py-2 font-mono">{money(debt.paid_amount)}</td>
+                <td className="px-2 sm:px-3 py-2 font-mono text-slate-500">{new Date(debt.created_at).toLocaleDateString()}</td>
+                <td className="px-2 sm:px-3 py-2 font-mono text-slate-500">
                   {debt.status === 'settled' && lastSettlement ? new Date(lastSettlement.settlement_date).toLocaleDateString() : '—'}
                 </td>
-                <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5"><Badge type={debt.status} /></td>
+                <td className="px-2 sm:px-3 py-2 font-mono text-rose-600 dark:text-rose-400">{money(debt.remaining_amount)}</td>
+                <td className="px-2 sm:px-3 py-2"><Badge type={debt.status} /></td>
               </tr>
             );
           }}
