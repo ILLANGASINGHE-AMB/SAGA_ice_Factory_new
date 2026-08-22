@@ -1821,4 +1821,33 @@ $$;
 
 grant execute on function public.purge_all_trash() to authenticated;
 
+-- ==========================================
+-- 12. Realtime: publish row changes for every hook's postgres_changes
+-- subscription (useInventory, useSales, useDashboard, useDailyReport, etc.)
+-- Without this, those subscriptions connect but never fire — Postgres only
+-- streams changes for tables in the publication.
+-- ==========================================
+do $$
+declare
+  t text;
+begin
+  foreach t in array array[
+    'profiles', 'inventory', 'inventory_transactions',
+    'customers', 'sales', 'sale_items', 'debts', 'debt_settlements',
+    'settings', 'vehicles', 'vehicle_trips', 'employees', 'employee_attendance',
+    'transport_trips', 'customer_cube_prices',
+    'expense_categories', 'expense_items', 'expense_ledger_rows', 'expense_amounts',
+    'daily_manager_reports', 'cash_receives', 'bank_deposits', 'cheque_records',
+    'bank_withdrawals', 'notes', 'activity_log', 'trash'
+  ]
+  loop
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
+    ) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end $$;
+
 
