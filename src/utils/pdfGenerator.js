@@ -94,7 +94,9 @@ function drawMonogram(doc) {
 // Helper to draw a clean, flat letterhead header — logo/monogram + company
 // details on the left, document title + a meta line (code or date range) on
 // the right, closed off with a dashed divider. Used by every PDF so bills,
-// statements, receipts, and reports all share one letterhead.
+// statements, receipts, and reports all share one letterhead. Returns the Y
+// position callers should start their content at (grows if the title/meta
+// text wraps onto extra lines).
 function drawHeader(doc, settings, title, metaText) {
   const companyName = settings?.company_name || 'Sagacious Ice Factory';
   const companyAddress = settings?.company_address || 'Colombo, Sri Lanka';
@@ -126,22 +128,41 @@ function drawHeader(doc, settings, title, metaText) {
   doc.setFontSize(7.5);
   doc.text(`Phone: ${companyPhone}   Email: ${companyEmail}`, textX, 28);
 
+  // Right column (title + meta) is hard-capped to a fixed-width lane ending
+  // at x=196, so even a long meta string (e.g. a custom report's date range
+  // plus customer/cube/payment filter chips) wraps onto extra lines instead
+  // of running into the company block on the left.
+  const rightColWidth = 76;
+
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(11.5);
   doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
-  doc.text(title.toUpperCase(), 196, 18, { align: 'right' });
+  const titleLines = doc.splitTextToSize(title.toUpperCase(), rightColWidth);
+  let cursorY = 18;
+  titleLines.forEach(line => {
+    doc.text(line, 196, cursorY, { align: 'right' });
+    cursorY += 4.5;
+  });
 
   doc.setFont('courier', 'normal');
-  doc.setFontSize(8.5);
+  doc.setFontSize(7.5);
   doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
-  doc.text(metaText, 196, 23.5, { align: 'right' });
+  cursorY += 1;
+  const metaLines = doc.splitTextToSize(metaText, rightColWidth);
+  metaLines.forEach(line => {
+    doc.text(line, 196, cursorY, { align: 'right' });
+    cursorY += 3.8;
+  });
   doc.setFont('Helvetica', 'normal');
 
+  const dividerY = Math.max(34, cursorY + 2);
   doc.setDrawColor(BORDER[0], BORDER[1], BORDER[2]);
   doc.setLineWidth(0.4);
   doc.setLineDashPattern([1.2, 1], 0);
-  doc.line(14, 34, 196, 34);
+  doc.line(14, dividerY, 196, dividerY);
   doc.setLineDashPattern([], 0);
+
+  return dividerY + 8; // content start Y for callers
 }
 
 // Helper to draw a clean, flat footer — thin divider + muted centered note +
@@ -194,9 +215,7 @@ export function generateBillPDF(sale, settings) {
     format: 'a4'
   });
 
-  drawHeader(doc, settings, 'Sales Invoice', `#${sale.sale_code}`);
-
-  const y0 = 42;
+  const y0 = drawHeader(doc, settings, 'Sales Invoice', `#${sale.sale_code}`);
   fieldLabel(doc, 'Bill To', 14, y0);
   fieldLine(doc, `Customer Name: ${sale.customer?.name || 'Walk-in Customer'}`, 14, y0 + 5.5);
   fieldLine(doc, `WhatsApp: ${sale.customer?.whatsapp_number || sale.customer?.contact_number || 'N/A'}`, 14, y0 + 10.5);
@@ -308,9 +327,7 @@ export function generateDebtStatementPDF(debt, settings) {
 
   const isSettled = debt.status === 'settled';
 
-  drawHeader(doc, settings, 'Debt Statement', `#${debt.sale?.sale_code || `DEBT-${debt.id}`}`);
-
-  const y0 = 42;
+  const y0 = drawHeader(doc, settings, 'Debt Statement', `#${debt.sale?.sale_code || `DEBT-${debt.id}`}`);
   fieldLabel(doc, 'Customer Details', 14, y0);
   fieldLine(doc, `Customer Name: ${debt.customer?.name || 'Walk-in Customer'}`, 14, y0 + 5.5);
   fieldLine(doc, `WhatsApp: ${debt.customer?.whatsapp_number || debt.customer?.contact_number || 'N/A'}`, 14, y0 + 10.5);
@@ -338,7 +355,7 @@ export function generateDebtStatementPDF(debt, settings) {
 
   doc.autoTable({
     ...TABLE_STYLE_DEFAULTS,
-    startY: 70,
+    startY: y0 + 28,
     head: [['DATE', 'AMOUNT PAID', 'METHOD', 'NOTE']],
     body: tableData,
     bodyStyles: { fontSize: 8.5, textColor: BODY },
@@ -405,9 +422,7 @@ export function generateSettlementReceiptPDF(settlement, settings) {
     format: 'a4'
   });
 
-  drawHeader(doc, settings, 'Debt Settlement Receipt', `#${settlement.settlement_code}`);
-
-  const y0 = 42;
+  const y0 = drawHeader(doc, settings, 'Debt Settlement Receipt', `#${settlement.settlement_code}`);
   fieldLabel(doc, 'Customer Details', 14, y0);
   fieldLine(doc, `Customer Name: ${settlement.customer?.name || 'Walk-in Customer'}`, 14, y0 + 5.5);
   fieldLine(doc, `WhatsApp: ${settlement.customer?.whatsapp_number || settlement.customer?.contact_number || 'N/A'}`, 14, y0 + 10.5);
@@ -426,10 +441,10 @@ export function generateSettlementReceiptPDF(settlement, settings) {
   fieldLine(doc, `Payment Method: ${(settlement.payment_method || 'cash').replace('_', ' ').toUpperCase()}`, 115, y0 + 15.5);
   fieldLine(doc, `Authorized By: ${settlement.created_by || 'System'}`, 115, y0 + 20.5);
 
-  let tableStartY = 70;
+  let tableStartY = y0 + 28;
   if (settlement.notes) {
     fieldLine(doc, `Note: ${settlement.notes}`, 115, y0 + 25.5);
-    tableStartY = 75;
+    tableStartY = y0 + 33;
   }
 
   // Summary Table of payments
@@ -509,16 +524,16 @@ export function generateReportPDF(reportTitle, dateStr, salesData, summaryData, 
     format: 'a4'
   });
 
-  drawHeader(doc, settings, reportTitle, dateStr);
+  const y0 = drawHeader(doc, settings, reportTitle, dateStr);
 
-  let tableStartY = 46;
+  let tableStartY = y0 + 4;
 
   // Summary Strip — 4-stat card, matching the on-screen preview. Gated the
   // same way that preview hides it for Debtors/Customer Details reports,
   // where these figures (cash vs debt split, outstanding credit) don't
   // apply cleanly.
   if (showFinancialSummary) {
-    const cardY = 42;
+    const cardY = y0;
     doc.setDrawColor(BORDER[0], BORDER[1], BORDER[2]);
     doc.setFillColor(CARD_BG[0], CARD_BG[1], CARD_BG[2]);
     doc.setLineWidth(0.4);
@@ -601,18 +616,12 @@ export function generateReportPDF(reportTitle, dateStr, salesData, summaryData, 
           data.cell.styles.halign = colStyle.halign;
         }
       }
+      // Type/Billing columns: plain bold colored text (no pill background)
       if (data.section === 'body' && (data.column.index === 3 || data.column.index === 6)) {
-        data.cell.text = [''];
-      }
-    },
-    didDrawCell: (data) => {
-      if (data.section !== 'body') return;
-      if (data.column.index === 3 || data.column.index === 6) {
         const raw = tableRows[data.row.index][data.column.index];
-        const [bg, fg] = badgeColor(raw);
-        const cx = data.cell.x + data.cell.width / 2;
-        const cy = data.cell.y + data.cell.height / 2;
-        drawPill(doc, raw, cx, cy, bg, fg, 6.5);
+        const [, fg] = badgeColor(raw);
+        data.cell.styles.textColor = fg;
+        data.cell.styles.fontStyle = 'bold';
       }
     }
   });
@@ -657,9 +666,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   const dateLabel = reportData.reportDateFrom === reportData.reportDateTo
     ? reportData.reportDateFrom
     : `${reportData.reportDateFrom} to ${reportData.reportDateTo}`;
-  drawHeader(doc, settings, 'Daily Manager Report', dateLabel);
-
-  let currentY = 42;
+  let currentY = drawHeader(doc, settings, 'Daily Manager Report', dateLabel);
 
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(8.5);
