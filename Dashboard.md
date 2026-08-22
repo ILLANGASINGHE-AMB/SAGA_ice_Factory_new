@@ -1,41 +1,36 @@
 ## DASHBOARD Changes ##
 
-# Card Elements #
+# Top Bar Structure Change #
 
-Remove current card elements from the dash board and replace them with these card elements,
+# Overview of the Dashboard Top Bar #
 
-In row 1:-
-Sold Today:
-(Production Cubes Sold Today + Resell Cubes Sold Today)
+------------------------------------------------------------------------
+Dashboard   |Global Search Bar|     |recent actions button icon| |Trash button icon | |Settings Page as Gear icon| |Theme selector icon| |User Profile Icon| |logout icon|
 
-Production Cubes
-(Total Production Cubes in Inventory)
+------------------------------------------------------------------------
 
-Resell Cubes
-(Total Resell Cubes in Inventory)
+all should be in horizontally placed next to each other,
 
-Total Cubes
-(Total Production Cubes in Inventory +Total Resell Cubes in Inventory )
+# Recent Actions: 
+This is a new feature and page, this saves every action done in the system and saves who performed it,
+on date and at time
 
-In row 2:-
-Monthley Revenue
-(Total Sales this Month (Cash Sales + Debt Sales))
+All events are saved here
 
-Total Revenue
-(Total Cash Sales + Debt Sales from start to now)
+Date and Time| Action performed| By whom it was performed|
 
-Monthly Cash Flow
-(Total Cash Bills + Total Debt Settled)
+if action accosiated with sales, customers, debts, expenses or anything use their IDs for quick identification
 
-Total Debts
-(Total of all Debt Bills (not settled))
+# Trash 
+This is a new feature and page
+If I delete anything in the system, this saves that deleetd thing for 7 days and peremenetly deletes it,
 
-================================================
-Change Weekly Cube Production Sales Bar Graph to Monthly Cube Production Sales Bar Graph (Last 30 days untill now correctly by day by day)
+can recover deleetd items within 7 days of deleted
 
-y axis = amount
-x axis = days
+Remove Settings Tab from navigation menu, set it to top bar,
+Remove Logout button from navigation bar, set it as in Dashboard top bar placement
 
-================================================
-change Sales Distribution Pie Chart to Sales Distribution (Monthly)
+
+
+
 

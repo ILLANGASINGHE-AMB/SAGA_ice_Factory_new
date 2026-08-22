@@ -1,13 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-
-const toLocalDateStr = (d) => {
-  const dt = new Date(d);
-  const year = dt.getFullYear();
-  const month = String(dt.getMonth() + 1).padStart(2, '0');
-  const day = String(dt.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
+import { computeCashBankBalances } from '../utils/cashBankMath';
 
 // Cash & Bank Management runs as a live running ledger (not day-scoped like
 // the old daily_manager_reports JSONB blobs) — every card total is a
@@ -75,76 +68,26 @@ export function useCashBank() {
     };
   }, []);
 
-  const cashSalesTotal = useMemo(
-    () => sales.reduce((sum, s) => sum + (Number(s.total_amount) || 0), 0),
-    [sales]
-  );
-
-  const debtSettlementsTotal = useMemo(
-    () => settlements.reduce((sum, s) => sum + (Number(s.amount_paid) || 0), 0),
-    [settlements]
-  );
-
-  const cashReceivesTotal = useMemo(
-    () => cashReceives.reduce((sum, r) => sum + (Number(r.amount) || 0), 0),
-    [cashReceives]
-  );
-
-  // Only cash physically banked (sales/other cash) leaves the till — a
-  // "cheques already deposited" bank deposit never touched cash on hand.
-  const cashDepositedTotal = useMemo(
-    () => bankDeposits
-      .filter(d => d.cash_method !== 'cheques')
-      .reduce((sum, d) => sum + (Number(d.amount) || 0), 0),
-    [bankDeposits]
-  );
-
-  const bankDepositsTotal = useMemo(
-    () => bankDeposits.reduce((sum, d) => sum + (Number(d.amount) || 0), 0),
-    [bankDeposits]
-  );
-
-  const bankWithdrawalsTotal = useMemo(
-    () => bankWithdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0),
-    [bankWithdrawals]
-  );
-
-  const chequesPending = useMemo(
-    () => chequeRecords.filter(c => c.status === 'pending'),
-    [chequeRecords]
-  );
-
-  const chequesPendingTotal = useMemo(
-    () => chequesPending.reduce((sum, c) => sum + (Number(c.amount) || 0), 0),
-    [chequesPending]
-  );
-
-  // A Section 02 deposit made via the per-cheque "Deposit" button is already
-  // linked to that cheque_records row (deposit_id), so it's already reflected
-  // by chequesPendingTotal excluding that now-deposited cheque. A deposit made
-  // instead through the general Section 02 form with method 'cheques' has no
-  // linked cheque record — it still represents cheques-on-hand being banked,
-  // so it must reduce the Hand Cheques card by that amount directly.
-  const linkedChequeDepositIds = useMemo(
-    () => new Set(chequeRecords.filter(c => c.deposit_id != null).map(c => c.deposit_id)),
-    [chequeRecords]
-  );
-
-  const unlinkedChequeDepositsTotal = useMemo(
-    () => bankDeposits
-      .filter(d => d.cash_method === 'cheques' && !linkedChequeDepositIds.has(d.id))
-      .reduce((sum, d) => sum + (Number(d.amount) || 0), 0),
-    [bankDeposits, linkedChequeDepositIds]
-  );
-
-  const handChequesTotal = useMemo(
-    () => Math.max(0, chequesPendingTotal - unlinkedChequeDepositsTotal),
-    [chequesPendingTotal, unlinkedChequeDepositsTotal]
-  );
-
-  const cashBalance = useMemo(
-    () => Math.max(0, cashSalesTotal + debtSettlementsTotal + cashReceivesTotal - cashDepositedTotal),
-    [cashSalesTotal, debtSettlementsTotal, cashReceivesTotal, cashDepositedTotal]
+  const {
+    cashSalesTotal,
+    debtSettlementsTotal,
+    bankDepositsTotal,
+    bankWithdrawalsTotal,
+    chequesPending,
+    chequesPendingTotal,
+    handChequesTotal,
+    cashBalance,
+    bankBalance
+  } = useMemo(
+    () => computeCashBankBalances({
+      cashSalesRows: sales,
+      settlementRows: settlements,
+      cashReceives,
+      bankDeposits,
+      chequeRecords,
+      bankWithdrawals
+    }),
+    [sales, settlements, cashReceives, bankDeposits, chequeRecords, bankWithdrawals]
   );
 
   // Combined, normalized audit trail across all 4 ledgers — every entry ever
@@ -210,11 +153,6 @@ export function useCashBank() {
     return entries.sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt));
   }, [cashReceives, bankDeposits, chequeRecords, bankWithdrawals]);
 
-  const bankBalance = useMemo(
-    () => bankDepositsTotal - bankWithdrawalsTotal,
-    [bankDepositsTotal, bankWithdrawalsTotal]
-  );
-
   // Per-bank available balance, used to populate & validate Section 04's
   // "Select Bank to Withdraw From" — a withdrawal can't exceed what was
   // actually deposited (minus already withdrawn) under that bank name.
@@ -232,34 +170,6 @@ export function useCashBank() {
       .map(([bankName, balance]) => ({ bankName, balance }))
       .sort((a, b) => b.balance - a.balance);
   }, [bankDeposits, bankWithdrawals]);
-
-  const todayStr = toLocalDateStr(new Date());
-  const bankDepositedToday = useMemo(
-    () => bankDeposits.filter(d => toLocalDateStr(d.deposited_at) === todayStr).reduce((sum, d) => sum + (Number(d.amount) || 0), 0),
-    [bankDeposits, todayStr]
-  );
-  const cashDepositedToday = useMemo(
-    () => bankDeposits.filter(d => d.cash_method !== 'cheques' && toLocalDateStr(d.deposited_at) === todayStr).reduce((sum, d) => sum + (Number(d.amount) || 0), 0),
-    [bankDeposits, todayStr]
-  );
-
-  // Keep the Daily Manager Report / PDF (which reads its own
-  // daily_manager_reports snapshot columns for "today") populated with
-  // sensible defaults, without touching that page's own independent save flow.
-  useEffect(() => {
-    if (isLoading) return;
-    supabase.from('daily_manager_reports').upsert({
-      report_date: todayStr,
-      cash_on_hand: cashBalance,
-      cash_on_hand_confirmed: true,
-      bank_deposit_amount: bankBalance,
-      bank_deposit_today: bankDepositedToday,
-      cash_deposited_today: cashDepositedToday,
-      cheques_on_hand: handChequesTotal
-    }, { onConflict: 'report_date' }).then(({ error }) => {
-      if (error) console.warn("Failed to sync Cash & Bank snapshot to daily_manager_reports:", error.message);
-    });
-  }, [isLoading, todayStr, cashBalance, bankBalance, bankDepositedToday, cashDepositedToday, handChequesTotal]);
 
   const addCashReceive = async ({ amount, receiveType, receivedAt, createdBy }) => {
     const amt = parseFloat(amount);
@@ -282,6 +192,14 @@ export function useCashBank() {
     if (cashMethod !== 'cheques' && amt > cashBalance) {
       throw new Error(`Deposit cannot exceed current Cash Balance (LKR ${cashBalance.toLocaleString()}).`);
     }
+    // An unlinked "cheques" deposit isn't tied to one specific cheque_records
+    // row, so nothing else stops it from claiming more than is actually on
+    // hand — without this check, handChequesTotal's Math.max(0, ...) floor
+    // would silently absorb the over-claim while Bank Balance still grew by
+    // the full amount, creating money from nothing.
+    if (cashMethod === 'cheques' && amt > handChequesTotal) {
+      throw new Error(`Deposit cannot exceed current Hand Cheques balance (LKR ${handChequesTotal.toLocaleString()}).`);
+    }
 
     const { error } = await supabase.from('bank_deposits').insert([{
       amount: amt,
@@ -293,6 +211,17 @@ export function useCashBank() {
   };
 
   const deleteBankDeposit = async (id) => {
+    // If this deposit was created by depositing a specific cheque, reverse
+    // that cheque back to "pending" first. The FK's `on delete set null`
+    // would otherwise clear deposit_id but leave status stuck at
+    // 'deposited' — the money would then vanish from both Bank Balance (the
+    // deposit is gone) and Hand Cheques (the cheque never returns to pending).
+    const { error: revertErr } = await supabase
+      .from('cheque_records')
+      .update({ status: 'pending', deposited_at: null, deposit_id: null })
+      .eq('deposit_id', id);
+    if (revertErr) throw new Error(revertErr.message || "Failed to reverse the linked cheque record");
+
     const { error } = await supabase.from('bank_deposits').delete().eq('id', id);
     if (error) throw new Error(error.message || "Failed to delete deposit record");
   };

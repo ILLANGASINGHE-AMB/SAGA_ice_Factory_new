@@ -35,10 +35,6 @@ export function DailyManagerReportView() {
   const [freeIssue, setFreeIssue] = useState(0);
   const [damagedCubes, setDamagedCubes] = useState(0);
   const [otherReceipts, setOtherReceipts] = useState(0);
-  const [bankDepositAmount, setBankDepositAmount] = useState(0);
-  const [bankDepositToday, setBankDepositToday] = useState(0);
-  const [cashOnHand, setCashOnHand] = useState(0);
-  const [chequesOnHand, setChequesOnHand] = useState(0);
   const [otherDetails, setOtherDetails] = useState('');
   const [verifiedBy, setVerifiedBy] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -48,14 +44,10 @@ export function DailyManagerReportView() {
       setFreeIssue(manualInputs.freeIssue || 0);
       setDamagedCubes(manualInputs.damagedCubes || 0);
       setOtherReceipts(manualInputs.otherReceipts || 0);
-      setBankDepositAmount(reportData?.cashDetails?.bankDepositAmount ?? manualInputs.bankDepositAmount ?? 0);
-      setBankDepositToday(reportData?.cashDetails?.bankDepositToday ?? manualInputs.bankDepositToday ?? 0);
-      setCashOnHand(reportData?.cashDetails?.cashOnHand ?? manualInputs.cashOnHand ?? 0);
-      setChequesOnHand(reportData?.cashDetails?.chequesOnHand ?? manualInputs.chequesOnHand ?? 0);
       setOtherDetails(manualInputs.otherDetails || '');
       setVerifiedBy(manualInputs.verifiedBy || '');
     }
-  }, [manualInputs, fromDate, toDate, reportData]);
+  }, [manualInputs, fromDate, toDate]);
 
   // Handle Save
   const handleSave = async () => {
@@ -65,10 +57,6 @@ export function DailyManagerReportView() {
         freeIssue: Number(freeIssue) || 0,
         damagedCubes: Number(damagedCubes) || 0,
         otherReceipts: Number(otherReceipts) || 0,
-        bankDepositAmount: Number(bankDepositAmount) || 0,
-        bankDepositToday: Number(bankDepositToday) || 0,
-        cashOnHand: Number(cashOnHand) || 0,
-        chequesOnHand: Number(chequesOnHand) || 0,
         otherDetails,
         verifiedBy
       });
@@ -474,7 +462,9 @@ export function DailyManagerReportView() {
               )}
             </div>
 
-            {/* 06. Bank Deposit Details (1 col) */}
+            {/* 06. Bank Deposit Details (1 col) — fully derived from the real
+                Cash & Bank ledger (Cash Balance / Bank Balance / Hand
+                Cheques are three separate stores of value, never summed) */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                 <div className="flex items-center space-x-2 font-heading font-bold text-sm text-slate-800 dark:text-slate-100">
@@ -482,54 +472,44 @@ export function DailyManagerReportView() {
                   <span>06. BANK DEPOSIT DETAILS</span>
                 </div>
                 <span className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 font-bold px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
-                  Auto-filled
+                  Live from Cash & Bank
                 </span>
               </div>
 
               <div className="space-y-3 text-xs">
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
-                    Amount Deposited (LKR)
-                  </label>
-                  <input
-                    type="number"
-                    value={bankDepositAmount}
-                    onChange={(e) => setBankDepositAmount(e.target.value)}
-                    placeholder="0.00"
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 font-bold text-slate-800 dark:text-slate-100 focus:outline-none"
-                  />
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block">
+                    Amount Deposited ({dateRangeLabel})
+                  </span>
+                  <span className="text-sm font-bold text-slate-800 dark:text-slate-100 block mt-0.5">
+                    LKR {reportData.cashDetails.amountDeposited.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
                 </div>
 
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
-                    Cash in Hand (after deposit) (LKR)
-                  </label>
-                  <input
-                    type="number"
-                    value={cashOnHand}
-                    onChange={(e) => setCashOnHand(e.target.value)}
-                    placeholder="0.00"
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 font-bold text-slate-800 dark:text-slate-100 focus:outline-none"
-                  />
+                <div className="p-3 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl border border-emerald-200 dark:border-emerald-900/50">
+                  <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 block">
+                    Cash Balance (as of {toDate})
+                  </span>
+                  <span className="text-sm font-bold text-emerald-700 dark:text-emerald-400 block mt-0.5">
+                    LKR {reportData.cashDetails.cashBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
                 </div>
 
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
-                    Hand Cheque Amount (LKR)
-                  </label>
-                  <input
-                    type="number"
-                    value={chequesOnHand}
-                    onChange={(e) => setChequesOnHand(e.target.value)}
-                    placeholder="0.00"
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 font-bold text-slate-800 dark:text-slate-100 focus:outline-none"
-                  />
+                <div className="p-3 bg-sky-50/50 dark:bg-sky-950/20 rounded-xl border border-sky-200 dark:border-sky-900/50">
+                  <span className="text-[11px] font-semibold text-sky-700 dark:text-sky-400 block">
+                    Bank Balance (as of {toDate})
+                  </span>
+                  <span className="text-sm font-bold text-sky-700 dark:text-sky-400 block mt-0.5">
+                    LKR {reportData.cashDetails.bankBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
                 </div>
 
-                <div className="pt-2 mt-1 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">Total</span>
-                  <span className="text-sm font-bold text-navy-700 dark:text-sky-300">
-                    LKR {reportData.cashDetails.totalBankDeposit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                <div className="p-3 bg-amber-50/50 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-900/50">
+                  <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 block">
+                    Hand Cheque Amount (as of {toDate})
+                  </span>
+                  <span className="text-sm font-bold text-amber-700 dark:text-amber-400 block mt-0.5">
+                    LKR {reportData.cashDetails.handChequesTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span>
                 </div>
               </div>

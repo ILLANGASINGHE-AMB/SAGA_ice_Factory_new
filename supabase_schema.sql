@@ -1453,36 +1453,12 @@ create table if not exists public.daily_manager_reports (
   free_issue integer default 0,
   damaged_cubes integer default 0,
   other_receipts numeric(10, 2) default 0,
-  bank_deposit_amount numeric(10, 2) default 0,
-  bank_deposit_today numeric(10, 2) default 0,
-  cash_on_hand numeric(10, 2) default 0,
-  cheques_on_hand numeric(10, 2) default 0,
-  cheque_entries jsonb default '[]'::jsonb,
-  withdrawals jsonb default '[]'::jsonb,
   other_details text default '',
 
   verified_by text default '',
   verified_at timestamp with time zone default timezone('utc'::text, now()),
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
-
-ALTER TABLE public.daily_manager_reports ADD COLUMN IF NOT EXISTS bank_deposit_today NUMERIC(10, 2) DEFAULT 0;
-ALTER TABLE public.daily_manager_reports ADD COLUMN IF NOT EXISTS cheque_entries JSONB DEFAULT '[]'::jsonb;
-ALTER TABLE public.daily_manager_reports ADD COLUMN IF NOT EXISTS withdrawals JSONB DEFAULT '[]'::jsonb;
--- Day-scoped counter: how much of today's bank deposits came specifically
--- from physical cash (as opposed to cheques). Used only to compute the
--- suggested/default cash-on-hand figure for a day before the manager has
--- manually confirmed it — kept separate from bank_deposit_amount (the true
--- running bank balance) so a cheque deposit never wrongly reduces the
--- calculated cash balance.
-ALTER TABLE public.daily_manager_reports ADD COLUMN IF NOT EXISTS cash_deposited_today NUMERIC(10, 2) DEFAULT 0;
--- Explicit flag: has cash_on_hand actually been confirmed by a real action
--- (manual save, bank deposit, cash withdrawal) for this day, as opposed to
--- just holding the JS default of 0? Without this, a deliberately-saved
--- cash_on_hand of exactly 0 (e.g. "we banked everything, till is empty") is
--- indistinguishable from "nobody has entered anything yet" and gets silently
--- replaced by the auto-calculated suggestion.
-ALTER TABLE public.daily_manager_reports ADD COLUMN IF NOT EXISTS cash_on_hand_confirmed BOOLEAN DEFAULT false;
 
 alter table public.daily_manager_reports enable row level security;
 create policy "Allow read daily_manager_reports" on public.daily_manager_reports for select to authenticated using (true);

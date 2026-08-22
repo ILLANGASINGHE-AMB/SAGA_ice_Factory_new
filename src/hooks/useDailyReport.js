@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { computeCashBankBalances } from '../utils/cashBankMath';
 
 const PAYMENT_METHOD_LABELS = {
   cash: 'Cash',
@@ -28,23 +29,19 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
   const [expenseItems, setExpenseItems] = useState([]);
   const [expenseLedgerRows, setExpenseLedgerRows] = useState([]);
   const [expenseAmounts, setExpenseAmounts] = useState([]);
+  const [cashReceives, setCashReceives] = useState([]);
+  const [bankDeposits, setBankDeposits] = useState([]);
+  const [chequeRecords, setChequeRecords] = useState([]);
+  const [bankWithdrawals, setBankWithdrawals] = useState([]);
 
-  // Manual Input State (for manager entries & cash/bank logs) — only Free
-  // Issue and Damaged Cubes are manager-editable in Section 01; everything
-  // else there (Prev Bal, Production, Purchases, Brine, Sales, Closing Bal)
-  // is auto-calculated and read-only.
+  // Manual Input State — only Free Issue and Damaged Cubes are
+  // manager-editable in Section 01; Section 06 (Cash/Bank/Cheques) is fully
+  // derived from the real Cash & Bank ledger tables (see cashBankMath.js),
+  // never manually entered or overwritten.
   const [manualInputs, setManualInputs] = useState({
     freeIssue: 0,
     damagedCubes: 0,
     otherReceipts: 0,
-    bankDepositAmount: 0,
-    bankDepositToday: 0,
-    cashDepositedToday: 0,
-    cashOnHand: 0,
-    cashOnHandConfirmed: false,
-    chequesOnHand: 0,
-    chequeEntries: [],
-    withdrawals: [],
     otherDetails: '',
     verifiedBy: ''
   });
@@ -71,8 +68,11 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
         expenseItemsRes,
         expenseLedgerRes,
         expenseAmountsRes,
-        savedReportRes,
-        previousReportRes
+        cashReceivesRes,
+        bankDepositsRes,
+        chequeRecordsRes,
+        bankWithdrawalsRes,
+        savedReportRes
       ] = await Promise.all([
         supabase.from('sales').select('*, customer:customers(*)').then(res => res.data || []).catch(() => []),
         supabase.from('debts').select('*, customer:customers(*), sale:sales(*)').then(res => res.data || []).catch(() => []),
@@ -88,19 +88,11 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
         supabase.from('expense_items').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('expense_ledger_rows').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('expense_amounts').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('daily_manager_reports').select('*').eq('report_date', targetFromStr).maybeSingle().then(res => res.data || null).catch(() => null),
-        // Most recent PRIOR day's saved report, used to carry forward the
-        // true running cash/bank balances (closing balance -> next day's
-        // opening balance) when today has no saved report yet. Without this,
-        // a new day silently starts assuming an empty till/bank account.
-        supabase.from('daily_manager_reports')
-          .select('cash_on_hand, bank_deposit_amount, cheques_on_hand, cash_on_hand_confirmed')
-          .lt('report_date', targetFromStr)
-          .order('report_date', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-          .then(res => res.data || null)
-          .catch(() => null)
+        supabase.from('cash_receives').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('bank_deposits').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('cheque_records').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('bank_withdrawals').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('daily_manager_reports').select('*').eq('report_date', targetFromStr).maybeSingle().then(res => res.data || null).catch(() => null)
       ]);
 
       setSales(salesRes);
@@ -116,6 +108,10 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
       setExpenseItems(expenseItemsRes);
       setExpenseLedgerRows(expenseLedgerRes);
       setExpenseAmounts(expenseAmountsRes);
+      setCashReceives(cashReceivesRes);
+      setBankDeposits(bankDepositsRes);
+      setChequeRecords(chequeRecordsRes);
+      setBankWithdrawals(bankWithdrawalsRes);
 
       // Fallback to local storage if Supabase transactions empty or error
       if (!invTxnRes || invTxnRes.length === 0) {
@@ -138,50 +134,19 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
           freeIssue: savedReportRes.free_issue ?? localParsed.freeIssue ?? 0,
           damagedCubes: savedReportRes.damaged_cubes ?? localParsed.damagedCubes ?? 0,
           otherReceipts: savedReportRes.other_receipts ?? localParsed.otherReceipts ?? 0,
-          bankDepositAmount: savedReportRes.bank_deposit_amount ?? localParsed.bankDepositAmount ?? 0,
-          bankDepositToday: savedReportRes.bank_deposit_today ?? localParsed.bankDepositToday ?? 0,
-          cashDepositedToday: savedReportRes.cash_deposited_today ?? localParsed.cashDepositedToday ?? 0,
-          cashOnHand: savedReportRes.cash_on_hand ?? localParsed.cashOnHand ?? 0,
-          // Default true when the column is absent/null (pre-migration rows)
-          // so an already-saved cash_on_hand value keeps being trusted as-is
-          // rather than retroactively treated as "unconfirmed".
-          cashOnHandConfirmed: savedReportRes.cash_on_hand_confirmed ?? localParsed.cashOnHandConfirmed ?? true,
-          chequesOnHand: savedReportRes.cheques_on_hand ?? localParsed.chequesOnHand ?? 0,
-          chequeEntries: Array.isArray(savedReportRes.cheque_entries) && savedReportRes.cheque_entries.length > 0 ? savedReportRes.cheque_entries : (localParsed.chequeEntries || []),
-          withdrawals: Array.isArray(savedReportRes.withdrawals) && savedReportRes.withdrawals.length > 0 ? savedReportRes.withdrawals : (localParsed.withdrawals || []),
           otherDetails: savedReportRes.other_details || localParsed.otherDetails || '',
           verifiedBy: savedReportRes.verified_by || localParsed.verifiedBy || ''
         });
+      } else if (Object.keys(localParsed).length > 0) {
+        setManualInputs(localParsed);
       } else {
-        if (Object.keys(localParsed).length > 0) {
-          setManualInputs(localParsed);
-        } else {
-          // No saved report for this date yet (DB or local). Carry forward
-          // yesterday's (or the most recent prior day's) closing cash/bank
-          // balances as today's opening balances, instead of silently
-          // starting from zero as if the till and bank account were empty.
-          // bankDepositToday, cashDepositedToday, cheques and withdrawals
-          // are genuinely day-scoped activity and always start fresh. Only
-          // carry forward as "confirmed" if the prior day's own cash figure
-          // was itself a real confirmed entry, not just an unconfirmed
-          // auto-calculated guess that never got saved explicitly.
-          const priorConfirmed = !!previousReportRes?.cash_on_hand_confirmed;
-          setManualInputs({
-            freeIssue: 0,
-            damagedCubes: 0,
-            otherReceipts: 0,
-            bankDepositAmount: previousReportRes?.bank_deposit_amount ?? 0,
-            bankDepositToday: 0,
-            cashDepositedToday: 0,
-            cashOnHand: priorConfirmed ? (previousReportRes?.cash_on_hand ?? 0) : 0,
-            cashOnHandConfirmed: priorConfirmed,
-            chequesOnHand: previousReportRes?.cheques_on_hand ?? 0,
-            chequeEntries: [],
-            withdrawals: [],
-            otherDetails: '',
-            verifiedBy: ''
-          });
-        }
+        setManualInputs({
+          freeIssue: 0,
+          damagedCubes: 0,
+          otherReceipts: 0,
+          otherDetails: '',
+          verifiedBy: ''
+        });
       }
     } catch (err) {
       console.error("Failed to fetch daily report data:", err);
@@ -205,6 +170,10 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_attendance' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transport_trips' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_receives' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bank_deposits' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cheque_records' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bank_withdrawals' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_manager_reports' }, () => fetchData())
       .subscribe();
 
@@ -231,6 +200,18 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
     const isInDateRange = (dateStr) => {
       if (!dateStr) return false;
       return dateStr >= targetFromStr && dateStr <= targetToStr;
+    };
+
+    // Cash/Bank/Cheque balances are running totals, not period deltas — "as
+    // of this report's range end" means every ledger entry dated on or
+    // before it, same running-balance semantics as useCashBank (Final_Cash_
+    // Bank_Cheque_Logic.md). Cheque status itself has no history table, so
+    // it's always the current value; only the dated rows are filtered.
+    const isUpToRangeEnd = (dStr) => {
+      if (!dStr) return false;
+      const d = new Date(dStr);
+      if (isNaN(d.getTime())) return false;
+      return d <= toDateTime;
     };
 
     // Helper to get inventory item by type
@@ -386,19 +367,26 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
       .map((item, idx) => ({ no: idx + 1, ...item }));
     const totalExpensesAmount = expenseList.reduce((sum, item) => sum + item.amount, 0);
 
-    // Cash & Bank withdrawals summary
-    const withdrawalsList = manualInputs.withdrawals || [];
-    const cashWithdrawals = withdrawalsList.filter(w => w.source === 'cash').reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
-    const bankWithdrawals = withdrawalsList.filter(w => w.source === 'bank').reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+    // 6. Bank Deposit Details — fully derived from the real Cash & Bank
+    // ledger (cash_receives / bank_deposits / cheque_records /
+    // bank_withdrawals), using the exact same math as the Cash & Bank page
+    // (see cashBankMath.js) so the two pages can never show conflicting
+    // figures or double-count. Cash Balance, Bank Balance, and Hand Cheques
+    // are three separate stores of value — never summed into one "Total".
+    const { cashBalance, bankBalance, handChequesTotal } = computeCashBankBalances({
+      cashSalesRows: sales.filter(s => s.payment_type === 'cash' && isUpToRangeEnd(s.sale_date)),
+      settlementRows: settlements.filter(s => isUpToRangeEnd(s.settlement_date)),
+      cashReceives: cashReceives.filter(r => isUpToRangeEnd(r.received_at)),
+      bankDeposits: bankDeposits.filter(d => isUpToRangeEnd(d.deposited_at)),
+      chequeRecords: chequeRecords.filter(c => isUpToRangeEnd(c.received_at)),
+      bankWithdrawals: bankWithdrawals.filter(w => isUpToRangeEnd(w.withdrawn_at))
+    });
 
-    // Cheques summary
-    const chequeList = manualInputs.chequeEntries || [];
-    const totalChequesValue = chequeList.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
-
-    const bankDepositAmount = Number(manualInputs.bankDepositAmount) || 0;
-    const cashOnHand = Number(manualInputs.cashOnHand) || 0;
-    const chequesOnHand = Number(manualInputs.chequesOnHand) || totalChequesValue;
-    const totalBankDeposit = bankDepositAmount + cashOnHand + chequesOnHand;
+    // "Amount Deposited" is a period metric (activity during the selected
+    // range), unlike the three running balances above.
+    const amountDeposited = bankDeposits
+      .filter(d => isInRange(d.deposited_at))
+      .reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
 
     // 7. Employee Details — real attendance history, not manual entry
     const employeeById = new Map(employees.map(e => [e.id, e]));
@@ -476,17 +464,10 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
       expenseList,
       totalExpensesAmount,
       cashDetails: {
-        bankDepositAmount,
-        bankDepositToday: Number(manualInputs.bankDepositToday) || 0,
-        cashDepositedToday: Number(manualInputs.cashDepositedToday) || 0,
-        cashOnHand,
-        cashOnHandConfirmed: !!manualInputs.cashOnHandConfirmed,
-        chequesOnHand,
-        totalBankDeposit,
-        cashWithdrawals,
-        bankWithdrawals,
-        chequeEntries: chequeList,
-        withdrawals: withdrawalsList
+        amountDeposited,
+        cashBalance,
+        bankBalance,
+        handChequesTotal
       },
       employeeAttendanceList,
       vehicleTripList,
@@ -495,7 +476,7 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
       otherDetails: manualInputs.otherDetails || '',
       verifiedBy: manualInputs.verifiedBy || ''
     };
-  }, [targetFromStr, targetToStr, fromTime, toTime, sales, debts, settlements, customers, inventory, invTransactions, employees, attendance, transportTrips, notes, expenseCategories, expenseItems, expenseLedgerRows, expenseAmounts, manualInputs]);
+  }, [targetFromStr, targetToStr, fromTime, toTime, sales, debts, settlements, customers, inventory, invTransactions, employees, attendance, transportTrips, notes, expenseCategories, expenseItems, expenseLedgerRows, expenseAmounts, cashReceives, bankDeposits, chequeRecords, bankWithdrawals, manualInputs]);
 
   // Save manual updates with safe column handling
   const saveDailyReport = async (updatedInputs) => {
@@ -514,14 +495,6 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
       free_issue: Number(payload.freeIssue) || 0,
       damaged_cubes: Number(payload.damagedCubes) || 0,
       other_receipts: Number(payload.otherReceipts) || 0,
-      bank_deposit_amount: Number(payload.bankDepositAmount) || 0,
-      bank_deposit_today: Number(payload.bankDepositToday) || 0,
-      cash_deposited_today: Number(payload.cashDepositedToday) || 0,
-      cash_on_hand: Number(payload.cashOnHand) || 0,
-      cash_on_hand_confirmed: !!payload.cashOnHandConfirmed,
-      cheques_on_hand: Number(payload.chequesOnHand) || 0,
-      cheque_entries: payload.chequeEntries || [],
-      withdrawals: payload.withdrawals || [],
       other_details: payload.otherDetails || '',
       verified_by: payload.verifiedBy || '',
       verified_at: new Date().toISOString()
@@ -535,28 +508,7 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
         .single();
 
       if (error) {
-        console.warn("Supabase upsert daily report warning (trying basic payload):", error.message);
-        // Fallback without new jsonb columns if they don't exist yet on DB
-        const basicPayload = {
-          report_date: targetFromStr,
-          free_issue: Number(payload.freeIssue) || 0,
-          damaged_cubes: Number(payload.damagedCubes) || 0,
-          other_receipts: Number(payload.otherReceipts) || 0,
-          bank_deposit_amount: Number(payload.bankDepositAmount) || 0,
-          bank_deposit_today: Number(payload.bankDepositToday) || 0,
-          cash_deposited_today: Number(payload.cashDepositedToday) || 0,
-          cash_on_hand: Number(payload.cashOnHand) || 0,
-          cash_on_hand_confirmed: !!payload.cashOnHandConfirmed,
-          cheques_on_hand: Number(payload.chequesOnHand) || 0,
-          other_details: payload.otherDetails || '',
-          verified_by: payload.verifiedBy || ''
-        };
-        const { data: bData } = await supabase
-          .from('daily_manager_reports')
-          .upsert(basicPayload, { onConflict: 'report_date' })
-          .select('*')
-          .single();
-        if (bData) setSavedRecord(bData);
+        console.warn("Supabase upsert daily report error:", error.message);
       } else if (data) {
         setSavedRecord(data);
       }

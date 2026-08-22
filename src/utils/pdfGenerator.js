@@ -743,21 +743,23 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   doc.setFontSize(10);
   doc.text('06. BANK DEPOSIT DETAILS', 14, currentY);
 
+  // Cash Balance, Bank Balance, and Hand Cheques are three separate stores
+  // of value (Final_Cash_Bank_Cheque_Logic.md) — no combined "Total" row,
+  // since summing them would double-count the same money.
   const cashData = reportData.cashDetails;
   doc.autoTable({
     startY: currentY + 3,
-    head: [['Amount Deposited', 'Cash in Hand (after deposit)', 'Hand Cheque Amount']],
+    head: [['Amount Deposited', 'Cash Balance', 'Bank Balance', 'Hand Cheque Amount']],
     body: [[
-      `LKR ${(cashData?.bankDepositAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
-      `LKR ${(cashData?.cashOnHand || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
-      `LKR ${(cashData?.chequesOnHand || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+      `LKR ${(cashData?.amountDeposited || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+      `LKR ${(cashData?.cashBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+      `LKR ${(cashData?.bankBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+      `LKR ${(cashData?.handChequesTotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
     ]],
     theme: 'grid',
     headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 7.5, halign: 'center' },
     bodyStyles: { fontSize: 8, textColor: [51, 65, 85], halign: 'center' },
-    margin: { left: 14, right: 14 },
-    foot: [['Total:', `LKR ${(cashData?.totalBankDeposit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, '']],
-    footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7.5, halign: 'center' }
+    margin: { left: 14, right: 14 }
   });
 
   currentY = doc.lastAutoTable.finalY + 8;
