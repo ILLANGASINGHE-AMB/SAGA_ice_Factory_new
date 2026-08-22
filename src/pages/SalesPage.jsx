@@ -124,8 +124,8 @@ export function SalesPage() {
   // advances past customer selection so it always reflects the chosen
   // customer, but stored on the row afterwards so an admin's manual edit
   // sticks instead of being overwritten on every keystroke.
-  const resolveDefaultRate = (cubeType) => {
-    const cid = Number(customerId);
+  const resolveDefaultRate = (cubeType, custIdOverride) => {
+    const cid = Number(custIdOverride !== undefined ? custIdOverride : customerId);
     if (cid) {
       const custom = customerPrices.find(p => Number(p.customer_id) === cid && p.cube_type === cubeType);
       if (custom && Number(custom.price_per_cube) > 0) return Number(custom.price_per_cube);
@@ -188,10 +188,14 @@ export function SalesPage() {
     }, 0);
   }, [orderRows]);
 
-  // Handle customer selection
+  // Handle customer selection — touch flow: tapping a result both selects it
+  // and carries the wizard straight to Order Details, no separate Next tap.
   const selectCustomer = (cust) => {
     setCustomerId(cust.id);
     setCustomerSearchQuery(cust.name);
+    setCustomerFieldFocused(false);
+    setOrderRows(rows => rows.map(r => ({ ...r, pricePerCube: resolveDefaultRate(r.cubeType, cust.id) })));
+    setTimeout(() => setStep(3), 180);
   };
 
   // Wizard Navigation
@@ -199,20 +203,19 @@ export function SalesPage() {
     if (step === 1) {
       setStep(2);
     } else if (step === 2) {
-      // Validate customer selection
-      if (!customerId && !showMiniCustomerForm) {
+      // Reached only via the mini registration form — picking an existing
+      // customer auto-advances from selectCustomer() above instead.
+      if (!showMiniCustomerForm) {
         toast.error("Please search and select a customer, or toggle the registration form.");
         return;
       }
-      if (showMiniCustomerForm) {
-        if (!newCustName || newCustName.trim().length < 2) {
-          toast.error("Please enter a valid customer name (min 2 chars)");
-          return;
-        }
-        if (!newCustPhone || !/^0\d{9}$/.test(newCustPhone)) {
-          toast.error("Please enter a valid 10-digit WhatsApp number starting with 0 (e.g. 0771234567)");
-          return;
-        }
+      if (!newCustName || newCustName.trim().length < 2) {
+        toast.error("Please enter a valid customer name (min 2 chars)");
+        return;
+      }
+      if (!newCustPhone || !/^0\d{9}$/.test(newCustPhone)) {
+        toast.error("Please enter a valid 10-digit WhatsApp number starting with 0 (e.g. 0771234567)");
+        return;
       }
       // Resolve each row's rate now that the customer is known: their custom
       // price if set, otherwise the inventory default.
@@ -817,13 +820,13 @@ ${billURL}`;
         {step === 1 && (
           <div className="space-y-3 py-1">
             <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
-              Select the payment terms for this factory cube order:
+              Tap the payment terms for this factory cube order to continue:
             </p>
             <div className="grid grid-cols-2 gap-3 sm:gap-4">
               <button
                 type="button"
-                onClick={() => setPaymentType('cash')}
-                className={`p-4 sm:p-5 rounded-2xl border text-center transition flex flex-col items-center justify-center space-y-1.5 cursor-pointer ${
+                onClick={() => { setPaymentType('cash'); setTimeout(() => setStep(2), 180); }}
+                className={`p-4 sm:p-5 rounded-2xl border text-center transition flex flex-col items-center justify-center space-y-1.5 cursor-pointer active:scale-[0.97] ${
                   paymentType === 'cash'
                     ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 shadow-sm'
                     : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50/50 dark:hover:bg-slate-800/10'
@@ -835,11 +838,11 @@ ${billURL}`;
                 <span className="font-semibold text-xs sm:text-sm">Cash Sales</span>
                 <span className="text-[10px] opacity-80">Immediate full payment</span>
               </button>
-              
+
               <button
                 type="button"
-                onClick={() => setPaymentType('debt')}
-                className={`p-4 sm:p-5 rounded-2xl border text-center transition flex flex-col items-center justify-center space-y-1.5 cursor-pointer ${
+                onClick={() => { setPaymentType('debt'); setTimeout(() => setStep(2), 180); }}
+                className={`p-4 sm:p-5 rounded-2xl border text-center transition flex flex-col items-center justify-center space-y-1.5 cursor-pointer active:scale-[0.97] ${
                   paymentType === 'debt'
                     ? 'border-rose-500 bg-rose-50/50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 shadow-sm'
                     : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50/50 dark:hover:bg-slate-800/10'
@@ -861,7 +864,7 @@ ${billURL}`;
             {!showMiniCustomerForm ? (
               <>
                 <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
-                  Search existing registry or register new client:
+                  Search the registry and tap a result to continue, or register a new client:
                 </p>
                 <div className="relative">
                   <Input
@@ -1117,29 +1120,32 @@ ${billURL}`;
           </div>
         )}
 
-        {/* Wizard Footer Controls */}
-        <div className="flex justify-between items-center mt-4 border-t border-slate-100 dark:border-slate-800 pt-3">
-          {step > 1 ? (
+        {/* Wizard Footer Controls — hidden on step 1 since tapping a payment
+            card advances automatically; there is nothing left to confirm. */}
+        {step > 1 && (
+          <div className="flex justify-between items-center mt-4 border-t border-slate-100 dark:border-slate-800 pt-3">
             <Button variant="secondary" onClick={prevStep} disabled={actionLoading} className="flex items-center space-x-1">
               <ArrowLeft size={14} />
               <span>Back</span>
             </Button>
-          ) : (
-            <div /> // Spacer
-          )}
 
-          {step < 4 ? (
-            <Button variant="primary" onClick={nextStep} className="flex items-center space-x-1">
-              <span>Next</span>
-              <ArrowRight size={14} />
-            </Button>
-          ) : (
-            <Button variant="primary" onClick={handlePlaceOrder} isLoading={actionLoading} className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700">
-              <Check size={16} />
-              <span>Complete Order</span>
-            </Button>
-          )}
-        </div>
+            {step === 2 && !showMiniCustomerForm ? (
+              // Tapping a customer result auto-advances (selectCustomer); no
+              // manual Next needed unless the operator is registering new.
+              <div />
+            ) : step < 4 ? (
+              <Button variant="primary" onClick={nextStep} className="flex items-center space-x-1">
+                <span>Next</span>
+                <ArrowRight size={14} />
+              </Button>
+            ) : (
+              <Button variant="primary" onClick={handlePlaceOrder} isLoading={actionLoading} className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700">
+                <Check size={16} />
+                <span>Complete Order</span>
+              </Button>
+            )}
+          </div>
+        )}
       </Modal>
 
 
