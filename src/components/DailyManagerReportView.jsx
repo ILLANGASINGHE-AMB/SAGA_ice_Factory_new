@@ -30,11 +30,10 @@ export function DailyManagerReportView() {
   const { settings } = useSettings();
   const toast = useToast();
 
-  // Local form state synced with manualInputs
-  const [brineCubes, setBrineCubes] = useState(0);
+  // Local form state synced with manualInputs — only Free Issue and Damaged
+  // Cubes are manager-editable in Section 01; the rest there is read-only.
   const [freeIssue, setFreeIssue] = useState(0);
   const [damagedCubes, setDamagedCubes] = useState(0);
-  const [pmProductionQty, setPmProductionQty] = useState(0);
   const [otherReceipts, setOtherReceipts] = useState(0);
   const [bankDepositAmount, setBankDepositAmount] = useState(0);
   const [bankDepositToday, setBankDepositToday] = useState(0);
@@ -46,10 +45,8 @@ export function DailyManagerReportView() {
 
   useEffect(() => {
     if (manualInputs) {
-      setBrineCubes(manualInputs.brineCubes || reportData?.stockDetails?.brineCubes || 0);
       setFreeIssue(manualInputs.freeIssue || 0);
       setDamagedCubes(manualInputs.damagedCubes || 0);
-      setPmProductionQty(manualInputs.pmProductionQty || 0);
       setOtherReceipts(manualInputs.otherReceipts || 0);
       setBankDepositAmount(reportData?.cashDetails?.bankDepositAmount ?? manualInputs.bankDepositAmount ?? 0);
       setBankDepositToday(reportData?.cashDetails?.bankDepositToday ?? manualInputs.bankDepositToday ?? 0);
@@ -65,11 +62,8 @@ export function DailyManagerReportView() {
     try {
       setIsSaving(true);
       await saveDailyReport({
-        brineCubes: Number(brineCubes) || 0,
-        brineCubesConfirmed: true,
         freeIssue: Number(freeIssue) || 0,
         damagedCubes: Number(damagedCubes) || 0,
-        pmProductionQty: Number(pmProductionQty) || 0,
         otherReceipts: Number(otherReceipts) || 0,
         bankDepositAmount: Number(bankDepositAmount) || 0,
         bankDepositToday: Number(bankDepositToday) || 0,
@@ -215,14 +209,11 @@ export function DailyManagerReportView() {
                   </p>
                 </div>
 
-                <div className="bg-amber-50/50 dark:bg-amber-950/20 p-2 rounded-xl border border-amber-200 dark:border-amber-900/50">
-                  <label className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold uppercase block truncate">Brine</label>
-                  <input
-                    type="number"
-                    value={brineCubes}
-                    onChange={(e) => setBrineCubes(e.target.value)}
-                    className="w-full mt-0.5 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
-                  />
+                <div className="bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                  <span className="text-[10px] text-amber-600 font-semibold uppercase block truncate">Brine</span>
+                  <p className="font-bold text-xs sm:text-sm text-amber-600 dark:text-amber-400 mt-0.5 truncate">
+                    +{reportData.stockDetails.brineCubes.toLocaleString()}
+                  </p>
                 </div>
 
                 <div className="bg-amber-50/50 dark:bg-amber-950/20 p-2 rounded-xl border border-amber-200 dark:border-amber-900/50">
@@ -260,19 +251,8 @@ export function DailyManagerReportView() {
                 </div>
               </div>
 
-              <div className="pt-2 flex flex-wrap items-center gap-3">
-                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">PM Production Quantity:</span>
-                <input
-                  type="number"
-                  value={pmProductionQty}
-                  onChange={(e) => setPmProductionQty(e.target.value)}
-                  placeholder="Enter PM batch quantity..."
-                  className="w-48 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-medium focus:outline-none min-h-[36px]"
-                />
-              </div>
-
               {/* No of Cubes Sent to Branch — one line per branch saved in Settings, plus a total */}
-              <div className="pt-1 space-y-1">
+              <div className="pt-2 space-y-1">
                 <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">No of Cubes Sent to Branch:</span>
                 {reportData.stockDetails.branchSalesList.length === 0 ? (
                   <p className="text-xs text-slate-400">No cubes sent to any branch for {dateRangeLabel}.</p>
@@ -631,10 +611,10 @@ export function DailyManagerReportView() {
                         <td className="py-2 font-mono text-slate-400">{trip.no}</td>
                         <td className="py-2 font-mono">{trip.tripId}</td>
                         <td className="py-2 text-slate-500">{trip.date}</td>
-                        <td className="py-2 font-medium">{trip.description || (trip.vehicleNo ? `Vehicle ${trip.vehicleNo}` : '-')}</td>
+                        <td className="py-2 font-medium">{trip.description || '-'}</td>
                         <td className="py-2 text-right font-mono">{trip.startKm.toLocaleString()}</td>
-                        <td className="py-2 text-right font-mono">{trip.endKm.toLocaleString()}</td>
-                        <td className="py-2 text-right font-bold">{trip.distance.toLocaleString()} km</td>
+                        <td className="py-2 text-right font-mono">{trip.endKm !== null ? trip.endKm.toLocaleString() : '-'}</td>
+                        <td className="py-2 text-right font-bold">{trip.distance !== null ? `${trip.distance.toLocaleString()} km` : '-'}</td>
                       </tr>
                     ))}
                   </tbody>

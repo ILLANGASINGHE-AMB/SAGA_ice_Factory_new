@@ -22,21 +22,20 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
   const [invTransactions, setInvTransactions] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [attendance, setAttendance] = useState([]);
-  const [vehicles, setVehicles] = useState([]);
-  const [trips, setTrips] = useState([]);
+  const [transportTrips, setTransportTrips] = useState([]);
   const [notes, setNotes] = useState([]);
   const [expenseCategories, setExpenseCategories] = useState([]);
   const [expenseItems, setExpenseItems] = useState([]);
   const [expenseLedgerRows, setExpenseLedgerRows] = useState([]);
   const [expenseAmounts, setExpenseAmounts] = useState([]);
 
-  // Manual Input State (for manager entries & cash/bank logs)
+  // Manual Input State (for manager entries & cash/bank logs) — only Free
+  // Issue and Damaged Cubes are manager-editable in Section 01; everything
+  // else there (Prev Bal, Production, Purchases, Brine, Sales, Closing Bal)
+  // is auto-calculated and read-only.
   const [manualInputs, setManualInputs] = useState({
-    brineCubes: 0,
-    brineCubesConfirmed: false,
     freeIssue: 0,
     damagedCubes: 0,
-    pmProductionQty: 0,
     otherReceipts: 0,
     bankDepositAmount: 0,
     bankDepositToday: 0,
@@ -66,8 +65,7 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
         invTxnRes,
         employeesRes,
         attendanceRes,
-        vehiclesRes,
-        tripsRes,
+        transportTripsRes,
         notesRes,
         expenseCategoriesRes,
         expenseItemsRes,
@@ -84,8 +82,7 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
         supabase.from('inventory_transactions').select('*, inventory(*)').then(res => res.data || []).catch(() => []),
         supabase.from('employees').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('employee_attendance').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('vehicles').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('vehicle_trips').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('transport_trips').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('notes').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('expense_categories').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('expense_items').select('*').then(res => res.data || []).catch(() => []),
@@ -113,8 +110,7 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
       setInventory(inventoryRes);
       setEmployees(employeesRes);
       setAttendance(attendanceRes);
-      setVehicles(vehiclesRes);
-      setTrips(tripsRes);
+      setTransportTrips(transportTripsRes);
       setNotes(notesRes);
       setExpenseCategories(expenseCategoriesRes);
       setExpenseItems(expenseItemsRes);
@@ -139,13 +135,8 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
       if (savedReportRes) {
         setSavedRecord(savedReportRes);
         setManualInputs({
-          brineCubes: savedReportRes.brine_cubes ?? localParsed.brineCubes ?? 0,
-          // Default true when the column is absent/null (pre-migration
-          // rows), same reasoning as cash_on_hand_confirmed above.
-          brineCubesConfirmed: savedReportRes.brine_cubes_confirmed ?? localParsed.brineCubesConfirmed ?? true,
           freeIssue: savedReportRes.free_issue ?? localParsed.freeIssue ?? 0,
           damagedCubes: savedReportRes.damaged_cubes ?? localParsed.damagedCubes ?? 0,
-          pmProductionQty: savedReportRes.pm_production_qty ?? localParsed.pmProductionQty ?? 0,
           otherReceipts: savedReportRes.other_receipts ?? localParsed.otherReceipts ?? 0,
           bankDepositAmount: savedReportRes.bank_deposit_amount ?? localParsed.bankDepositAmount ?? 0,
           bankDepositToday: savedReportRes.bank_deposit_today ?? localParsed.bankDepositToday ?? 0,
@@ -176,11 +167,8 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
           // auto-calculated guess that never got saved explicitly.
           const priorConfirmed = !!previousReportRes?.cash_on_hand_confirmed;
           setManualInputs({
-            brineCubes: 0,
-            brineCubesConfirmed: false,
             freeIssue: 0,
             damagedCubes: 0,
-            pmProductionQty: 0,
             otherReceipts: 0,
             bankDepositAmount: previousReportRes?.bank_deposit_amount ?? 0,
             bankDepositToday: 0,
@@ -215,7 +203,7 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_amounts' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_transactions' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_attendance' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_trips' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transport_trips' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_manager_reports' }, () => fetchData())
       .subscribe();
@@ -293,13 +281,9 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
       .filter(b => b.quantity > 0);
     const branchCubes = branchSalesList.reduce((sum, b) => sum + b.quantity, 0);
 
-    // Brine Cubes = Brine cubes added in range or manual entry
-    // A manager explicitly entering 0 to correct the auto-calculated value
-    // must be honored — checking `> 0` would treat that 0 as "not entered"
-    // and silently revert to the auto value. brineCubesConfirmed is the
-    // explicit signal for "this was actually saved", set only when the
-    // Daily Manager Report form itself is saved.
-    const brineCubes = manualInputs.brineCubesConfirmed ? (Number(manualInputs.brineCubes) || 0) : brineTxnAdditions;
+    // Brine Cubes = Brine cubes added in range — auto-calculated only, not
+    // manager-editable (only Free Issue and Damaged are).
+    const brineCubes = brineTxnAdditions;
     const freeIssue = Number(manualInputs.freeIssue) || 0;
     const damagedCubes = Number(manualInputs.damagedCubes) || 0;
 
@@ -428,22 +412,21 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
       }))
       .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
-    // 8. Vehicle Details — real trip history, not manual entry
-    const vehicleById = new Map(vehicles.map(v => [v.id, v]));
-    const vehicleTripList = trips
-      .filter(t => isInDateRange(t.trip_date))
+    // 8. Vehicle Details — sourced from the Transport tab's trip history
+    // (transport_trips), not the standalone Vehicles tab.
+    const vehicleTripList = transportTrips
+      .filter(t => isInRange(t.start_datetime))
       .map(t => ({
         tripId: `TRIP-${String(t.id).padStart(4, '0')}`,
-        date: t.trip_date,
-        vehicleNo: vehicleById.get(t.vehicle_id)?.vehicle_no || '',
-        description: t.description || '',
+        date: t.start_datetime ? t.start_datetime.slice(0, 10) : '',
+        description: t.description || t.end_description || '',
         startKm: Number(t.start_odometer) || 0,
-        endKm: Number(t.end_odometer) || 0,
-        distance: Number(t.distance_travelled ?? (t.end_odometer - t.start_odometer)) || 0
+        endKm: t.end_odometer !== null && t.end_odometer !== undefined ? Number(t.end_odometer) : null,
+        distance: t.distance_travelled !== null && t.distance_travelled !== undefined ? Number(t.distance_travelled) : null
       }))
       .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
       .map((trip, idx) => ({ no: idx + 1, ...trip }));
-    const totalVehicleDistance = vehicleTripList.reduce((sum, t) => sum + t.distance, 0);
+    const totalVehicleDistance = vehicleTripList.reduce((sum, t) => sum + (t.distance || 0), 0);
 
     // 9. Notes — real ledger from the Notes & Messages tab
     const notesList = notes
@@ -472,7 +455,6 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
         branchCubes,
         branchSalesList,
         closingBalance,
-        pmProductionQty: Number(manualInputs.pmProductionQty) || 0,
         breakdown: {
           mfcAdded: todaysProduction,
           rscAdded: rscTxnAdditions,
@@ -513,7 +495,7 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
       otherDetails: manualInputs.otherDetails || '',
       verifiedBy: manualInputs.verifiedBy || ''
     };
-  }, [targetFromStr, targetToStr, fromTime, toTime, sales, debts, settlements, customers, inventory, invTransactions, employees, attendance, vehicles, trips, notes, expenseCategories, expenseItems, expenseLedgerRows, expenseAmounts, manualInputs]);
+  }, [targetFromStr, targetToStr, fromTime, toTime, sales, debts, settlements, customers, inventory, invTransactions, employees, attendance, transportTrips, notes, expenseCategories, expenseItems, expenseLedgerRows, expenseAmounts, manualInputs]);
 
   // Save manual updates with safe column handling
   const saveDailyReport = async (updatedInputs) => {
@@ -529,11 +511,8 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
 
     const dbPayload = {
       report_date: targetFromStr,
-      brine_cubes: Number(payload.brineCubes) || 0,
-      brine_cubes_confirmed: !!payload.brineCubesConfirmed,
       free_issue: Number(payload.freeIssue) || 0,
       damaged_cubes: Number(payload.damagedCubes) || 0,
-      pm_production_qty: Number(payload.pmProductionQty) || 0,
       other_receipts: Number(payload.otherReceipts) || 0,
       bank_deposit_amount: Number(payload.bankDepositAmount) || 0,
       bank_deposit_today: Number(payload.bankDepositToday) || 0,
@@ -560,11 +539,8 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
         // Fallback without new jsonb columns if they don't exist yet on DB
         const basicPayload = {
           report_date: targetFromStr,
-          brine_cubes: Number(payload.brineCubes) || 0,
-          brine_cubes_confirmed: !!payload.brineCubesConfirmed,
           free_issue: Number(payload.freeIssue) || 0,
           damaged_cubes: Number(payload.damagedCubes) || 0,
-          pm_production_qty: Number(payload.pmProductionQty) || 0,
           other_receipts: Number(payload.otherReceipts) || 0,
           bank_deposit_amount: Number(payload.bankDepositAmount) || 0,
           bank_deposit_today: Number(payload.bankDepositToday) || 0,

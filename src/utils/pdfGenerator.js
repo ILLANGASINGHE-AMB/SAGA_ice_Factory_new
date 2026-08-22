@@ -799,7 +799,15 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   doc.text('08. VEHICLE DETAILS', 14, currentY);
 
   const vehRows = reportData.vehicleTripList.length > 0
-    ? reportData.vehicleTripList.map(v => [v.no, v.tripId, v.date, v.description || v.vehicleNo || '-', v.startKm.toLocaleString(), v.endKm.toLocaleString(), `${v.distance.toLocaleString()} km`])
+    ? reportData.vehicleTripList.map(v => [
+        v.no,
+        v.tripId,
+        v.date,
+        v.description || '-',
+        v.startKm.toLocaleString(),
+        v.endKm !== null ? v.endKm.toLocaleString() : '-',
+        v.distance !== null ? `${v.distance.toLocaleString()} km` : '-'
+      ])
     : [['-', '-', '-', 'No vehicle trips recorded', '-', '-', '-']];
 
   doc.autoTable({
