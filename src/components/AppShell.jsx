@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../hooks/useSettings';
+import { useIsMobileLayout } from '../hooks/useIsMobileLayout';
 import { SagaAiDrawer } from './SagaAiDrawer';
 import { GlobalSearchModal } from './GlobalSearchModal';
 import {
@@ -38,6 +39,11 @@ export function AppShell({ children }) {
   const { settings } = useSettings();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // True device class (phone vs tablet/desktop) based on the viewport's
+  // smaller dimension, so rotating a phone into landscape keeps it on the
+  // bottom-nav layout instead of jumping to the sidebar (see hook for why).
+  const isMobileLayout = useIsMobileLayout();
 
   // Collapsible sidebar state (saved in localStorage)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
@@ -186,9 +192,9 @@ export function AppShell({ children }) {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans transition-colors duration-200">
       
-      {/* Sidebar - Desktop & Tablet & Mobile Landscape (Collapsible Icon Rail) */}
-      <aside 
-        className={`hidden md:flex flex-col ${
+      {/* Sidebar - Tablet & Desktop only. Phones (portrait or landscape) get the bottom nav instead. */}
+      <aside
+        className={`${isMobileLayout ? 'hidden' : 'flex'} flex-col ${
           isSidebarCollapsed ? 'w-20' : 'w-64'
         } bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 h-full transition-all duration-300 select-none z-30 shrink-0`}
       >
@@ -282,22 +288,25 @@ export function AppShell({ children }) {
         {/* Top Header Bar - Optimized Compact Height for Landscape */}
         <header className="flex items-center justify-between h-13 sm:h-14 md:h-14 px-4 sm:px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 z-20">
           <div className="flex items-center space-x-3">
-            {/* Mobile Header Branding (Visible on portrait mobile only) */}
-            <div className="flex md:hidden items-center space-x-2">
-              {settings?.logo_url ? (
-                <img src={settings.logo_url} alt="Logo" className="w-6 h-6 rounded object-cover" />
-              ) : (
-                <div className="w-6 h-6 rounded bg-navy-600 flex items-center justify-center text-white font-bold text-xs font-heading">
-                  S
-                </div>
-              )}
-              <span className="font-heading font-bold text-xs text-slate-900 dark:text-slate-100">
-                {settings?.company_name || 'Sagacious'}
-              </span>
-            </div>
-            <h2 className="hidden md:block text-base sm:text-lg font-bold font-heading text-slate-800 dark:text-slate-100 tracking-tight">
-              {getPageTitle()}
-            </h2>
+            {/* Mobile Header Branding (phones only, portrait or landscape) */}
+            {isMobileLayout ? (
+              <div className="flex items-center space-x-2">
+                {settings?.logo_url ? (
+                  <img src={settings.logo_url} alt="Logo" className="w-6 h-6 rounded object-cover" />
+                ) : (
+                  <div className="w-6 h-6 rounded bg-navy-600 flex items-center justify-center text-white font-bold text-xs font-heading">
+                    S
+                  </div>
+                )}
+                <span className="font-heading font-bold text-xs text-slate-900 dark:text-slate-100">
+                  {settings?.company_name || 'Sagacious'}
+                </span>
+              </div>
+            ) : (
+              <h2 className="text-base sm:text-lg font-bold font-heading text-slate-800 dark:text-slate-100 tracking-tight">
+                {getPageTitle()}
+              </h2>
+            )}
           </div>
 
           {/* Right Header items: Search | Recent Actions | Trash | Settings | Theme | Profile | Logout */}
@@ -384,13 +393,13 @@ export function AppShell({ children }) {
         </header>
 
         {/* Page Content Panel - Landscape Optimized Padding */}
-        <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 pb-20 md:pb-6 landscape:pb-4 touch-scroll">
+        <main className={`flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 touch-scroll ${isMobileLayout ? 'pb-20' : 'pb-6'}`}>
           {children}
         </main>
       </div>
 
-      {/* Bottom Nav Bar - Mobile Portrait Only (Hidden on landscape to preserve height) */}
-      <nav className="md:hidden landscape:hidden fixed bottom-0 left-0 right-0 h-14 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-around z-40 px-1 shadow-lg">
+      {/* Bottom Nav Bar - Phones only (portrait and landscape both get the functional bottom nav) */}
+      <nav className={`${isMobileLayout ? 'flex' : 'hidden'} fixed bottom-0 left-0 right-0 h-14 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 items-center justify-around z-40 px-1 shadow-lg`}>
         {visibleNavItems.slice(0, 4).map((item) => (
           <NavLink
             key={item.path}
@@ -421,8 +430,8 @@ export function AppShell({ children }) {
       </nav>
 
       {/* Mobile More Navigation Bottom Sheet */}
-      {isMobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}>
+      {isMobileMenuOpen && isMobileLayout && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}>
           <div 
             className="bg-white dark:bg-slate-900 rounded-t-2xl p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800 shadow-2xl max-h-[75vh] overflow-y-auto touch-scroll"
             onClick={(e) => e.stopPropagation()}
@@ -462,7 +471,7 @@ export function AppShell({ children }) {
       {/* Floating SAGA AI Assistant Button & Drawer (Only if AI is enabled) */}
       {aiEnabled && (
         <>
-          <div className="fixed bottom-16 sm:bottom-6 right-4 sm:right-6 landscape:bottom-5 z-40">
+          <div className={`fixed right-4 sm:right-6 z-40 ${isMobileLayout ? 'bottom-16' : 'bottom-6'}`}>
             <button
               type="button"
               onClick={() => setIsAiOpen(!isAiOpen)}
