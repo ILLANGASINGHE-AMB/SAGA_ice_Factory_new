@@ -356,6 +356,7 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
       return {
         name: cust?.name || 'Customer',
         method: PAYMENT_METHOD_LABELS[setl.payment_method] || 'Cash',
+        settlementDate: setl.settlement_date ? setl.settlement_date.slice(0, 10) : '',
         debtAmount: matchingDebt ? Number(matchingDebt.total_amount) : 0,
         amountReceived: Number(setl.amount_paid),
         outstandingAmount: matchingDebt ? Number(matchingDebt.remaining_amount) : 0
@@ -384,6 +385,7 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
           date: row?.entry_date || '',
           description: row?.description || item?.name || '',
           category: category?.name || 'Uncategorized',
+          expenseType: item?.name || 'Other',
           amount: Number(a.amount) || 0
         };
       })

@@ -399,6 +399,7 @@ export function DailyManagerReportView() {
                       <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px]">
                         <th className="py-2">Customer</th>
                         <th className="py-2">Method</th>
+                        <th className="py-2">Settlement Date</th>
                         <th className="py-2 text-right">Debt Amount</th>
                         <th className="py-2 text-right">Paid</th>
                         <th className="py-2 text-right">Remaining</th>
@@ -409,6 +410,7 @@ export function DailyManagerReportView() {
                         <tr key={i}>
                           <td className="py-2 font-medium">{c.name}</td>
                           <td className="py-2 text-slate-500">{c.method}</td>
+                          <td className="py-2 text-slate-500">{c.settlementDate}</td>
                           <td className="py-2 text-right font-mono text-slate-500">
                             LKR {c.debtAmount.toLocaleString()}
                           </td>
@@ -454,6 +456,7 @@ export function DailyManagerReportView() {
                         <th className="py-2">Date</th>
                         <th className="py-2">Description</th>
                         <th className="py-2">Category</th>
+                        <th className="py-2">Type</th>
                         <th className="py-2 text-right">Amount (LKR)</th>
                       </tr>
                     </thead>
@@ -464,6 +467,7 @@ export function DailyManagerReportView() {
                           <td className="py-2 text-slate-500">{e.date}</td>
                           <td className="py-2 font-medium">{e.description}</td>
                           <td className="py-2 text-slate-500">{e.category}</td>
+                          <td className="py-2 text-slate-500">{e.expenseType}</td>
                           <td className="py-2 text-right font-bold">{e.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                         </tr>
                       ))}

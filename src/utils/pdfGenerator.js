@@ -545,6 +545,14 @@ export function generateReportPDF(reportTitle, dateStr, salesData, summaryData, 
   return doc;
 }
 
+// Wrap a header label so its alignment always matches its column's data
+// alignment (columnStyles halign does not reliably win over headStyles in
+// jspdf-autotable, which was causing right-aligned numeric columns to show
+// a left-aligned header sitting over right-aligned values).
+function headCell(text, halign) {
+  return { content: text, styles: { halign } };
+}
+
 // 4. Generate Daily Manager Report PDF (newReport.md specification)
 export function generateDailyManagerReportPDF(reportData, settings) {
   const doc = new jsPDF({
@@ -556,7 +564,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   const reportCode = `DMR-${reportData.reportDate.replace(/-/g, '')}`;
   drawHeader(doc, settings, 'Daily Manager Report', reportCode);
 
-  let currentY = 52;
+  let currentY = 58;
 
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(8.5);
@@ -566,7 +574,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
     : `${reportData.reportDateFrom} to ${reportData.reportDateTo}`;
   doc.text(`Date: ${dateLabel}     Time: ${reportData.reportTimeFrom || '00:00'} - ${reportData.reportTimeTo || '23:59'}`, 14, currentY);
 
-  currentY += 6;
+  currentY += 8;
 
   // Section 01. Stock / Production Details
   doc.setFont('Helvetica', 'bold');
@@ -606,7 +614,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   const incData = reportData.incomeDetails;
   doc.autoTable({
     startY: currentY + 3,
-    head: [['Location / Type', 'Cash Qty Sold', 'Cash Amount (LKR)', 'Credit Collected (LKR)', 'Other Receipts (LKR)', 'Total Income (LKR)']],
+    head: [['Location / Type', headCell('Cash Qty Sold', 'center'), headCell('Cash Amount (LKR)', 'right'), headCell('Credit Collected (LKR)', 'right'), headCell('Other Receipts (LKR)', 'right'), headCell('Total Income (LKR)', 'right')]],
     body: [[
       'Main Plant Operations',
       incData.cashSoldQty.toLocaleString(),
@@ -635,7 +643,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
 
   doc.autoTable({
     startY: currentY + 3,
-    head: [['No.', 'Customer Name', 'Phone No', 'Cubes on Debt', 'Amount LKR', 'Total Debt Balance LKR']],
+    head: [[headCell('No.', 'center'), 'Customer Name', 'Phone No', headCell('Cubes on Debt', 'right'), headCell('Amount LKR', 'right'), headCell('Total Debt Balance LKR', 'right')]],
     body: creditGivenRows,
     theme: 'striped',
     headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
@@ -660,19 +668,19 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   doc.text('04. DEBT SETTLE DETAILS', 14, currentY);
 
   const creditCollectionRows = reportData.creditCollectionList.length > 0
-    ? reportData.creditCollectionList.map((c, idx) => [idx + 1, c.name, c.method, `LKR ${c.debtAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, `LKR ${c.amountReceived.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, `LKR ${c.outstandingAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`])
-    : [['-', 'No debt settlements recorded', '-', 'LKR 0.00', 'LKR 0.00', 'LKR 0.00']];
+    ? reportData.creditCollectionList.map((c, idx) => [idx + 1, c.name, c.method, c.settlementDate, `LKR ${c.debtAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, `LKR ${c.amountReceived.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, `LKR ${c.outstandingAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`])
+    : [['-', 'No debt settlements recorded', '-', '-', 'LKR 0.00', 'LKR 0.00', 'LKR 0.00']];
 
   doc.autoTable({
     startY: currentY + 3,
-    head: [['No.', 'Customer Name', 'Payment Method', 'Debt Amount LKR', 'Paid Debt LKR', 'Remaining Debt LKR']],
+    head: [[headCell('No.', 'center'), 'Customer Name', 'Payment Method', 'Settlement Date', headCell('Debt Amount LKR', 'right'), headCell('Paid Debt LKR', 'right'), headCell('Remaining Debt LKR', 'right')]],
     body: creditCollectionRows,
     theme: 'striped',
     headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
     bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
-    columnStyles: { 0: { width: 10, halign: 'center' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+    columnStyles: { 0: { width: 10, halign: 'center' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' } },
     margin: { left: 14, right: 14 },
-    foot: [['', '', '', 'Total:', `LKR ${reportData.totalCreditCollectedAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, '']],
+    foot: [['', '', '', '', 'Total:', `LKR ${reportData.totalCreditCollectedAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, '']],
     footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7.5 }
   });
 
@@ -689,19 +697,19 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   doc.text('05. EXPENSE DETAILS', 14, currentY);
 
   const expRows = reportData.expenseList.length > 0
-    ? reportData.expenseList.map(e => [e.no, e.date, e.description, e.category, e.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })])
-    : [['-', '-', 'No expenses logged', '-', '0.00']];
+    ? reportData.expenseList.map(e => [e.no, e.date, e.description, e.category, e.expenseType, e.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })])
+    : [['-', '-', 'No expenses logged', '-', '-', '0.00']];
 
   doc.autoTable({
     startY: currentY + 3,
-    head: [['No.', 'Date', 'Description', 'Expense Category', 'Amount LKR']],
+    head: [[headCell('No.', 'center'), 'Date', 'Description', 'Expense Category', 'Expense Type', headCell('Amount LKR', 'right')]],
     body: expRows,
     theme: 'grid',
     headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
     bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
-    columnStyles: { 0: { width: 10, halign: 'center' }, 4: { halign: 'right' } },
+    columnStyles: { 0: { width: 10, halign: 'center' }, 5: { halign: 'right' } },
     margin: { left: 14, right: 14 },
-    foot: [['', '', '', 'Total:', reportData.totalExpensesAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })]],
+    foot: [['', '', '', '', 'Total:', reportData.totalExpensesAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })]],
     footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7.5 }
   });
 
@@ -778,7 +786,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
 
   doc.autoTable({
     startY: currentY + 3,
-    head: [['No.', 'Trip ID', 'Date', 'Description', 'Start Km', 'End Km', 'Total Distance']],
+    head: [[headCell('No.', 'center'), 'Trip ID', 'Date', 'Description', headCell('Start Km', 'right'), headCell('End Km', 'right'), headCell('Total Distance', 'right')]],
     body: vehRows,
     theme: 'striped',
     headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
