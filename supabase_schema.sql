@@ -1828,7 +1828,12 @@ begin
     raise exception 'Only admins can permanently delete trash items';
   end if;
 
-  delete from public.trash;
+  -- `where true`, not a bare `delete from public.trash`: this function is
+  -- security definer and runs as its owner (postgres on Supabase), which
+  -- has the pg-safeupdate extension enabled — any DELETE/UPDATE without a
+  -- WHERE clause is rejected with "DELETE requires a WHERE clause" even
+  -- though nothing here is a mistaken accidental full-table delete.
+  delete from public.trash where true;
 end;
 $$;
 

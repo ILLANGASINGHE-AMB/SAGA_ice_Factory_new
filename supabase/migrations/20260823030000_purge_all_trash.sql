@@ -15,7 +15,10 @@ begin
     raise exception 'Only admins can permanently delete trash items';
   end if;
 
-  delete from public.trash;
+  -- `where true`, not a bare `delete from public.trash`: this runs as the
+  -- function owner (postgres on Supabase), which has pg-safeupdate enabled
+  -- and rejects any DELETE/UPDATE without a WHERE clause.
+  delete from public.trash where true;
 end;
 $$;
 
