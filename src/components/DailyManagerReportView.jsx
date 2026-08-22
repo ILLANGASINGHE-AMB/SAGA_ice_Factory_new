@@ -269,10 +269,27 @@ export function DailyManagerReportView() {
                   placeholder="Enter PM batch quantity..."
                   className="w-48 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-medium focus:outline-none min-h-[36px]"
                 />
-                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">No of Cubes Sent to Branch (Branch PK):</span>
-                <span className="w-24 bg-navy-50 dark:bg-navy-950/40 border border-navy-200 dark:border-navy-900/50 rounded-lg px-3 py-1.5 text-xs font-bold text-navy-700 dark:text-sky-300 text-center">
-                  {reportData.stockDetails.branchCubes.toLocaleString()}
-                </span>
+              </div>
+
+              {/* No of Cubes Sent to Branch — one line per branch saved in Settings, plus a total */}
+              <div className="pt-1 space-y-1">
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">No of Cubes Sent to Branch:</span>
+                {reportData.stockDetails.branchSalesList.length === 0 ? (
+                  <p className="text-xs text-slate-400">No cubes sent to any branch for {dateRangeLabel}.</p>
+                ) : (
+                  <div className="space-y-0.5 max-w-xs">
+                    {reportData.stockDetails.branchSalesList.map((b, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-xs">
+                        <span className="text-slate-600 dark:text-slate-400">No of Cubes Sent to {b.branchName}</span>
+                        <span className="font-bold font-mono text-navy-700 dark:text-sky-300">{b.quantity.toLocaleString()}</span>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between text-xs pt-1 mt-1 border-t border-slate-200 dark:border-slate-800 font-bold">
+                      <span className="text-slate-700 dark:text-slate-300">Total Cubes Sent:-</span>
+                      <span className="text-navy-700 dark:text-sky-300">{reportData.stockDetails.branchCubes.toLocaleString()}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

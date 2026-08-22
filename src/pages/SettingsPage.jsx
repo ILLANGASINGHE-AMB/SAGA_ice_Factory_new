@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSettings } from '../hooks/useSettings';
+import { useCustomers } from '../hooks/useCustomers';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { Button } from '../components/Button';
@@ -7,27 +8,44 @@ import { Input, TextArea } from '../components/FormFields';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { supabase } from '../lib/supabase';
 import { testGeminiApiKey } from '../services/sagaAiService';
-import { 
-  Building, 
-  Upload, 
-  Palette, 
-  ShieldAlert, 
-  Download, 
-  FolderSync, 
-  Trash2, 
-  AlertOctagon, 
-  Cpu, 
-  Key, 
-  Eye, 
-  EyeOff, 
-  Sparkles, 
-  CheckCircle2 
+import {
+  Building,
+  Building2,
+  Upload,
+  Palette,
+  ShieldAlert,
+  Download,
+  FolderSync,
+  Trash2,
+  AlertOctagon,
+  Cpu,
+  Key,
+  Eye,
+  EyeOff,
+  Sparkles,
+  CheckCircle2,
+  Plus,
+  Edit2,
+  X
 } from 'lucide-react';
 
 export function SettingsPage() {
   const { settings, isLoading, updateSettings } = useSettings();
+  const { customers, addCustomer: addCustomerRecord, updateCustomer: updateCustomerRecord, deleteCustomer: deleteCustomerRecord } = useCustomers();
   const { isAdmin } = useAuth();
   const toast = useToast();
+
+  // Branch customers: permanent "customers" flagged is_branch, managed here
+  const branches = useMemo(() => (customers || []).filter(c => c.is_branch), [customers]);
+  const [branchName, setBranchName] = useState('');
+  const [branchAddress, setBranchAddress] = useState('');
+  const [branchPhone, setBranchPhone] = useState('');
+  const [branchNotes, setBranchNotes] = useState('');
+  const [editingBranchId, setEditingBranchId] = useState(null);
+  const [branchSaving, setBranchSaving] = useState(false);
+  const [branchDeleteTarget, setBranchDeleteTarget] = useState(null);
+  const [branchDeleteConfirmOpen, setBranchDeleteConfirmOpen] = useState(false);
+  const [branchDeleteLoading, setBranchDeleteLoading] = useState(false);
 
   // Settings form states
   const [companyName, setCompanyName] = useState('');
@@ -341,6 +359,70 @@ export function SettingsPage() {
       toast.error(`Failed to clear database: ${err.message}`);
     } finally {
       setClearLoading(false);
+    }
+  };
+
+  // --- Set Branch: permanent branch "customers" (internal cube transfers) ---
+  const resetBranchForm = () => {
+    setEditingBranchId(null);
+    setBranchName('');
+    setBranchAddress('');
+    setBranchPhone('');
+    setBranchNotes('');
+  };
+
+  const handleEditBranchClick = (branch) => {
+    setEditingBranchId(branch.id);
+    setBranchName(branch.name || '');
+    setBranchAddress(branch.address || '');
+    setBranchPhone(branch.contact_number || branch.whatsapp_number || '');
+    setBranchNotes(branch.notes || '');
+  };
+
+  const handleSaveBranch = async (e) => {
+    e.preventDefault();
+    setBranchSaving(true);
+    try {
+      const payload = {
+        name: branchName,
+        contact_number: branchPhone,
+        address: branchAddress,
+        notes: branchNotes,
+        is_branch: true
+      };
+      if (editingBranchId) {
+        await updateCustomerRecord(editingBranchId, payload);
+        toast.success(`Branch "${branchName}" updated.`);
+      } else {
+        await addCustomerRecord(payload);
+        toast.success(`Branch "${branchName}" saved.`);
+      }
+      resetBranchForm();
+    } catch (err) {
+      toast.error(err.message || "Failed to save branch");
+    } finally {
+      setBranchSaving(false);
+    }
+  };
+
+  const handleDeleteBranchClick = (branch) => {
+    setBranchDeleteTarget(branch);
+    setBranchDeleteConfirmOpen(true);
+  };
+
+  const handleConfirmDeleteBranch = async () => {
+    if (!branchDeleteTarget) return;
+    setBranchDeleteLoading(true);
+    try {
+      await deleteCustomerRecord(branchDeleteTarget.id);
+      toast.success(`Branch "${branchDeleteTarget.name}" deleted.`);
+      setBranchDeleteConfirmOpen(false);
+      setBranchDeleteTarget(null);
+      if (editingBranchId === branchDeleteTarget.id) resetBranchForm();
+    } catch (err) {
+      toast.error(err.message || "Failed to delete branch");
+    } finally {
+      setBranchDeleteLoading(false);
     }
   };
 
@@ -793,6 +875,109 @@ export function SettingsPage() {
 
       </div>
 
+      {/* 3. Set Branch — permanent branch "customers" for internal cube transfers (Admin Only) */}
+      {isAdmin && (
+        <div className="md:col-span-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 space-y-4">
+          <div className="flex items-center space-x-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+            <Building2 className="text-navy-500" size={20} />
+            <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100">
+              Set Branch
+            </h3>
+          </div>
+
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Branches are saved permanently as Customers (visible in the Customers tab, selectable in Sales) and marked with a small red <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-600 text-white text-[9px] font-bold align-middle mx-0.5">B</span> icon next to their name. Editing and deleting a branch is only possible here.
+          </p>
+
+          <form onSubmit={handleSaveBranch} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="Branch Name"
+              name="branchName"
+              required
+              placeholder="e.g. Branch PK"
+              value={branchName}
+              onChange={(e) => setBranchName(e.target.value)}
+            />
+            <Input
+              label="Phone Number"
+              name="branchPhone"
+              required
+              placeholder="e.g. 0771234567"
+              value={branchPhone}
+              onChange={(e) => setBranchPhone(e.target.value)}
+            />
+            <Input
+              label="Address"
+              name="branchAddress"
+              placeholder="e.g. 45 Branch Road, Kandy"
+              value={branchAddress}
+              onChange={(e) => setBranchAddress(e.target.value)}
+            />
+            <Input
+              label="Notes (optional)"
+              name="branchNotes"
+              placeholder="Any additional info..."
+              value={branchNotes}
+              onChange={(e) => setBranchNotes(e.target.value)}
+            />
+
+            <div className="sm:col-span-2 flex items-center justify-end space-x-2 pt-1">
+              {editingBranchId && (
+                <Button type="button" variant="secondary" onClick={resetBranchForm} className="flex items-center space-x-1.5">
+                  <X size={14} />
+                  <span>Cancel Edit</span>
+                </Button>
+              )}
+              <Button type="submit" variant="primary" isLoading={branchSaving} className="flex items-center space-x-1.5 rounded-xl">
+                {editingBranchId ? <Edit2 size={14} /> : <Plus size={14} />}
+                <span>{editingBranchId ? 'Update Branch' : 'Save Branch'}</span>
+              </Button>
+            </div>
+          </form>
+
+          {branches.length > 0 && (
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                Saved Branches
+              </span>
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                {branches.map((branch) => (
+                  <div key={branch.id} className="flex items-center justify-between py-2.5 gap-3 flex-wrap">
+                    <div className="flex items-center space-x-2 min-w-0">
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-600 text-white text-[9px] font-bold shrink-0">B</span>
+                      <div className="min-w-0">
+                        <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate block">{branch.name}</span>
+                        <span className="text-[11px] text-slate-400 truncate block">
+                          {branch.contact_number || branch.whatsapp_number || 'No phone'}{branch.address ? ` • ${branch.address}` : ''}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-1 shrink-0">
+                      <button
+                        onClick={() => handleEditBranchClick(branch)}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                        title="Edit Branch"
+                        aria-label="Edit Branch"
+                      >
+                        <Edit2 size={15} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteBranchClick(branch)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition"
+                        title="Delete Branch"
+                        aria-label="Delete Branch"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* --- Import Confirmation Modal --- */}
       <ConfirmDialog
         isOpen={importConfirmOpen}
@@ -816,6 +1001,20 @@ export function SettingsPage() {
         message="ARE YOU ABSOLUTELY SURE? This will permanently DELETE all customers, sales orders, debt records, debt settlements, and operational expense ledgers. Factory settings and user login accounts will be preserved. This action CANNOT be undone!"
         confirmLabel="YES, PERMANENTLY CLEAR ALL DATA"
         isLoading={clearLoading}
+      />
+
+      {/* --- Delete Branch Confirmation Modal --- */}
+      <ConfirmDialog
+        isOpen={branchDeleteConfirmOpen}
+        onClose={() => {
+          setBranchDeleteConfirmOpen(false);
+          setBranchDeleteTarget(null);
+        }}
+        onConfirm={handleConfirmDeleteBranch}
+        title="Delete Branch?"
+        message={`Are you sure you want to delete the branch "${branchDeleteTarget?.name}"? This removes it from the Customers registry as well. Any unsettled debts against it must be cleared first.`}
+        confirmLabel="Delete Branch"
+        isLoading={branchDeleteLoading}
       />
 
     </div>

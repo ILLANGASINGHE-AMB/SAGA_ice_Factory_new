@@ -82,7 +82,19 @@ export function CustomersPage() {
         renderRow={(customer) => (
           <tr key={customer.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
             <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono font-medium text-navy-600 dark:text-navy-400">{customer.customer_code}</td>
-            <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-semibold text-slate-900 dark:text-slate-100">{customer.name}</td>
+            <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-semibold text-slate-900 dark:text-slate-100">
+              <span className="inline-flex items-center space-x-1.5">
+                <span>{customer.name}</span>
+                {customer.is_branch && (
+                  <span
+                    title="Branch customer — managed in Settings"
+                    className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-600 text-white text-[9px] font-bold shrink-0"
+                  >
+                    B
+                  </span>
+                )}
+              </span>
+            </td>
             <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5">
               <button
                 onClick={() => navigate(`/customers/${customer.id}`)}

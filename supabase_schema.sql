@@ -28,6 +28,8 @@ create table public.customers (
   whatsapp_number text unique,
   contact_number text,
   address text default '',
+  is_branch boolean not null default false,
+  notes text default '',
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   constraint customers_has_a_number check (whatsapp_number is not null or contact_number is not null)
 );

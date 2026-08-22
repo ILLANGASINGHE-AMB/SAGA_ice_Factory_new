@@ -207,8 +207,16 @@ export function CustomerProfilePage() {
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
             <span className="text-[11px] font-mono font-semibold text-navy-600 dark:text-navy-400">{customer.customer_code}</span>
-            <h2 className="text-base sm:text-lg font-bold font-heading text-slate-900 dark:text-slate-100">
-              {customer.name}
+            <h2 className="text-base sm:text-lg font-bold font-heading text-slate-900 dark:text-slate-100 flex items-center space-x-1.5">
+              <span>{customer.name}</span>
+              {customer.is_branch && (
+                <span
+                  title="Branch customer — managed in Settings"
+                  className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-600 text-white text-[9px] font-bold shrink-0"
+                >
+                  B
+                </span>
+              )}
             </h2>
           </div>
           {isAdmin ? (
@@ -217,14 +225,22 @@ export function CustomerProfilePage() {
                 <DollarSign size={14} />
                 <span>Custom Prices</span>
               </Button>
-              <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)} className="flex items-center space-x-1.5">
-                <Edit2 size={14} />
-                <span>Edit</span>
-              </Button>
-              <Button variant="danger" size="sm" onClick={() => setDeleteOpen(true)} className="flex items-center space-x-1.5">
-                <Trash2 size={14} />
-                <span>Delete</span>
-              </Button>
+              {customer.is_branch ? (
+                <span className="text-xs text-slate-400 font-medium" title="Branch customers are edited/deleted from Settings → Set Branch">
+                  Managed in Settings
+                </span>
+              ) : (
+                <>
+                  <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)} className="flex items-center space-x-1.5">
+                    <Edit2 size={14} />
+                    <span>Edit</span>
+                  </Button>
+                  <Button variant="danger" size="sm" onClick={() => setDeleteOpen(true)} className="flex items-center space-x-1.5">
+                    <Trash2 size={14} />
+                    <span>Delete</span>
+                  </Button>
+                </>
+              )}
             </div>
           ) : (
             <span className="text-xs text-slate-400 font-medium">Read Only</span>

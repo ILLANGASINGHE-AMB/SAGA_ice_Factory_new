@@ -603,7 +603,25 @@ export function generateDailyManagerReportPDF(reportData, settings) {
     margin: { left: 14, right: 14 }
   });
 
-  currentY = doc.lastAutoTable.finalY + 8;
+  currentY = doc.lastAutoTable.finalY + 4;
+
+  // Branch cube breakdown — one line per branch saved in Settings, plus a total.
+  // Any number of branches can exist, so this is a small text block rather
+  // than fixed table columns.
+  if (stockData.branchSalesList && stockData.branchSalesList.length > 0) {
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(51, 65, 85);
+    stockData.branchSalesList.forEach(b => {
+      doc.text(`No of Cubes Sent to ${b.branchName} - ${b.quantity.toLocaleString()}`, 14, currentY);
+      currentY += 4;
+    });
+    doc.setFont('Helvetica', 'bold');
+    doc.text(`Total Cubes Sent:- ${stockData.branchCubes.toLocaleString()}`, 14, currentY);
+    currentY += 4;
+  }
+
+  currentY += 4;
 
   // Section 02. Income Details
   doc.setFont('Helvetica', 'bold');

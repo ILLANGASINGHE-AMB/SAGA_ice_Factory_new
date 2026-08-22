@@ -278,11 +278,20 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
     const todaysSalesRecords = sales.filter(s => isInRange(s.sale_date));
     const todaysSalesQty = todaysSalesRecords.reduce((sum, s) => sum + (Number(s.quantity) || 0), 0);
 
-    // Cubes sent to the "Branch PK" customer specifically, broken out from
-    // the aggregate sales total per the Daily Manager Report spec.
-    const branchCubes = todaysSalesRecords
-      .filter(s => (s.customer?.name || customers.find(c => Number(c.id) === Number(s.customer_id))?.name) === 'Branch PK')
-      .reduce((sum, s) => sum + (Number(s.quantity) || 0), 0);
+    // Cubes sent to any customer flagged as a branch (Settings → Set
+    // Branch), broken out per branch from the aggregate sales total per the
+    // Daily Manager Report spec. Any number of branches can be saved, so
+    // this is a list rather than one hardcoded name/total.
+    const branchSalesList = customers
+      .filter(c => c.is_branch)
+      .map(branch => ({
+        branchName: branch.name,
+        quantity: todaysSalesRecords
+          .filter(s => Number(s.customer_id) === Number(branch.id))
+          .reduce((sum, s) => sum + (Number(s.quantity) || 0), 0)
+      }))
+      .filter(b => b.quantity > 0);
+    const branchCubes = branchSalesList.reduce((sum, b) => sum + b.quantity, 0);
 
     // Brine Cubes = Brine cubes added in range or manual entry
     // A manager explicitly entering 0 to correct the auto-calculated value
@@ -461,6 +470,7 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
         damagedCubes,
         todaysSalesQty,
         branchCubes,
+        branchSalesList,
         closingBalance,
         pmProductionQty: Number(manualInputs.pmProductionQty) || 0,
         breakdown: {

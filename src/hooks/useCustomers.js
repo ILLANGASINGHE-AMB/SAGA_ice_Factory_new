@@ -39,7 +39,7 @@ export function useCustomers() {
     };
   }, []);
 
-  const addCustomer = async ({ name, whatsapp_number = '', contact_number = '', address = '' }) => {
+  const addCustomer = async ({ name, whatsapp_number = '', contact_number = '', address = '', notes = '', is_branch = false }) => {
     if (!name || name.trim().length < 2) {
       throw new Error("Name is required and must be at least 2 characters");
     }
@@ -88,6 +88,8 @@ export function useCustomers() {
         whatsapp_number: whatsapp_number || null,
         contact_number: contact_number || null,
         address: address.trim(),
+        notes: notes ? notes.trim() : '',
+        is_branch,
         created_at: new Date().toISOString()
       })
       .select('id')
@@ -98,7 +100,7 @@ export function useCustomers() {
     return { id: data.id, customer_code };
   };
 
-  const updateCustomer = async (id, { name, whatsapp_number = '', contact_number = '', address = '' }) => {
+  const updateCustomer = async (id, { name, whatsapp_number = '', contact_number = '', address = '', notes, is_branch }) => {
     if (!name || name.trim().length < 2) {
       throw new Error("Name is required and must be at least 2 characters");
     }
@@ -125,14 +127,21 @@ export function useCustomers() {
       }
     }
 
+    // notes/is_branch are only included when explicitly passed (branch
+    // management in Settings), so editing a regular customer through the
+    // normal Customers-tab form never touches either column.
+    const updatePayload = {
+      name: name.trim(),
+      whatsapp_number: whatsapp_number || null,
+      contact_number: contact_number || null,
+      address: address.trim()
+    };
+    if (notes !== undefined) updatePayload.notes = notes.trim();
+    if (is_branch !== undefined) updatePayload.is_branch = is_branch;
+
     const { error: updateErr } = await supabase
       .from('customers')
-      .update({
-        name: name.trim(),
-        whatsapp_number: whatsapp_number || null,
-        contact_number: contact_number || null,
-        address: address.trim()
-      })
+      .update(updatePayload)
       .eq('id', id);
 
     if (updateErr) throw new Error(updateErr.message);
