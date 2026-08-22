@@ -150,17 +150,21 @@ export function InventoryPage() {
     return dateFilteredTransactions.filter(txn => txn.inventory?.type === historyCubeType);
   }, [dateFilteredTransactions, historyCubeType]);
 
-  // Summary stats for filtered history
+  // Summary stats for filtered history — Brine (waste) is view-only
+  // everywhere in the system and must never be folded into a combined
+  // total, so the 'all' aggregate excludes it (an explicit Brine-only
+  // filter still shows its own isolated added/deducted figures).
   const historyStats = useMemo(() => {
     let added = 0;
     let deducted = 0;
     filteredTransactions.forEach(t => {
+      if (historyCubeType === 'all' && t.inventory?.type === 'waste') return;
       const change = Number(t.quantity_change) || 0;
       if (change > 0) added += change;
       else deducted += Math.abs(change);
     });
     return { added, deducted, net: added - deducted };
-  }, [filteredTransactions]);
+  }, [filteredTransactions, historyCubeType]);
 
   // Graph View: net cube movement per cube type, bucketed across the time axis
   // implied by the selected filter (hours for a day, days for a month, months for a year).

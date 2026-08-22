@@ -197,10 +197,10 @@ export function DailyManagerReportView() {
                   </p>
                 </div>
 
-                <div className="bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
-                  <span className="text-[10px] text-amber-600 font-semibold uppercase block truncate">Brine</span>
+                <div className="bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60" title="View only — never included in Closing Balance">
+                  <span className="text-[10px] text-amber-600 font-semibold uppercase block truncate">Brine (View Only)</span>
                   <p className="font-bold text-xs sm:text-sm text-amber-600 dark:text-amber-400 mt-0.5 truncate">
-                    +{reportData.stockDetails.brineCubes.toLocaleString()}
+                    {reportData.stockDetails.brineCubes.toLocaleString()}
                   </p>
                 </div>
 

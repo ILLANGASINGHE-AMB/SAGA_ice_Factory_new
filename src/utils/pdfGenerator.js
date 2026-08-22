@@ -644,7 +644,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   const stockData = reportData.stockDetails;
   doc.autoTable({
     startY: currentY + 3,
-    head: [['Prev Balance', 'Production', 'Purchases', 'Brine Cubes', 'Free Issue', 'Damaged', 'Sales/Issue', 'Sent to Branch', 'Closing Balance']],
+    head: [['Prev Balance', 'Production', 'Purchases', 'Brine Cubes (View Only)', 'Free Issue', 'Damaged', 'Sales/Issue', 'Sent to Branch', 'Closing Balance']],
     body: [[
       stockData.previousDayBalance.toLocaleString(),
       stockData.todaysProduction.toLocaleString(),

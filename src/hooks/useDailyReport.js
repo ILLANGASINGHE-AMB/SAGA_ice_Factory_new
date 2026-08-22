@@ -274,20 +274,23 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
     const damagedCubes = Number(manualInputs.damagedCubes) || 0;
 
     // `inventory.quantity` is a LIVE figure — it already reflects the
-    // range's production, purchases, brine additions, and sales the moment
-    // they happen (via the atomic RPCs). So the true opening ("previous")
-    // balance is today's live total with the range's movements backed OUT,
-    // not the live total itself. Re-adding those same movements on top of
-    // the live total (the old behavior) double-counted every day there was
-    // any activity — see Audit_Issues_And_Fixes.md #4.1.
-    const currentTotalStock = inventory.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
-    const previousDayBalance = currentTotalStock - todaysProduction - todaysPurchase - brineCubes + todaysSalesQty;
+    // range's production, purchases, and sales the moment they happen (via
+    // the atomic RPCs). So the true opening ("previous") balance is today's
+    // live total with the range's movements backed OUT, not the live total
+    // itself. Re-adding those same movements on top of the live total (the
+    // old behavior) double-counted every day there was any activity — see
+    // Audit_Issues_And_Fixes.md #4.1.
+    //
+    // Brine Cubes (BNC) is deliberately excluded from this total — it is a
+    // view-only figure in every report and must never feed stock math.
+    const currentTotalStock = (Number(mfcItem?.quantity) || 0) + (Number(rscItem?.quantity) || 0);
+    const previousDayBalance = currentTotalStock - todaysProduction - todaysPurchase + todaysSalesQty;
 
     // closingBalance therefore reduces to currentTotalStock minus whatever
     // was reported as free-issued/damaged — those are pure manual report
     // entries that never touch the actual inventory table, so they're the
     // only genuine adjustment left to apply on top of the live total.
-    const closingBalance = previousDayBalance + todaysProduction + todaysPurchase + brineCubes - freeIssue - damagedCubes - todaysSalesQty;
+    const closingBalance = previousDayBalance + todaysProduction + todaysPurchase - freeIssue - damagedCubes - todaysSalesQty;
 
     // 2. Income Details
     const cashSalesRecords = todaysSalesRecords.filter(s => s.payment_type === 'cash');
