@@ -50,6 +50,20 @@ function PageFallback() {
 function App() {
   const { settings } = useSettings();
 
+  // main.jsx sets this flag before reloading once to recover from a stale
+  // deploy's "Failed to fetch dynamically imported module" error. Clear it
+  // a few seconds after a successful mount so a *later*, genuinely new
+  // redeploy in this same long-lived tab can still trigger one more
+  // recovery reload, rather than being suppressed for the rest of the
+  // session — but not immediately, so a reload that didn't actually fix
+  // anything (a truly broken chunk on the CDN) still only reloads once.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      sessionStorage.removeItem('saga_reloaded_after_stale_chunk');
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, []);
+
   useEffect(() => {
     if (settings?.favicon_url) {
       let link = document.querySelector("link[rel*='icon']");
