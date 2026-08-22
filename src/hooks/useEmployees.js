@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { logActivity, currentActor } from '../lib/activityLog';
 
 // Sri Lankan NIC: old format (9 digits + V/X) or new format (12 digits)
 const NIC_REGEX = /^([0-9]{9}[vVxX]|[0-9]{12})$/;
@@ -99,6 +100,7 @@ export function useEmployees() {
 
     if (insertErr) throw new Error(insertErr.message);
 
+    logActivity({ action: 'create', entityType: 'employee', entityId: data.id, entityLabel: employee_code, description: `Added employee ${employee_code} (${name.trim()})` });
     return { id: data.id, employee_code };
   };
 
@@ -129,13 +131,17 @@ export function useEmployees() {
       .eq('id', id);
 
     if (updateErr) throw new Error(updateErr.message);
+    logActivity({ action: 'update', entityType: 'employee', entityId: id, description: `Updated employee ${name.trim()}` });
   };
 
   const deleteEmployee = async (id) => {
-    const { error } = await supabase
-      .from('employees')
-      .delete()
-      .eq('id', id);
+    const { performedBy, performedByRole } = currentActor();
+    const { error } = await supabase.rpc('soft_delete_row', {
+      p_table: 'employees',
+      p_id: id,
+      p_deleted_by: performedBy,
+      p_deleted_by_role: performedByRole
+    });
     if (error) throw new Error(error.message);
   };
 

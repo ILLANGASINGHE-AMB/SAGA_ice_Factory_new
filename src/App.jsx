@@ -28,6 +28,8 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ defa
 const ExpenseLedgerPage = lazy(() => import('./pages/ExpenseLedgerPage').then(m => ({ default: m.ExpenseLedgerPage })));
 const CashBankPage = lazy(() => import('./pages/CashBankPage').then(m => ({ default: m.CashBankPage })));
 const PublicBillPage = lazy(() => import('./pages/PublicBillPage').then(m => ({ default: m.PublicBillPage })));
+const RecentActionsPage = lazy(() => import('./pages/RecentActionsPage').then(m => ({ default: m.RecentActionsPage })));
+const TrashPage = lazy(() => import('./pages/TrashPage').then(m => ({ default: m.TrashPage })));
 
 
 
@@ -234,6 +236,28 @@ function App() {
                   <AdminRoute>
                     <AppShell>
                       <ReportsPage />
+                    </AppShell>
+                  </AdminRoute>
+                }
+              />
+
+              <Route
+                path="/recent-actions"
+                element={
+                  <AdminRoute>
+                    <AppShell>
+                      <RecentActionsPage />
+                    </AppShell>
+                  </AdminRoute>
+                }
+              />
+
+              <Route
+                path="/trash"
+                element={
+                  <AdminRoute>
+                    <AppShell>
+                      <TrashPage />
                     </AppShell>
                   </AdminRoute>
                 }

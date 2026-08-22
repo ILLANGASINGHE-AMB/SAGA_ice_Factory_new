@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { logActivity } from '../lib/activityLog';
 
 export function useInventory() {
   const [inventory, setInventory] = useState([]);
@@ -134,6 +135,7 @@ export function useInventory() {
     } else {
       fetchTransactions();
     }
+    logActivity({ action: 'create', entityType: 'inventory', entityId: id, description: `Added ${amount} units of stock`, performedBy: createdBy });
   };
 
   const removeStock = async (id, amount, createdBy = 'Operator') => {
@@ -202,6 +204,7 @@ export function useInventory() {
     } else {
       fetchTransactions();
     }
+    logActivity({ action: 'update', entityType: 'inventory', entityId: id, description: `Removed ${amount} units of stock`, performedBy: createdBy });
   };
 
   const updatePrice = async (id, price) => {
@@ -227,6 +230,7 @@ export function useInventory() {
 
       if (updateErr) throw new Error(updateErr.message);
     }
+    logActivity({ action: 'update', entityType: 'inventory', entityId: id, description: `Updated price per cube to LKR ${Number(price).toLocaleString()}` });
   };
 
   return {

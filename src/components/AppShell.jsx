@@ -1,20 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../hooks/useSettings';
 import { SagaAiDrawer } from './SagaAiDrawer';
 import { GlobalSearchModal } from './GlobalSearchModal';
-import { 
+import {
   LayoutDashboard,
   Package,
   Users,
   Contact,
   Truck,
   ShoppingCart,
-  DollarSign, 
-  FileBarChart, 
-  Settings as SettingsIcon, 
-  LogOut, 
+  DollarSign,
+  FileBarChart,
+  Settings as SettingsIcon,
+  LogOut,
   Menu,
   Sun,
   Moon,
@@ -27,7 +27,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Route,
-  StickyNote
+  StickyNote,
+  History,
+  Trash2,
+  UserCircle
 } from 'lucide-react';
 
 export function AppShell({ children }) {
@@ -48,6 +51,8 @@ export function AppShell({ children }) {
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const profileRef = useRef(null);
   const [aiEnabled, setAiEnabled] = useState(
     settings?.ai_enabled !== undefined 
       ? settings.ai_enabled 
@@ -142,6 +147,18 @@ export function AppShell({ children }) {
     navigate('/login');
   };
 
+  // Close the profile popover on an outside click.
+  useEffect(() => {
+    if (!isProfileOpen) return;
+    const handleClickOutside = (e) => {
+      if (profileRef.current && !profileRef.current.contains(e.target)) {
+        setIsProfileOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isProfileOpen]);
+
   const navItems = [
     { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} />, adminOnly: false },
     { name: 'Inventory', path: '/inventory', icon: <Package size={20} />, adminOnly: false },
@@ -154,8 +171,7 @@ export function AppShell({ children }) {
     { name: 'Expenses', path: '/expenses', icon: <Receipt size={20} />, adminOnly: false },
     { name: 'Cash & Bank Details', path: '/cash-bank', icon: <Landmark size={20} />, adminOnly: false },
     { name: 'Notes & Messages', path: '/notes', icon: <StickyNote size={20} />, adminOnly: false },
-    { name: 'Reports', path: '/reports', icon: <FileBarChart size={20} />, adminOnly: true },
-    { name: 'Settings', path: '/settings', icon: <SettingsIcon size={20} />, adminOnly: false }
+    { name: 'Reports', path: '/reports', icon: <FileBarChart size={20} />, adminOnly: true }
   ];
 
   const visibleNavItems = navItems.filter(item => !item.adminOnly || isAdmin);
@@ -241,52 +257,20 @@ export function AppShell({ children }) {
           ))}
         </nav>
 
-        {/* User profile / Logout bottom */}
-        <div className={`p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 backdrop-blur-md ${isSidebarCollapsed ? 'flex flex-col items-center space-y-2' : ''}`}>
+        {/* User info bottom (Theme / Logout live in the top bar now) */}
+        <div className={`p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 backdrop-blur-md ${isSidebarCollapsed ? 'flex flex-col items-center' : ''}`}>
           {!isSidebarCollapsed ? (
-            <>
-              <div className="flex items-center justify-between mb-2.5 px-1">
-                <div className="flex flex-col truncate pr-2">
-                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                    {user?.fullName || 'Staff Operator'}
-                  </span>
-                  <span className="text-[10px] text-slate-500 capitalize font-medium">
-                    Role: {user?.role || 'user'}
-                  </span>
-                </div>
-                {/* Theme Toggle Quick-Action */}
-                <button
-                  onClick={() => setIsDarkMode(!isDarkMode)}
-                  className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition shrink-0"
-                  title="Toggle Light/Dark Mode"
-                >
-                  {isDarkMode ? <Sun size={16} className="text-amber-400" /> : <Moon size={16} />}
-                </button>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="flex items-center justify-center space-x-2 w-full px-3 py-2 bg-slate-100 dark:bg-slate-800/80 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 border border-slate-200 dark:border-slate-700/60 hover:border-rose-300 dark:hover:border-rose-800/60 rounded-xl text-xs font-semibold transition-all duration-200"
-              >
-                <LogOut size={14} />
-                <span>Logout</span>
-              </button>
-            </>
+            <div className="flex flex-col truncate px-1">
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                {user?.fullName || 'Staff Operator'}
+              </span>
+              <span className="text-[10px] text-slate-500 capitalize font-medium">
+                Role: {user?.role || 'user'}
+              </span>
+            </div>
           ) : (
-            <div className="flex flex-col items-center space-y-2">
-              <button
-                onClick={() => setIsDarkMode(!isDarkMode)}
-                className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition"
-                title="Toggle Light/Dark Mode"
-              >
-                {isDarkMode ? <Sun size={16} className="text-amber-400" /> : <Moon size={16} />}
-              </button>
-              <button
-                onClick={handleLogout}
-                className="p-2 rounded-lg text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
-                title="Logout"
-              >
-                <LogOut size={16} />
-              </button>
+            <div className="p-2 rounded-lg text-slate-500 dark:text-slate-400" title={user?.fullName || 'Staff Operator'}>
+              <UserCircle size={18} />
             </div>
           )}
         </div>
@@ -316,8 +300,8 @@ export function AppShell({ children }) {
             </h2>
           </div>
 
-          {/* Right Header items */}
-          <div className="flex items-center space-x-2 sm:space-x-3">
+          {/* Right Header items: Search | Recent Actions | Trash | Settings | Theme | Profile | Logout */}
+          <div className="flex items-center space-x-1 sm:space-x-2">
             {/* Global Search Button */}
             <button
               onClick={() => setIsSearchOpen(true)}
@@ -331,21 +315,71 @@ export function AppShell({ children }) {
               </kbd>
             </button>
 
-            <span className="hidden sm:inline-flex text-xs px-2.5 py-1 rounded-full font-semibold uppercase bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-              {user?.role} Access
-            </span>
-            <div className="md:hidden flex items-center space-x-1.5">
-              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                {user?.fullName?.split(' ')[0] || 'User'}
-              </span>
+            {isAdmin && (
               <button
-                onClick={handleLogout}
-                className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition min-h-[36px] min-w-[36px] flex items-center justify-center"
-                title="Logout"
+                onClick={() => navigate('/recent-actions')}
+                className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition min-h-[36px] min-w-[36px] flex items-center justify-center"
+                title="Recent Actions"
               >
-                <LogOut size={16} />
+                <History size={18} />
               </button>
+            )}
+
+            {isAdmin && (
+              <button
+                onClick={() => navigate('/trash')}
+                className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition min-h-[36px] min-w-[36px] flex items-center justify-center"
+                title="Trash"
+              >
+                <Trash2 size={18} />
+              </button>
+            )}
+
+            <button
+              onClick={() => navigate('/settings')}
+              className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition min-h-[36px] min-w-[36px] flex items-center justify-center"
+              title="Settings"
+            >
+              <SettingsIcon size={18} />
+            </button>
+
+            <button
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-h-[36px] min-w-[36px] flex items-center justify-center"
+              title="Toggle Light/Dark Mode"
+            >
+              {isDarkMode ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} />}
+            </button>
+
+            {/* User Profile Icon + Popover */}
+            <div className="relative" ref={profileRef}>
+              <button
+                onClick={() => setIsProfileOpen(prev => !prev)}
+                className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition min-h-[36px] min-w-[36px] flex items-center justify-center"
+                title="Profile"
+              >
+                <UserCircle size={18} />
+              </button>
+              {isProfileOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 p-3">
+                  <p className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                    {user?.fullName || 'Staff Operator'}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{user?.email}</p>
+                  <span className="inline-flex mt-2 text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                    {user?.role} Access
+                  </span>
+                </div>
+              )}
             </div>
+
+            <button
+              onClick={handleLogout}
+              className="p-2 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition min-h-[36px] min-w-[36px] flex items-center justify-center"
+              title="Logout"
+            >
+              <LogOut size={18} />
+            </button>
           </div>
         </header>
 

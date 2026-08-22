@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { logActivity } from '../lib/activityLog';
 
 export function useSettings() {
   const [settings, setSettings] = useState(null);
@@ -95,6 +96,8 @@ export function useSettings() {
         .eq('id', current[0].id);
       if (updateErr) throw new Error(updateErr.message);
     }
+
+    logActivity({ action: 'update', entityType: 'settings', description: 'Updated system settings' });
   };
 
   return {

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { logActivity, currentActor } from '../lib/activityLog';
 
 export function useCustomers() {
   const [customers, setCustomers] = useState([]);
@@ -97,6 +98,7 @@ export function useCustomers() {
 
     if (insertErr) throw new Error(insertErr.message);
 
+    logActivity({ action: 'create', entityType: 'customer', entityId: data.id, entityLabel: customer_code, description: `Added customer ${customer_code} (${name.trim()})` });
     return { id: data.id, customer_code };
   };
 
@@ -145,6 +147,7 @@ export function useCustomers() {
       .eq('id', id);
 
     if (updateErr) throw new Error(updateErr.message);
+    logActivity({ action: 'update', entityType: 'customer', entityId: id, description: `Updated customer ${name.trim()}` });
   };
 
   const deleteCustomer = async (id) => {
@@ -166,10 +169,13 @@ export function useCustomers() {
       );
     }
 
-    const { error } = await supabase
-      .from('customers')
-      .delete()
-      .eq('id', id);
+    const { performedBy, performedByRole } = currentActor();
+    const { error } = await supabase.rpc('soft_delete_row', {
+      p_table: 'customers',
+      p_id: id,
+      p_deleted_by: performedBy,
+      p_deleted_by_role: performedByRole
+    });
     if (error) throw new Error(error.message);
   };
 

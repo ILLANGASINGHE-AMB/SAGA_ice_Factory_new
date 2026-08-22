@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { logActivity, currentActor } from '../lib/activityLog';
 
 export function useNotes() {
   const [notes, setNotes] = useState([]);
@@ -35,11 +36,18 @@ export function useNotes() {
       .single();
     if (error) throw new Error(error.message);
     setNotes(prev => [data, ...prev]);
+    logActivity({ action: 'create', entityType: 'note', entityId: data.id, description: `Added a note`, performedBy: createdBy });
     return data;
   };
 
   const deleteNote = async (id) => {
-    const { error } = await supabase.from('notes').delete().eq('id', id);
+    const { performedBy, performedByRole } = currentActor();
+    const { error } = await supabase.rpc('soft_delete_row', {
+      p_table: 'notes',
+      p_id: id,
+      p_deleted_by: performedBy,
+      p_deleted_by_role: performedByRole
+    });
     if (error) throw new Error(error.message);
     setNotes(prev => prev.filter(n => n.id !== id));
   };

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { generateBillPDFBlob } from '../utils/pdfGenerator';
+import { logActivity, currentActor } from '../lib/activityLog';
 
 export function useSales() {
   const [sales, setSales] = useState([]);
@@ -140,6 +141,8 @@ export function useSales() {
       console.warn("PDF generation / storage upload skipped:", pdfErr);
     }
 
+    logActivity({ action: 'create', entityType: 'sale', entityId: saleId, entityLabel: sale_code, description: `Created sale ${sale_code} (LKR ${Number(total_amount).toLocaleString()})`, performedBy: created_by });
+
     return {
       ...fullSale,
       id: saleId,
@@ -218,6 +221,8 @@ export function useSales() {
       console.warn("PDF regeneration / storage upload skipped:", pdfErr);
     }
 
+    logActivity({ action: 'update', entityType: 'sale', entityId: id, description: `Edited sale ${data?.sale_code || id}`, performedBy: edited_by });
+
     return data;
   };
 
@@ -262,11 +267,15 @@ export function useSales() {
       }
     }
 
-    // 2. Delete sale (sale_items cascade via FK)
-    const { error: deleteErr } = await supabase
-      .from('sales')
-      .delete()
-      .eq('id', saleId);
+    // 2. Delete sale (sale_items and debts cascade via FK, both captured in
+    //    the trash snapshot so a restore brings them back too)
+    const { performedBy, performedByRole } = currentActor();
+    const { error: deleteErr } = await supabase.rpc('soft_delete_row', {
+      p_table: 'sales',
+      p_id: saleId,
+      p_deleted_by: performedBy,
+      p_deleted_by_role: performedByRole
+    });
 
     if (deleteErr) throw new Error(deleteErr.message);
   };

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { logActivity, currentActor } from '../lib/activityLog';
 
 // Per-customer custom cube prices — one row per (customer, cube_type). The
 // New Order wizard resolves a rate for the selected customer here first,
@@ -59,14 +60,26 @@ export function useCustomerPrices() {
       );
 
     if (error) throw new Error(error.message);
+    logActivity({ action: 'update', entityType: 'customer_price', entityId: customerId, description: `Set custom ${cubeType} price for customer #${customerId} to LKR ${Number(price).toLocaleString()}` });
   };
 
   const clearCustomPrice = async (customerId, cubeType) => {
-    const { error } = await supabase
+    const { data: existing, error: findErr } = await supabase
       .from('customer_cube_prices')
-      .delete()
+      .select('id')
       .eq('customer_id', customerId)
-      .eq('cube_type', cubeType);
+      .eq('cube_type', cubeType)
+      .maybeSingle();
+    if (findErr) throw new Error(findErr.message);
+    if (!existing) return;
+
+    const { performedBy, performedByRole } = currentActor();
+    const { error } = await supabase.rpc('soft_delete_row', {
+      p_table: 'customer_cube_prices',
+      p_id: existing.id,
+      p_deleted_by: performedBy,
+      p_deleted_by_role: performedByRole
+    });
 
     if (error) throw new Error(error.message);
   };

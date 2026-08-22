@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { computeCashBankBalances } from '../utils/cashBankMath';
+import { logActivity, currentActor } from '../lib/activityLog';
 
 // Cash & Bank Management runs as a live running ledger (not day-scoped like
 // the old daily_manager_reports JSONB blobs) — every card total is a
@@ -176,13 +177,14 @@ export function useCashBank() {
     if (isNaN(amt) || amt <= 0) throw new Error("Please enter a valid amount");
     if (!['head_office', 'other'].includes(receiveType)) throw new Error("Please select a receive description");
 
-    const { error } = await supabase.from('cash_receives').insert([{
+    const { data, error } = await supabase.from('cash_receives').insert([{
       amount: amt,
       receive_type: receiveType,
       received_at: receivedAt ? new Date(receivedAt).toISOString() : new Date().toISOString(),
       created_by: createdBy || 'Admin'
-    }]);
+    }]).select('id').single();
     if (error) throw new Error(error.message || "Failed to save cash receive");
+    logActivity({ action: 'create', entityType: 'cash_receive', entityId: data?.id, description: `Recorded cash receive of LKR ${amt.toLocaleString()}`, performedBy: createdBy });
   };
 
   const addBankDeposit = async ({ amount, cashMethod, bankName, createdBy }) => {
@@ -201,13 +203,14 @@ export function useCashBank() {
       throw new Error(`Deposit cannot exceed current Hand Cheques balance (LKR ${handChequesTotal.toLocaleString()}).`);
     }
 
-    const { error } = await supabase.from('bank_deposits').insert([{
+    const { data, error } = await supabase.from('bank_deposits').insert([{
       amount: amt,
       cash_method: cashMethod,
       bank_name: bankName || null,
       created_by: createdBy || 'Admin'
-    }]);
+    }]).select('id').single();
     if (error) throw new Error(error.message || "Failed to save bank deposit");
+    logActivity({ action: 'create', entityType: 'bank_deposit', entityId: data?.id, description: `Deposited LKR ${amt.toLocaleString()} to ${bankName || 'bank'}`, performedBy: createdBy });
   };
 
   const deleteBankDeposit = async (id) => {
@@ -222,7 +225,13 @@ export function useCashBank() {
       .eq('deposit_id', id);
     if (revertErr) throw new Error(revertErr.message || "Failed to reverse the linked cheque record");
 
-    const { error } = await supabase.from('bank_deposits').delete().eq('id', id);
+    const { performedBy, performedByRole } = currentActor();
+    const { error } = await supabase.rpc('soft_delete_row', {
+      p_table: 'bank_deposits',
+      p_id: id,
+      p_deleted_by: performedBy,
+      p_deleted_by_role: performedByRole
+    });
     if (error) throw new Error(error.message || "Failed to delete deposit record");
   };
 
@@ -233,14 +242,15 @@ export function useCashBank() {
     if (isNaN(amt) || amt <= 0) throw new Error("Please enter a valid amount");
     if (!payerName) throw new Error("Please enter the customer/payer name");
 
-    const { error } = await supabase.from('cheque_records').insert([{
+    const { data, error } = await supabase.from('cheque_records').insert([{
       cheque_no: chequeNo,
       bank_name: bankName,
       amount: amt,
       payer_name: payerName,
       created_by: createdBy || 'Admin'
-    }]);
+    }]).select('id').single();
     if (error) throw new Error(error.message || "Failed to save cheque record");
+    logActivity({ action: 'create', entityType: 'cheque_record', entityId: data?.id, entityLabel: chequeNo, description: `Recorded cheque ${chequeNo} for LKR ${amt.toLocaleString()}`, performedBy: createdBy });
   };
 
   // Depositing a pending cheque is the "Cash received from Cheques (already
@@ -262,10 +272,17 @@ export function useCashBank() {
       .update({ status: 'deposited', deposited_at: new Date().toISOString(), deposit_id: deposit.id })
       .eq('id', chequeId);
     if (updateErr) throw new Error(updateErr.message || "Failed to update cheque status");
+    logActivity({ action: 'update', entityType: 'cheque_record', entityId: chequeId, entityLabel: cheque.cheque_no, description: `Deposited cheque ${cheque.cheque_no}` });
   };
 
   const deleteChequeRecord = async (id) => {
-    const { error } = await supabase.from('cheque_records').delete().eq('id', id);
+    const { performedBy, performedByRole } = currentActor();
+    const { error } = await supabase.rpc('soft_delete_row', {
+      p_table: 'cheque_records',
+      p_id: id,
+      p_deleted_by: performedBy,
+      p_deleted_by_role: performedByRole
+    });
     if (error) throw new Error(error.message || "Failed to delete cheque record");
   };
 
@@ -280,22 +297,35 @@ export function useCashBank() {
       throw new Error(`Withdrawal cannot exceed the available balance for ${bankName} (LKR ${available.toLocaleString()}).`);
     }
 
-    const { error } = await supabase.from('bank_withdrawals').insert([{
+    const { data, error } = await supabase.from('bank_withdrawals').insert([{
       amount: amt,
       bank_name: bankName,
       purpose,
       created_by: createdBy || 'Admin'
-    }]);
+    }]).select('id').single();
     if (error) throw new Error(error.message || "Failed to save withdrawal");
+    logActivity({ action: 'create', entityType: 'bank_withdrawal', entityId: data?.id, description: `Withdrew LKR ${amt.toLocaleString()} from ${bankName}`, performedBy: createdBy });
   };
 
   const deleteWithdrawal = async (id) => {
-    const { error } = await supabase.from('bank_withdrawals').delete().eq('id', id);
+    const { performedBy, performedByRole } = currentActor();
+    const { error } = await supabase.rpc('soft_delete_row', {
+      p_table: 'bank_withdrawals',
+      p_id: id,
+      p_deleted_by: performedBy,
+      p_deleted_by_role: performedByRole
+    });
     if (error) throw new Error(error.message || "Failed to delete withdrawal record");
   };
 
   const deleteCashReceive = async (id) => {
-    const { error } = await supabase.from('cash_receives').delete().eq('id', id);
+    const { performedBy, performedByRole } = currentActor();
+    const { error } = await supabase.rpc('soft_delete_row', {
+      p_table: 'cash_receives',
+      p_id: id,
+      p_deleted_by: performedBy,
+      p_deleted_by_role: performedByRole
+    });
     if (error) throw new Error(error.message || "Failed to delete cash receive record");
   };
 

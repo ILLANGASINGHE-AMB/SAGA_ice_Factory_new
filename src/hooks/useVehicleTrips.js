@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { logActivity, currentActor } from '../lib/activityLog';
 
 export function useVehicleTrips(vehicleId) {
   const [trips, setTrips] = useState([]);
@@ -67,7 +68,7 @@ export function useVehicleTrips(vehicleId) {
       throw new Error("End Odometer cannot be less than Start Odometer");
     }
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('vehicle_trips')
       .insert({
         vehicle_id: vehicleIdArg,
@@ -77,16 +78,22 @@ export function useVehicleTrips(vehicleId) {
         description: description.trim(),
         created_by: createdBy,
         created_at: new Date().toISOString()
-      });
+      })
+      .select('id')
+      .single();
 
     if (error) throw new Error(error.message);
+    logActivity({ action: 'create', entityType: 'vehicle_trip', entityId: data?.id, description: `Logged a vehicle trip on ${trip_date}`, performedBy: createdBy });
   };
 
   const deleteTrip = async (id) => {
-    const { error } = await supabase
-      .from('vehicle_trips')
-      .delete()
-      .eq('id', id);
+    const { performedBy, performedByRole } = currentActor();
+    const { error } = await supabase.rpc('soft_delete_row', {
+      p_table: 'vehicle_trips',
+      p_id: id,
+      p_deleted_by: performedBy,
+      p_deleted_by_role: performedByRole
+    });
     if (error) throw new Error(error.message);
   };
 

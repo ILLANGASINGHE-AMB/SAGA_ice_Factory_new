@@ -3,6 +3,16 @@ import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
 
+// Module-level mirror of the logged-in user, kept in sync alongside the
+// `user` state below. Lets plain async helpers (e.g. activity logging,
+// soft-delete calls inside hooks) read "who is performing this action"
+// without needing to thread it through every function signature — those
+// helpers run outside React component bodies, so they can't call useAuth().
+let currentUserRef = null;
+export function getCurrentUser() {
+  return currentUserRef;
+}
+
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
@@ -15,6 +25,12 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Keeps currentUserRef (read by getCurrentUser()) in sync with React state.
+  const setUserAndRef = (u) => {
+    currentUserRef = u;
+    setUser(u);
+  };
+
   const fetchUserProfile = async (authUser) => {
     try {
       const { data, error } = await supabase
@@ -22,17 +38,17 @@ export function AuthProvider({ children }) {
         .select('role, full_name')
         .eq('id', authUser.id)
         .single();
-      
+
       if (error) throw error;
 
-      setUser({
+      setUserAndRef({
         email: authUser.email,
         fullName: data.full_name,
         role: data.role
       });
     } catch (err) {
       console.warn("Failed to fetch profile, using metadata fallback:", err);
-      setUser({
+      setUserAndRef({
         email: authUser.email,
         fullName: authUser.user_metadata?.full_name || 'Staff Operator',
         role: authUser.user_metadata?.role || 'user'
@@ -45,7 +61,7 @@ export function AuthProvider({ children }) {
   // Clear session on app mount / browser refresh
   useEffect(() => {
     supabase.auth.signOut().finally(() => {
-      setUser(null);
+      setUserAndRef(null);
       setIsLoading(false);
     });
 
@@ -53,7 +69,7 @@ export function AuthProvider({ children }) {
       if (session?.user) {
         fetchUserProfile(session.user);
       } else {
-        setUser(null);
+        setUserAndRef(null);
         setIsLoading(false);
       }
     });
@@ -95,13 +111,13 @@ export function AuthProvider({ children }) {
       role: profile?.role || 'user'
     };
 
-    setUser(sessionData);
+    setUserAndRef(sessionData);
     return sessionData;
   };
 
   const logout = async () => {
     await supabase.auth.signOut();
-    setUser(null);
+    setUserAndRef(null);
   };
 
   return (

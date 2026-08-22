@@ -7,6 +7,7 @@ import { Button } from '../components/Button';
 import { Input, TextArea } from '../components/FormFields';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { supabase } from '../lib/supabase';
+import { logActivity } from '../lib/activityLog';
 import { testGeminiApiKey } from '../services/sagaAiService';
 import {
   Building,
@@ -265,6 +266,7 @@ export function SettingsPage() {
       document.body.removeChild(link);
       
       toast.success("Database exported to PC successfully!");
+      logActivity({ action: 'export', entityType: 'database', description: 'Exported a full database backup to PC' });
     } catch (err) {
       toast.error(err.message || "Backup compilation failed");
     }
@@ -320,6 +322,7 @@ export function SettingsPage() {
 
 
         toast.success("Database restored from backup file successfully! Refreshing database hooks.");
+        logActivity({ action: 'restore', entityType: 'database', description: 'Restored the database from a backup file' });
         setImportConfirmOpen(false);
         setSelectedImportFile(null);
         // Force page reload after small timeout to reset hooks cleanly
@@ -351,6 +354,7 @@ export function SettingsPage() {
       localStorage.removeItem('saga_operating_expenses');
 
       toast.success("All factory records and data cleared successfully!");
+      logActivity({ action: 'delete', entityType: 'database', description: 'Cleared all factory records and data' });
       setClearConfirmOpen(false);
       
       // Reload page to refresh all active hooks and state

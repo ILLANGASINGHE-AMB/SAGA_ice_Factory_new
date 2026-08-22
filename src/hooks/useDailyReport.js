@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { computeCashBankBalances } from '../utils/cashBankMath';
+import { logActivity } from '../lib/activityLog';
 
 const PAYMENT_METHOD_LABELS = {
   cash: 'Cash',
@@ -512,6 +513,7 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
       } else if (data) {
         setSavedRecord(data);
       }
+      logActivity({ action: 'update', entityType: 'daily_manager_report', entityId: targetFromStr, description: `Saved daily manager report for ${targetFromStr}`, performedBy: payload.verifiedBy });
     } catch (err) {
       console.warn("Supabase upsert daily report error, stored locally:", err);
     }

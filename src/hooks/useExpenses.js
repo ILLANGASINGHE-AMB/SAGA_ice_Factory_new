@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { logActivity, currentActor } from '../lib/activityLog';
 
 export function useExpenses() {
   const [categories, setCategories] = useState([]);
@@ -71,6 +72,7 @@ export function useExpenses() {
       .select('*')
       .single();
     if (insertErr) throw new Error(insertErr.message || "Failed to add category");
+    logActivity({ action: 'create', entityType: 'expense_category', entityId: inserted.id, entityLabel: category_code, description: `Added expense category ${trimmed}` });
     return inserted;
   };
 
@@ -95,6 +97,7 @@ export function useExpenses() {
       .select('*')
       .single();
     if (insertErr) throw new Error(insertErr.message || "Failed to add expense");
+    logActivity({ action: 'create', entityType: 'expense_item', entityId: inserted.id, entityLabel: expense_code, description: `Added expense item ${trimmed}` });
     return inserted;
   };
 
@@ -161,11 +164,19 @@ export function useExpenses() {
       if (amtErr) throw new Error(amtErr.message || "Failed to save amount");
     }
 
+    logActivity({ action: isNew ? 'create' : 'update', entityType: 'expense_ledger_row', entityId: rowId, description: `${isNew ? 'Added' : 'Updated'} expense ledger row for ${entry_date}`, performedBy: created_by });
+
     return rowId;
   };
 
   const deleteLedgerRow = async (id) => {
-    const { error } = await supabase.from('expense_ledger_rows').delete().eq('id', id);
+    const { performedBy, performedByRole } = currentActor();
+    const { error } = await supabase.rpc('soft_delete_row', {
+      p_table: 'expense_ledger_rows',
+      p_id: id,
+      p_deleted_by: performedBy,
+      p_deleted_by_role: performedByRole
+    });
     if (error) throw new Error(error.message || "Failed to delete row");
   };
 

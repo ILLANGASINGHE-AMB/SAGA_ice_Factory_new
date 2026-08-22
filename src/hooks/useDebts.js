@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { generateSettlementReceiptPDF } from '../utils/pdfGenerator';
+import { logActivity } from '../lib/activityLog';
 
 export function useDebts() {
   const [debts, setDebts] = useState([]);
@@ -155,6 +156,8 @@ export function useDebts() {
       console.warn("Settlement PDF generation skipped:", pdfErr);
     }
 
+    logActivity({ action: 'settle_debt', entityType: 'debt', entityId: debtId, entityLabel: settlement_code, description: `Settled LKR ${Number(amount_paid).toLocaleString()} on debt ${settlement_code}`, performedBy: createdBy });
+
     return {
       id: settlementId,
       settlement_code,
@@ -235,6 +238,8 @@ export function useDebts() {
       .select('*')
       .eq('id', customerId)
       .single();
+
+    logActivity({ action: 'settle_debt', entityType: 'customer', entityId: customerId, entityLabel: customer?.customer_code, description: `Settled LKR ${Number(amountPaid).toLocaleString()} across ${lines.length} debt(s) for ${customer?.customer_code || customerId}`, performedBy: createdBy });
 
     return {
       id: lastSettlement.id,

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { logActivity, currentActor } from '../lib/activityLog';
 
 // Vehicle No format: xx0000 or xxx0000 (2-3 letters followed by 4 digits)
 const VEHICLE_NO_REGEX = /^[A-Za-z]{2,3}\d{4}$/;
@@ -86,6 +87,7 @@ export function useVehicles() {
 
     if (insertErr) throw new Error(insertErr.message);
 
+    logActivity({ action: 'create', entityType: 'vehicle', entityId: data.id, entityLabel: normalized, description: `Added vehicle ${normalized}` });
     return { id: data.id, vehicle_no: normalized };
   };
 
@@ -114,13 +116,17 @@ export function useVehicles() {
       .eq('id', id);
 
     if (updateErr) throw new Error(updateErr.message);
+    logActivity({ action: 'update', entityType: 'vehicle', entityId: id, entityLabel: normalized, description: `Updated vehicle ${normalized}` });
   };
 
   const deleteVehicle = async (id) => {
-    const { error } = await supabase
-      .from('vehicles')
-      .delete()
-      .eq('id', id);
+    const { performedBy, performedByRole } = currentActor();
+    const { error } = await supabase.rpc('soft_delete_row', {
+      p_table: 'vehicles',
+      p_id: id,
+      p_deleted_by: performedBy,
+      p_deleted_by_role: performedByRole
+    });
     if (error) throw new Error(error.message);
   };
 

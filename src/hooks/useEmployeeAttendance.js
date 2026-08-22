@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { logActivity, currentActor } from '../lib/activityLog';
 
 export function useEmployeeAttendance() {
   const [attendance, setAttendance] = useState([]);
@@ -66,6 +67,7 @@ export function useEmployeeAttendance() {
       .single();
 
     if (error) throw new Error(error.message);
+    logActivity({ action: 'create', entityType: 'employee_attendance', entityId: data.id, description: `Logged attendance for ${attendance_date}` });
     return { id: data.id };
   };
 
@@ -84,13 +86,17 @@ export function useEmployeeAttendance() {
       .eq('id', id);
 
     if (error) throw new Error(error.message);
+    logActivity({ action: 'update', entityType: 'employee_attendance', entityId: id, description: `Updated attendance for ${attendance_date}` });
   };
 
   const deleteAttendance = async (id) => {
-    const { error } = await supabase
-      .from('employee_attendance')
-      .delete()
-      .eq('id', id);
+    const { performedBy, performedByRole } = currentActor();
+    const { error } = await supabase.rpc('soft_delete_row', {
+      p_table: 'employee_attendance',
+      p_id: id,
+      p_deleted_by: performedBy,
+      p_deleted_by_role: performedByRole
+    });
     if (error) throw new Error(error.message);
   };
 

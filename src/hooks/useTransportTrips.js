@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { logActivity, currentActor } from '../lib/activityLog';
 
 export function useTransportTrips() {
   const [trips, setTrips] = useState([]);
@@ -63,6 +64,7 @@ export function useTransportTrips() {
       .single();
 
     if (error) throw new Error(error.message);
+    logActivity({ action: 'create', entityType: 'transport_trip', entityId: data.id, description: `Started a transport trip`, performedBy: createdBy });
     return data;
   };
 
@@ -86,13 +88,17 @@ export function useTransportTrips() {
       .eq('id', id);
 
     if (error) throw new Error(error.message);
+    logActivity({ action: 'update', entityType: 'transport_trip', entityId: id, description: `Completed a transport trip` });
   };
 
   const deleteTrip = async (id) => {
-    const { error } = await supabase
-      .from('transport_trips')
-      .delete()
-      .eq('id', id);
+    const { performedBy, performedByRole } = currentActor();
+    const { error } = await supabase.rpc('soft_delete_row', {
+      p_table: 'transport_trips',
+      p_id: id,
+      p_deleted_by: performedBy,
+      p_deleted_by_role: performedByRole
+    });
     if (error) throw new Error(error.message);
   };
 
