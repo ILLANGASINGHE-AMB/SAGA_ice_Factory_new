@@ -366,6 +366,7 @@ export function SettingsPage() {
         'bank_withdrawals',
         'notes',
         'activity_log',
+        'inventory_transactions',
       ];
 
       for (const table of tablesInOrder) {
@@ -379,15 +380,23 @@ export function SettingsPage() {
       const { error: trashError } = await supabase.rpc('purge_all_trash');
       if (trashError) throw new Error(`trash: ${trashError.message}`);
 
-      // Reset inventory quantities back to 0 (keep the catalog rows)
+      // Inventory rows themselves (MFC/RSC/BNC) are kept: Sales/New Order's
+      // RPCs (place_multi_item_order_transaction etc.) look them up by
+      // `type` and expect exactly one row to exist per cube type, so
+      // deleting them would break order placement until someone manually
+      // recreated the catalog. A full wipe instead zeroes stock and clears
+      // the price list back to "not configured" (null, matching the
+      // fresh-install seed's BNC row) — same end state (zero data) without
+      // bricking Sales.
       const { error: invError } = await supabase
         .from('inventory')
-        .update({ quantity: 0, updated_at: new Date().toISOString() })
+        .update({ quantity: 0, price_per_cube: null, updated_at: new Date().toISOString() })
         .neq('id', -1);
       if (invError) throw new Error(`inventory: ${invError.message}`);
 
       // Clear local storage fallbacks
       localStorage.removeItem('saga_operating_expenses');
+      localStorage.removeItem('saga_inventory_transactions');
 
       toast.success("All factory records and data cleared successfully!");
       // Logged after the wipe (activity_log itself was just cleared above),
@@ -901,7 +910,7 @@ export function SettingsPage() {
             </div>
 
             <p className="text-xs text-red-700 dark:text-red-300 font-medium">
-              Irreversibly wipe all operational records (customers, sales, debts, vehicles, employees, transport, expenses, cash & bank, notes, activity log) and reset inventory stock to 0.
+              Irreversibly wipe all operational records (customers, sales, debts, vehicles, employees, transport, expenses, cash & bank, notes, activity log) and reset inventory to zero stock with no prices set. Login accounts are preserved.
             </p>
 
             <button
@@ -1040,7 +1049,7 @@ export function SettingsPage() {
         onClose={() => setClearConfirmOpen(false)}
         onConfirm={handleClearAllData}
         title="CRITICAL WARNING: Wipe All Factory Database Records?"
-        message="ARE YOU ABSOLUTELY SURE? This will permanently DELETE all customers, sales orders, debts, vehicles & trips, employees & attendance, transport trips, expense ledgers, cash & bank records, notes, and the activity log/trash history. Inventory stock will be reset to 0. Factory settings, login accounts, and item/expense category setup will be preserved. This action CANNOT be undone!"
+        message="ARE YOU ABSOLUTELY SURE? This will permanently DELETE all customers, sales orders, debts, vehicles & trips, employees & attendance, transport trips, expense ledgers, cash & bank records, notes, and the activity log/trash history. Inventory stock will drop to 0 and all cube prices will be cleared (unset) along with the stock movement history — the system returns to a blank, default state. Factory settings, login accounts, and item/expense category setup will be preserved. This action CANNOT be undone!"
         confirmLabel="YES, PERMANENTLY CLEAR ALL DATA"
         isLoading={clearLoading}
       />

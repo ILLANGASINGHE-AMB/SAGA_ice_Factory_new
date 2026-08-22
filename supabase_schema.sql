@@ -1173,6 +1173,19 @@ create policy "Allow read inventory for authenticated" on public.inventory
 create policy "Allow admin write inventory" on public.inventory
   for all to authenticated using (public.is_admin());
 
+-- inventory_transactions had RLS enabled with no policies tracked in this
+-- file until now — every direct client select/delete/insert silently
+-- touched zero rows (masked by useInventory.js's localStorage fallback);
+-- only the add_inventory_stock/deduct_inventory_stock RPCs worked, since
+-- security-definer functions run as their owner and bypass RLS.
+drop policy if exists "Allow read inventory_transactions for authenticated" on public.inventory_transactions;
+create policy "Allow read inventory_transactions for authenticated" on public.inventory_transactions
+  for select to authenticated using (true);
+
+drop policy if exists "Allow admin write inventory_transactions" on public.inventory_transactions;
+create policy "Allow admin write inventory_transactions" on public.inventory_transactions
+  for all to authenticated using (public.is_admin());
+
 -- Settings policies (authenticated read only, admin write)
 create policy "Allow read settings for authenticated" on public.settings
   for select to authenticated using (true);
