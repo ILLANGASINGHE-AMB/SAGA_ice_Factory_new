@@ -556,7 +556,17 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   const reportCode = `DMR-${reportData.reportDate.replace(/-/g, '')}`;
   drawHeader(doc, settings, 'Daily Manager Report', reportCode);
 
-  let currentY = 58;
+  let currentY = 52;
+
+  doc.setFont('Helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  const dateLabel = reportData.reportDateFrom === reportData.reportDateTo
+    ? reportData.reportDateFrom
+    : `${reportData.reportDateFrom} to ${reportData.reportDateTo}`;
+  doc.text(`Date: ${dateLabel}     Time: ${reportData.reportTimeFrom || '00:00'} - ${reportData.reportTimeTo || '23:59'}`, 14, currentY);
+
+  currentY += 6;
 
   // Section 01. Stock / Production Details
   doc.setFont('Helvetica', 'bold');
@@ -567,7 +577,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   const stockData = reportData.stockDetails;
   doc.autoTable({
     startY: currentY + 3,
-    head: [['Prev Balance', 'Production', 'Purchases', 'Brine Cubes', 'Free Issue', 'Damaged', 'Sales/Issue', 'Closing Balance']],
+    head: [['Prev Balance', 'Production', 'Purchases', 'Brine Cubes', 'Free Issue', 'Damaged', 'Sales/Issue', 'Sent to Branch', 'Closing Balance']],
     body: [[
       stockData.previousDayBalance.toLocaleString(),
       stockData.todaysProduction.toLocaleString(),
@@ -576,6 +586,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
       stockData.freeIssue.toLocaleString(),
       stockData.damagedCubes.toLocaleString(),
       stockData.todaysSalesQty.toLocaleString(),
+      stockData.branchCubes.toLocaleString(),
       stockData.closingBalance.toLocaleString()
     ]],
     theme: 'grid',
@@ -613,24 +624,26 @@ export function generateDailyManagerReportPDF(reportData, settings) {
 
   currentY = doc.lastAutoTable.finalY + 8;
 
-  // Section 03. Details of Credit Given Today
+  // Section 03. Debt Details
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text('03. DETAILS OF CREDIT GIVEN TODAY', 14, currentY);
+  doc.text('03. DEBT DETAILS', 14, currentY);
 
   const creditGivenRows = reportData.creditGivenList.length > 0
-    ? reportData.creditGivenList.map(c => [c.no, c.location, c.customerName, c.phone, c.quantity.toLocaleString(), `LKR ${c.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`])
-    : [['-', 'No credit sales recorded today', '-', '-', '-', 'LKR 0.00']];
+    ? reportData.creditGivenList.map(c => [c.no, c.customerName, c.phone, c.quantity.toLocaleString(), `LKR ${c.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, `LKR ${c.totalDebtBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}`])
+    : [['-', 'No debt given recorded', '-', '-', 'LKR 0.00', 'LKR 0.00']];
 
   doc.autoTable({
     startY: currentY + 3,
-    head: [['No.', 'Location', 'Customer Name', 'Telephone', 'Qty', 'Amount to be Received']],
+    head: [['No.', 'Customer Name', 'Phone No', 'Cubes on Debt', 'Amount LKR', 'Total Debt Balance LKR']],
     body: creditGivenRows,
     theme: 'striped',
     headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
     bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
-    columnStyles: { 0: { width: 10, halign: 'center' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
-    margin: { left: 14, right: 14 }
+    columnStyles: { 0: { width: 10, halign: 'center' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+    margin: { left: 14, right: 14 },
+    foot: [['', '', '', 'Total:', `LKR ${reportData.totalCreditGivenAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, '']],
+    footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7.5 }
   });
 
   currentY = doc.lastAutoTable.finalY + 8;
@@ -641,24 +654,26 @@ export function generateDailyManagerReportPDF(reportData, settings) {
     currentY = 20;
   }
 
-  // Section 04. Details of Credit Amount Collection / Repayment
+  // Section 04. Debt Settle Details
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text('04. CREDIT AMOUNT COLLECTION / REPAYMENT', 14, currentY);
+  doc.text('04. DEBT SETTLE DETAILS', 14, currentY);
 
   const creditCollectionRows = reportData.creditCollectionList.length > 0
-    ? reportData.creditCollectionList.map(c => [c.name, c.method, `LKR ${c.amountReceived.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, `LKR ${c.outstandingAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`])
-    : [['No debt settlements recorded today', '-', 'LKR 0.00', 'LKR 0.00']];
+    ? reportData.creditCollectionList.map((c, idx) => [idx + 1, c.name, c.method, `LKR ${c.debtAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, `LKR ${c.amountReceived.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, `LKR ${c.outstandingAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`])
+    : [['-', 'No debt settlements recorded', '-', 'LKR 0.00', 'LKR 0.00', 'LKR 0.00']];
 
   doc.autoTable({
     startY: currentY + 3,
-    head: [['Name of Person / Customer', 'Method of Receipt', 'Amount Received', 'Outstanding Amount']],
+    head: [['No.', 'Customer Name', 'Payment Method', 'Debt Amount LKR', 'Paid Debt LKR', 'Remaining Debt LKR']],
     body: creditCollectionRows,
     theme: 'striped',
     headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
     bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
-    columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' } },
-    margin: { left: 14, right: 14 }
+    columnStyles: { 0: { width: 10, halign: 'center' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+    margin: { left: 14, right: 14 },
+    foot: [['', '', '', 'Total:', `LKR ${reportData.totalCreditCollectedAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, '']],
+    footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7.5 }
   });
 
   currentY = doc.lastAutoTable.finalY + 8;
@@ -674,18 +689,20 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   doc.text('05. EXPENSE DETAILS', 14, currentY);
 
   const expRows = reportData.expenseList.length > 0
-    ? reportData.expenseList.map(e => [e.code, e.description, e.rupees.toLocaleString(), e.cents])
-    : [['-', 'No expenses logged today', '0', '00']];
+    ? reportData.expenseList.map(e => [e.no, e.date, e.description, e.category, e.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })])
+    : [['-', '-', 'No expenses logged', '-', '0.00']];
 
   doc.autoTable({
     startY: currentY + 3,
-    head: [['Bill / Ref No.', 'Description', 'Rupees (LKR)', 'Cents']],
+    head: [['No.', 'Date', 'Description', 'Expense Category', 'Amount LKR']],
     body: expRows,
     theme: 'grid',
     headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
     bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
-    columnStyles: { 2: { halign: 'right' }, 3: { halign: 'center' } },
-    margin: { left: 14, right: 14 }
+    columnStyles: { 0: { width: 10, halign: 'center' }, 4: { halign: 'right' } },
+    margin: { left: 14, right: 14 },
+    foot: [['', '', '', 'Total:', reportData.totalExpensesAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })]],
+    footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7.5 }
   });
 
   currentY = doc.lastAutoTable.finalY + 8;
@@ -695,25 +712,26 @@ export function generateDailyManagerReportPDF(reportData, settings) {
     currentY = 20;
   }
 
-  // Section 06. Cash Details
+  // Section 06. Bank Deposit Details
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text('06. CASH DETAILS', 14, currentY);
+  doc.text('06. BANK DEPOSIT DETAILS', 14, currentY);
 
   const cashData = reportData.cashDetails;
   doc.autoTable({
     startY: currentY + 3,
-    head: [['Amount Deposited in Bank', 'Amount Deposite Today', 'Cash Balance on Hand', 'Value of Cheques on Hand']],
+    head: [['Amount Deposited', 'Cash in Hand (after deposit)', 'Hand Cheque Amount']],
     body: [[
       `LKR ${(cashData?.bankDepositAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
-      `LKR ${(cashData?.bankDepositToday || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
       `LKR ${(cashData?.cashOnHand || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
       `LKR ${(cashData?.chequesOnHand || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
     ]],
     theme: 'grid',
     headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 7.5, halign: 'center' },
     bodyStyles: { fontSize: 8, textColor: [51, 65, 85], halign: 'center' },
-    margin: { left: 14, right: 14 }
+    margin: { left: 14, right: 14 },
+    foot: [['Total:', `LKR ${(cashData?.totalBankDeposit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, '']],
+    footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7.5, halign: 'center' }
   });
 
   currentY = doc.lastAutoTable.finalY + 8;
@@ -723,18 +741,18 @@ export function generateDailyManagerReportPDF(reportData, settings) {
     currentY = 20;
   }
 
-  // Section 07. Employee Work Details
+  // Section 07. Employee Details
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text('07. EMPLOYEE WORK DETAILS', 14, currentY);
+  doc.text('07. EMPLOYEE DETAILS', 14, currentY);
 
-  const empRows = reportData.employeeLogs.length > 0
-    ? reportData.employeeLogs.map(e => [e.name, e.position, e.startTime, e.finishTime])
-    : [['No employee shift logs entered', '-', '-', '-']];
+  const empRows = reportData.employeeAttendanceList.length > 0
+    ? reportData.employeeAttendanceList.map(e => [e.employeeName, e.date, e.startTime, e.endTime])
+    : [['No employee attendance recorded', '-', '-', '-']];
 
   doc.autoTable({
     startY: currentY + 3,
-    head: [['Employee Name', 'Work Location / Position', 'Starting Time', 'Finishing Time']],
+    head: [['Employee Name', 'Date', 'Start Time', 'End Time']],
     body: empRows,
     theme: 'striped',
     headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
@@ -749,24 +767,26 @@ export function generateDailyManagerReportPDF(reportData, settings) {
     currentY = 20;
   }
 
-  // Section 08. Vehicle Travel Details
+  // Section 08. Vehicle Details
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text('08. VEHICLE TRAVEL DETAILS', 14, currentY);
+  doc.text('08. VEHICLE DETAILS', 14, currentY);
 
-  const vehRows = reportData.vehicleLogs.length > 0
-    ? reportData.vehicleLogs.map(v => [v.reason, v.route, v.startReading, v.endReading])
-    : [['No vehicle travel logs entered', '-', '-', '-']];
+  const vehRows = reportData.vehicleTripList.length > 0
+    ? reportData.vehicleTripList.map(v => [v.no, v.tripId, v.date, v.description || v.vehicleNo || '-', v.startKm.toLocaleString(), v.endKm.toLocaleString(), `${v.distance.toLocaleString()} km`])
+    : [['-', '-', '-', 'No vehicle trips recorded', '-', '-', '-']];
 
   doc.autoTable({
     startY: currentY + 3,
-    head: [['Reason for Journey', 'Location / Route Travelled', 'Start Meter Reading', 'Arrival Meter Reading']],
+    head: [['No.', 'Trip ID', 'Date', 'Description', 'Start Km', 'End Km', 'Total Distance']],
     body: vehRows,
     theme: 'striped',
     headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
     bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
-    columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' } },
-    margin: { left: 14, right: 14 }
+    columnStyles: { 0: { width: 10, halign: 'center' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' } },
+    margin: { left: 14, right: 14 },
+    foot: [['', '', '', '', '', 'Total:', `${(reportData.totalVehicleDistance || 0).toLocaleString()} km`]],
+    footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7.5 }
   });
 
   currentY = doc.lastAutoTable.finalY + 8;
@@ -776,18 +796,38 @@ export function generateDailyManagerReportPDF(reportData, settings) {
     currentY = 20;
   }
 
-  // Section 09. Other Details
+  // Section 09. Notes
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text('09. OTHER DETAILS / INCIDENTS', 14, currentY);
-  doc.setFont('Helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(71, 85, 105);
-  doc.text(reportData.otherDetails || 'None reported for today.', 14, currentY + 5);
+  doc.text('09. NOTES', 14, currentY);
 
-  currentY += 18;
+  const notesRows = reportData.notesList.length > 0
+    ? reportData.notesList.map(n => [n.text, n.createdBy, new Date(n.createdAt).toLocaleString()])
+    : [['No notes recorded', '-', '-']];
 
-  if (currentY > 240) {
+  doc.autoTable({
+    startY: currentY + 3,
+    head: [['Note', 'By', 'Date/Time']],
+    body: notesRows,
+    theme: 'striped',
+    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
+    bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
+    margin: { left: 14, right: 14 }
+  });
+
+  currentY = doc.lastAutoTable.finalY + 4;
+
+  if (reportData.otherDetails) {
+    doc.setFont('Helvetica', 'italic');
+    doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Additional Incident Notes: ${reportData.otherDetails}`, 14, currentY + 4);
+    currentY += 10;
+  } else {
+    currentY += 4;
+  }
+
+  if (currentY > 225) {
     doc.addPage();
     currentY = 20;
   }
@@ -795,7 +835,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   // Section 10. Declaration / Verification
   doc.setDrawColor(226, 232, 240);
   doc.setFillColor(248, 250, 252);
-  doc.rect(14, currentY, 182, 28, 'FD');
+  doc.rect(14, currentY, 182, 34, 'FD');
 
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(8.5);
@@ -808,8 +848,18 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   doc.text('I hereby certify that I have personally checked and verified the above information and that all information provided is correct.', 18, currentY + 12);
 
   doc.setFont('Helvetica', 'bold');
-  doc.text(`Verified By Manager: ${reportData.verifiedBy || '_______________________'}`, 18, currentY + 22);
-  doc.text(`Date: ${reportData.reportDate}`, 120, currentY + 22);
+  doc.text(`Name: ${reportData.verifiedBy || '......................................'}`, 18, currentY + 22);
+  doc.text('Signature: ..................................', 110, currentY + 22);
+  doc.setFont('Helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.text(`Date and Time Generated: ${new Date().toLocaleString()}`, 18, currentY + 29);
+
+  currentY += 40;
+
+  doc.setFont('Helvetica', 'italic');
+  doc.setFontSize(7.5);
+  doc.setTextColor(148, 163, 184);
+  doc.text('System Generated Report', 105, Math.min(currentY, 268), { align: 'center' });
 
   drawFooter(doc);
   return doc;

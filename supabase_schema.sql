@@ -1457,8 +1457,6 @@ create table if not exists public.daily_manager_reports (
   bank_deposit_today numeric(10, 2) default 0,
   cash_on_hand numeric(10, 2) default 0,
   cheques_on_hand numeric(10, 2) default 0,
-  employee_logs jsonb default '[]'::jsonb,
-  vehicle_logs jsonb default '[]'::jsonb,
   cheque_entries jsonb default '[]'::jsonb,
   withdrawals jsonb default '[]'::jsonb,
   other_details text default '',

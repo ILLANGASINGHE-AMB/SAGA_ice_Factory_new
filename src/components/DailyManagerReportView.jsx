@@ -3,29 +3,30 @@ import { useDailyReport } from '../hooks/useDailyReport';
 import { useSettings } from '../hooks/useSettings';
 import { useToast } from '../components/Toast';
 import { Button } from '../components/Button';
-import { Input } from '../components/FormFields';
 import { generateDailyManagerReportPDF } from '../utils/pdfGenerator';
-import { 
-  ClipboardCheck, 
-  Save, 
-  Download, 
-  Plus, 
-  Trash2, 
-  Calendar, 
-  CheckCircle2, 
-  Boxes, 
-  DollarSign, 
-  CreditCard, 
-  Receipt, 
-  Users, 
-  Truck, 
-  FileText,
-  Clock
+import {
+  ClipboardCheck,
+  Save,
+  Download,
+  Calendar,
+  CheckCircle2,
+  Boxes,
+  DollarSign,
+  CreditCard,
+  Receipt,
+  Users,
+  Truck,
+  Clock,
+  StickyNote
 } from 'lucide-react';
 
 export function DailyManagerReportView() {
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const { loading, reportData, manualInputs, saveDailyReport } = useDailyReport(selectedDate);
+  const today = () => new Date().toISOString().slice(0, 10);
+  const [fromDate, setFromDate] = useState(today);
+  const [toDate, setToDate] = useState(today);
+  const [fromTime, setFromTime] = useState('00:00');
+  const [toTime, setToTime] = useState('23:59');
+  const { loading, reportData, manualInputs, saveDailyReport } = useDailyReport(fromDate, toDate, fromTime, toTime);
   const { settings } = useSettings();
   const toast = useToast();
 
@@ -39,8 +40,6 @@ export function DailyManagerReportView() {
   const [bankDepositToday, setBankDepositToday] = useState(0);
   const [cashOnHand, setCashOnHand] = useState(0);
   const [chequesOnHand, setChequesOnHand] = useState(0);
-  const [employeeLogs, setEmployeeLogs] = useState([]);
-  const [vehicleLogs, setVehicleLogs] = useState([]);
   const [otherDetails, setOtherDetails] = useState('');
   const [verifiedBy, setVerifiedBy] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -56,14 +55,10 @@ export function DailyManagerReportView() {
       setBankDepositToday(reportData?.cashDetails?.bankDepositToday ?? manualInputs.bankDepositToday ?? 0);
       setCashOnHand(reportData?.cashDetails?.cashOnHand ?? manualInputs.cashOnHand ?? 0);
       setChequesOnHand(reportData?.cashDetails?.chequesOnHand ?? manualInputs.chequesOnHand ?? 0);
-      setEmployeeLogs(manualInputs.employeeLogs || []);
-      setVehicleLogs(manualInputs.vehicleLogs || []);
       setOtherDetails(manualInputs.otherDetails || '');
       setVerifiedBy(manualInputs.verifiedBy || '');
     }
-  }, [manualInputs, selectedDate, reportData]);
-
-
+  }, [manualInputs, fromDate, toDate, reportData]);
 
   // Handle Save
   const handleSave = async () => {
@@ -80,12 +75,10 @@ export function DailyManagerReportView() {
         bankDepositToday: Number(bankDepositToday) || 0,
         cashOnHand: Number(cashOnHand) || 0,
         chequesOnHand: Number(chequesOnHand) || 0,
-        employeeLogs,
-        vehicleLogs,
         otherDetails,
         verifiedBy
       });
-      toast.success(`Daily Report for ${selectedDate} saved successfully!`);
+      toast.success(`Daily Report for ${fromDate} saved successfully!`);
     } catch (err) {
       toast.error(err.message || "Failed to save Daily Report");
     } finally {
@@ -97,39 +90,15 @@ export function DailyManagerReportView() {
   const handleDownloadPDF = () => {
     try {
       const doc = generateDailyManagerReportPDF(reportData, settings);
-      doc.save(`Daily_Report_${selectedDate}.pdf`);
-      toast.info(`Downloaded Daily Report PDF for ${selectedDate}`);
+      doc.save(`Daily_Report_${fromDate}_to_${toDate}.pdf`);
+      toast.info(`Downloaded Daily Report PDF for ${fromDate} to ${toDate}`);
     } catch (err) {
       console.error(err);
       toast.error("Failed to generate PDF");
     }
   };
 
-  // Employee Log Handlers
-  const addEmployeeRow = () => {
-    setEmployeeLogs([...employeeLogs, { name: '', position: '', startTime: '08:00', finishTime: '17:00' }]);
-  };
-  const updateEmployeeRow = (index, field, value) => {
-    const updated = [...employeeLogs];
-    updated[index][field] = value;
-    setEmployeeLogs(updated);
-  };
-  const removeEmployeeRow = (index) => {
-    setEmployeeLogs(employeeLogs.filter((_, i) => i !== index));
-  };
-
-  // Vehicle Log Handlers
-  const addVehicleRow = () => {
-    setVehicleLogs([...vehicleLogs, { reason: '', route: '', startReading: '', endReading: '' }]);
-  };
-  const updateVehicleRow = (index, field, value) => {
-    const updated = [...vehicleLogs];
-    updated[index][field] = value;
-    setVehicleLogs(updated);
-  };
-  const removeVehicleRow = (index) => {
-    setVehicleLogs(vehicleLogs.filter((_, i) => i !== index));
-  };
+  const dateRangeLabel = fromDate === toDate ? fromDate : `${fromDate} to ${toDate}`;
 
   return (
     <div className="space-y-6">
@@ -150,17 +119,43 @@ export function DailyManagerReportView() {
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center space-x-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
             <Calendar size={16} className="text-slate-500" />
-            <input 
-              type="date" 
-              value={selectedDate} 
-              onChange={(e) => setSelectedDate(e.target.value)}
+            <input
+              type="date"
+              value={fromDate}
+              max={toDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none"
+            />
+            <span className="text-xs text-slate-400">to</span>
+            <input
+              type="date"
+              value={toDate}
+              min={fromDate}
+              onChange={(e) => setToDate(e.target.value)}
               className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none"
             />
           </div>
 
-          <Button 
-            variant="secondary" 
-            onClick={handleSave} 
+          <div className="flex items-center space-x-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
+            <Clock size={16} className="text-slate-500" />
+            <input
+              type="time"
+              value={fromTime}
+              onChange={(e) => setFromTime(e.target.value)}
+              className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none"
+            />
+            <span className="text-xs text-slate-400">to</span>
+            <input
+              type="time"
+              value={toTime}
+              onChange={(e) => setToTime(e.target.value)}
+              className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none"
+            />
+          </div>
+
+          <Button
+            variant="secondary"
+            onClick={handleSave}
             disabled={isSaving || loading}
             className="flex items-center space-x-2"
           >
@@ -168,9 +163,9 @@ export function DailyManagerReportView() {
             <span>{isSaving ? 'Saving...' : 'Save Data'}</span>
           </Button>
 
-          <Button 
-            variant="primary" 
-            onClick={handleDownloadPDF} 
+          <Button
+            variant="primary"
+            onClick={handleDownloadPDF}
             disabled={loading}
             className="flex items-center space-x-2"
           >
@@ -186,7 +181,7 @@ export function DailyManagerReportView() {
         </div>
       ) : (
         <div className="space-y-6">
-          
+
           {/* SECTION 01: Stock / Production Details */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
@@ -222,9 +217,9 @@ export function DailyManagerReportView() {
 
                 <div className="bg-amber-50/50 dark:bg-amber-950/20 p-2 rounded-xl border border-amber-200 dark:border-amber-900/50">
                   <label className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold uppercase block truncate">Brine</label>
-                  <input 
-                    type="number" 
-                    value={brineCubes} 
+                  <input
+                    type="number"
+                    value={brineCubes}
                     onChange={(e) => setBrineCubes(e.target.value)}
                     className="w-full mt-0.5 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
                   />
@@ -232,9 +227,9 @@ export function DailyManagerReportView() {
 
                 <div className="bg-amber-50/50 dark:bg-amber-950/20 p-2 rounded-xl border border-amber-200 dark:border-amber-900/50">
                   <label className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold uppercase block truncate">Free Issue</label>
-                  <input 
-                    type="number" 
-                    value={freeIssue} 
+                  <input
+                    type="number"
+                    value={freeIssue}
                     onChange={(e) => setFreeIssue(e.target.value)}
                     className="w-full mt-0.5 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
                   />
@@ -242,9 +237,9 @@ export function DailyManagerReportView() {
 
                 <div className="bg-rose-50/50 dark:bg-rose-950/20 p-2 rounded-xl border border-rose-200 dark:border-rose-900/50">
                   <label className="text-[10px] text-rose-700 dark:text-rose-400 font-semibold uppercase block truncate">Damaged</label>
-                  <input 
-                    type="number" 
-                    value={damagedCubes} 
+                  <input
+                    type="number"
+                    value={damagedCubes}
                     onChange={(e) => setDamagedCubes(e.target.value)}
                     className="w-full mt-0.5 bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-800 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
                   />
@@ -265,15 +260,19 @@ export function DailyManagerReportView() {
                 </div>
               </div>
 
-              <div className="pt-2 flex items-center space-x-3">
+              <div className="pt-2 flex flex-wrap items-center gap-3">
                 <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">PM Production Quantity:</span>
-                <input 
+                <input
                   type="number"
                   value={pmProductionQty}
                   onChange={(e) => setPmProductionQty(e.target.value)}
                   placeholder="Enter PM batch quantity..."
                   className="w-48 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-medium focus:outline-none min-h-[36px]"
                 />
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">No of Cubes Sent to Branch (Branch PK):</span>
+                <span className="w-24 bg-navy-50 dark:bg-navy-950/40 border border-navy-200 dark:border-navy-900/50 rounded-lg px-3 py-1.5 text-xs font-bold text-navy-700 dark:text-sky-300 text-center">
+                  {reportData.stockDetails.branchCubes.toLocaleString()}
+                </span>
               </div>
             </div>
 
@@ -310,7 +309,7 @@ export function DailyManagerReportView() {
 
                 <div className="p-2 bg-amber-50/50 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-900/50">
                   <label className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold uppercase block truncate">Other Receipts</label>
-                  <input 
+                  <input
                     type="number"
                     value={otherReceipts}
                     onChange={(e) => setOtherReceipts(e.target.value)}
@@ -330,13 +329,13 @@ export function DailyManagerReportView() {
             {/* SECTION 03 & 04: Credit Details Tables Grid - Side by Side in Landscape */}
             <div className="grid grid-cols-1 lg:grid-cols-2 landscape:grid-cols-2 gap-4 sm:gap-6">
 
-            
-            {/* 03. Credit Given Today */}
+
+            {/* 03. Debt Details */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-3">
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                 <div className="flex items-center space-x-2 font-heading font-bold text-sm text-slate-800 dark:text-slate-100">
                   <CreditCard size={18} className="text-amber-500" />
-                  <span>03. CREDIT GIVEN TODAY</span>
+                  <span>03. DEBT DETAILS</span>
                 </div>
                 <span className="text-xs font-bold text-amber-600">
                   Total: LKR {reportData.totalCreditGivenAmount.toLocaleString()}
@@ -344,7 +343,7 @@ export function DailyManagerReportView() {
               </div>
 
               {reportData.creditGivenList.length === 0 ? (
-                <p className="text-xs text-slate-400 py-4 text-center">No credit sales recorded on {selectedDate}.</p>
+                <p className="text-xs text-slate-400 py-4 text-center">No debt given recorded for {dateRangeLabel}.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
@@ -352,8 +351,10 @@ export function DailyManagerReportView() {
                       <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px]">
                         <th className="py-2">No.</th>
                         <th className="py-2">Customer Name</th>
-                        <th className="py-2 text-right">Qty</th>
+                        <th className="py-2">Phone No</th>
+                        <th className="py-2 text-right">Cubes</th>
                         <th className="py-2 text-right">Amount (LKR)</th>
+                        <th className="py-2 text-right">Debt Balance (LKR)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -361,9 +362,13 @@ export function DailyManagerReportView() {
                         <tr key={c.no}>
                           <td className="py-2 font-mono text-slate-400">{c.no}</td>
                           <td className="py-2 font-medium">{c.customerName}</td>
+                          <td className="py-2 text-slate-500">{c.phone}</td>
                           <td className="py-2 text-right font-mono">{c.quantity}</td>
                           <td className="py-2 text-right font-bold text-slate-800 dark:text-slate-200">
                             {c.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-2 text-right font-mono text-amber-600">
+                            {c.totalDebtBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                           </td>
                         </tr>
                       ))}
@@ -373,12 +378,12 @@ export function DailyManagerReportView() {
               )}
             </div>
 
-            {/* 04. Credit Amount Collections */}
+            {/* 04. Debt Settle Details */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-3">
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                 <div className="flex items-center space-x-2 font-heading font-bold text-sm text-slate-800 dark:text-slate-100">
                   <Receipt size={18} className="text-sky-500" />
-                  <span>04. CREDIT COLLECTIONS TODAY</span>
+                  <span>04. DEBT SETTLE DETAILS</span>
                 </div>
                 <span className="text-xs font-bold text-sky-600">
                   Collected: LKR {reportData.totalCreditCollectedAmount.toLocaleString()}
@@ -386,7 +391,7 @@ export function DailyManagerReportView() {
               </div>
 
               {reportData.creditCollectionList.length === 0 ? (
-                <p className="text-xs text-slate-400 py-4 text-center">No debt settlements collected on {selectedDate}.</p>
+                <p className="text-xs text-slate-400 py-4 text-center">No debt settlements collected for {dateRangeLabel}.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
@@ -394,7 +399,8 @@ export function DailyManagerReportView() {
                       <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px]">
                         <th className="py-2">Customer</th>
                         <th className="py-2">Method</th>
-                        <th className="py-2 text-right">Received</th>
+                        <th className="py-2 text-right">Debt Amount</th>
+                        <th className="py-2 text-right">Paid</th>
                         <th className="py-2 text-right">Remaining</th>
                       </tr>
                     </thead>
@@ -403,6 +409,9 @@ export function DailyManagerReportView() {
                         <tr key={i}>
                           <td className="py-2 font-medium">{c.name}</td>
                           <td className="py-2 text-slate-500">{c.method}</td>
+                          <td className="py-2 text-right font-mono text-slate-500">
+                            LKR {c.debtAmount.toLocaleString()}
+                          </td>
                           <td className="py-2 text-right font-bold text-emerald-600">
                             LKR {c.amountReceived.toLocaleString()}
                           </td>
@@ -419,9 +428,9 @@ export function DailyManagerReportView() {
 
           </div>
 
-          {/* SECTION 05: Expense Details & SECTION 06: Cash Details */}
+          {/* SECTION 05: Expense Details & SECTION 06: Cash & Bank Details */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
+
             {/* 05. Expenses (2 cols) */}
             <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-3">
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
@@ -435,25 +444,27 @@ export function DailyManagerReportView() {
               </div>
 
               {reportData.expenseList.length === 0 ? (
-                <p className="text-xs text-slate-400 py-4 text-center">No operating expenses logged on {selectedDate}.</p>
+                <p className="text-xs text-slate-400 py-4 text-center">No expenses logged for {dateRangeLabel}.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px]">
-                        <th className="py-2">Bill / Code</th>
+                        <th className="py-2">No.</th>
+                        <th className="py-2">Date</th>
                         <th className="py-2">Description</th>
-                        <th className="py-2 text-right">Rupees (LKR)</th>
-                        <th className="py-2 text-center">Cents</th>
+                        <th className="py-2">Category</th>
+                        <th className="py-2 text-right">Amount (LKR)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                      {reportData.expenseList.map((e, idx) => (
-                        <tr key={idx}>
-                          <td className="py-2 font-mono text-slate-400">{e.code}</td>
+                      {reportData.expenseList.map((e) => (
+                        <tr key={e.no}>
+                          <td className="py-2 font-mono text-slate-400">{e.no}</td>
+                          <td className="py-2 text-slate-500">{e.date}</td>
                           <td className="py-2 font-medium">{e.description}</td>
-                          <td className="py-2 text-right font-bold">{e.rupees.toLocaleString()}</td>
-                          <td className="py-2 text-center font-mono text-slate-400">{e.cents}</td>
+                          <td className="py-2 text-slate-500">{e.category}</td>
+                          <td className="py-2 text-right font-bold">{e.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -462,12 +473,12 @@ export function DailyManagerReportView() {
               )}
             </div>
 
-            {/* 06. Cash & Bank Details (1 col) */}
+            {/* 06. Bank Deposit Details (1 col) */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                 <div className="flex items-center space-x-2 font-heading font-bold text-sm text-slate-800 dark:text-slate-100">
                   <DollarSign size={18} className="text-emerald-600" />
-                  <span>06. CASH & BANK DETAILS</span>
+                  <span>06. BANK DEPOSIT DETAILS</span>
                 </div>
                 <span className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 font-bold px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
                   Auto-filled
@@ -477,9 +488,9 @@ export function DailyManagerReportView() {
               <div className="space-y-3 text-xs">
                 <div>
                   <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
-                    Amount Deposited in Bank (LKR)
+                    Amount Deposited (LKR)
                   </label>
-                  <input 
+                  <input
                     type="number"
                     value={bankDepositAmount}
                     onChange={(e) => setBankDepositAmount(e.target.value)}
@@ -490,22 +501,9 @@ export function DailyManagerReportView() {
 
                 <div>
                   <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
-                    Amount Deposite Today (LKR)
+                    Cash in Hand (after deposit) (LKR)
                   </label>
-                  <input 
-                    type="number"
-                    value={bankDepositToday}
-                    onChange={(e) => setBankDepositToday(e.target.value)}
-                    placeholder="0.00"
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 font-bold text-slate-800 dark:text-slate-100 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
-                    Cash Balance on Hand (LKR)
-                  </label>
-                  <input 
+                  <input
                     type="number"
                     value={cashOnHand}
                     onChange={(e) => setCashOnHand(e.target.value)}
@@ -516,9 +514,9 @@ export function DailyManagerReportView() {
 
                 <div>
                   <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
-                    Value of Cheques on Hand (LKR)
+                    Hand Cheque Amount (LKR)
                   </label>
-                  <input 
+                  <input
                     type="number"
                     value={chequesOnHand}
                     onChange={(e) => setChequesOnHand(e.target.value)}
@@ -526,147 +524,141 @@ export function DailyManagerReportView() {
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 font-bold text-slate-800 dark:text-slate-100 focus:outline-none"
                   />
                 </div>
+
+                <div className="pt-2 mt-1 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">Total</span>
+                  <span className="text-sm font-bold text-navy-700 dark:text-sky-300">
+                    LKR {reportData.cashDetails.totalBankDeposit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
               </div>
             </div>
 
-
           </div>
 
-          {/* SECTION 07: Employee Work Details */}
+          {/* SECTION 07: Employee Details */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div className="flex items-center space-x-2 font-heading font-bold text-sm text-slate-800 dark:text-slate-100">
                 <Users size={18} className="text-navy-600 dark:text-sky-400" />
-                <span>07. EMPLOYEE WORK DETAILS</span>
+                <span>07. EMPLOYEE DETAILS</span>
               </div>
-              <Button size="sm" variant="secondary" onClick={addEmployeeRow} className="flex items-center space-x-1">
-                <Plus size={14} />
-                <span>Add Employee</span>
-              </Button>
+              <span className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 font-bold px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
+                From Employee Attendance History
+              </span>
             </div>
 
-            {employeeLogs.length === 0 ? (
-              <p className="text-xs text-slate-400 py-3 text-center">No employee work logs added for today.</p>
+            {reportData.employeeAttendanceList.length === 0 ? (
+              <p className="text-xs text-slate-400 py-3 text-center">No employee attendance recorded for {dateRangeLabel}.</p>
             ) : (
-              <div className="space-y-2">
-                {employeeLogs.map((emp, index) => (
-                  <div key={index} className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-center bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
-                    <input 
-                      type="text"
-                      placeholder="Employee Name"
-                      value={emp.name}
-                      onChange={(e) => updateEmployeeRow(index, 'name', e.target.value)}
-                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:outline-none"
-                    />
-                    <input 
-                      type="text"
-                      placeholder="Location / Position"
-                      value={emp.position}
-                      onChange={(e) => updateEmployeeRow(index, 'position', e.target.value)}
-                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:outline-none"
-                    />
-                    <div className="flex items-center space-x-1 text-xs">
-                      <input 
-                        type="time"
-                        value={emp.startTime}
-                        onChange={(e) => updateEmployeeRow(index, 'startTime', e.target.value)}
-                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 focus:outline-none"
-                      />
-                      <span className="text-slate-400">to</span>
-                      <input 
-                        type="time"
-                        value={emp.finishTime}
-                        onChange={(e) => updateEmployeeRow(index, 'finishTime', e.target.value)}
-                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 focus:outline-none"
-                      />
-                    </div>
-                    <div className="flex justify-end">
-                      <button onClick={() => removeEmployeeRow(index)} className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition">
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px]">
+                      <th className="py-2">Employee Name</th>
+                      <th className="py-2">Date</th>
+                      <th className="py-2">Start Time</th>
+                      <th className="py-2">End Time</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                    {reportData.employeeAttendanceList.map((emp, index) => (
+                      <tr key={index}>
+                        <td className="py-2 font-medium">{emp.employeeName}</td>
+                        <td className="py-2 text-slate-500">{emp.date}</td>
+                        <td className="py-2 font-mono">{emp.startTime}</td>
+                        <td className="py-2 font-mono">{emp.endTime}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
 
-          {/* SECTION 08: Vehicle Travel Details */}
+          {/* SECTION 08: Vehicle Details */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div className="flex items-center space-x-2 font-heading font-bold text-sm text-slate-800 dark:text-slate-100">
                 <Truck size={18} className="text-amber-500" />
-                <span>08. VEHICLE TRAVEL DETAILS</span>
+                <span>08. VEHICLE DETAILS</span>
               </div>
-              <Button size="sm" variant="secondary" onClick={addVehicleRow} className="flex items-center space-x-1">
-                <Plus size={14} />
-                <span>Add Travel Log</span>
-              </Button>
+              <span className="text-xs font-bold text-amber-600">
+                Total Distance: {reportData.totalVehicleDistance.toLocaleString()} km
+              </span>
             </div>
 
-            {vehicleLogs.length === 0 ? (
-              <p className="text-xs text-slate-400 py-3 text-center">No vehicle travel logs added for today.</p>
+            {reportData.vehicleTripList.length === 0 ? (
+              <p className="text-xs text-slate-400 py-3 text-center">No vehicle trips recorded for {dateRangeLabel}.</p>
             ) : (
-              <div className="space-y-2">
-                {vehicleLogs.map((veh, index) => (
-                  <div key={index} className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-center bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
-                    <input 
-                      type="text"
-                      placeholder="Reason for Journey"
-                      value={veh.reason}
-                      onChange={(e) => updateVehicleRow(index, 'reason', e.target.value)}
-                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:outline-none"
-                    />
-                    <input 
-                      type="text"
-                      placeholder="Location / Route"
-                      value={veh.route}
-                      onChange={(e) => updateVehicleRow(index, 'route', e.target.value)}
-                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:outline-none"
-                    />
-                    <div className="flex items-center space-x-1 text-xs">
-                      <input 
-                        type="number"
-                        placeholder="Start Meter"
-                        value={veh.startReading}
-                        onChange={(e) => updateVehicleRow(index, 'startReading', e.target.value)}
-                        className="w-1/2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 focus:outline-none"
-                      />
-                      <input 
-                        type="number"
-                        placeholder="End Meter"
-                        value={veh.endReading}
-                        onChange={(e) => updateVehicleRow(index, 'endReading', e.target.value)}
-                        className="w-1/2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 focus:outline-none"
-                      />
-                    </div>
-                    <div className="flex justify-end">
-                      <button onClick={() => removeVehicleRow(index)} className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition">
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px]">
+                      <th className="py-2">No.</th>
+                      <th className="py-2">Trip ID</th>
+                      <th className="py-2">Date</th>
+                      <th className="py-2">Description</th>
+                      <th className="py-2 text-right">Start Km</th>
+                      <th className="py-2 text-right">End Km</th>
+                      <th className="py-2 text-right">Distance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                    {reportData.vehicleTripList.map((trip) => (
+                      <tr key={trip.no}>
+                        <td className="py-2 font-mono text-slate-400">{trip.no}</td>
+                        <td className="py-2 font-mono">{trip.tripId}</td>
+                        <td className="py-2 text-slate-500">{trip.date}</td>
+                        <td className="py-2 font-medium">{trip.description || (trip.vehicleNo ? `Vehicle ${trip.vehicleNo}` : '-')}</td>
+                        <td className="py-2 text-right font-mono">{trip.startKm.toLocaleString()}</td>
+                        <td className="py-2 text-right font-mono">{trip.endKm.toLocaleString()}</td>
+                        <td className="py-2 text-right font-bold">{trip.distance.toLocaleString()} km</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
 
-          {/* SECTION 09 & 10: Other Details & Declaration */}
+          {/* SECTION 09 & 10: Notes & Declaration */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            {/* 09. Other Details */}
+
+            {/* 09. Notes */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-3">
               <div className="flex items-center space-x-2 font-heading font-bold text-sm text-slate-800 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800 pb-3">
-                <FileText size={18} className="text-slate-500" />
-                <span>09. OTHER DETAILS / INCIDENTS</span>
+                <StickyNote size={18} className="text-slate-500" />
+                <span>09. NOTES</span>
               </div>
-              <textarea 
-                rows={4}
-                placeholder="Record any special incidents, plant issues, power outages, or other important events..."
-                value={otherDetails}
-                onChange={(e) => setOtherDetails(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs text-slate-900 dark:text-slate-100 focus:outline-none"
-              />
+
+              {reportData.notesList.length === 0 ? (
+                <p className="text-xs text-slate-400 py-2 text-center">No notes recorded for {dateRangeLabel}.</p>
+              ) : (
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {reportData.notesList.map((n, idx) => (
+                    <div key={idx} className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 rounded-xl p-2.5 text-xs">
+                      <p className="text-slate-800 dark:text-slate-100">{n.text}</p>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        {n.createdBy} &middot; {new Date(n.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="pt-2">
+                <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
+                  Additional Incident Notes (optional)
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Record any special incidents, plant issues, power outages, or other important events..."
+                  value={otherDetails}
+                  onChange={(e) => setOtherDetails(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs text-slate-900 dark:text-slate-100 focus:outline-none"
+                />
+              </div>
             </div>
 
             {/* 10. Declaration / Verification */}
@@ -686,7 +678,7 @@ export function DailyManagerReportView() {
                   <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
                     Verifying Manager Name
                   </label>
-                  <input 
+                  <input
                     type="text"
                     placeholder="Enter manager name..."
                     value={verifiedBy}

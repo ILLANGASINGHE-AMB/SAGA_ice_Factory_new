@@ -1,7 +1,15 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 
-export function useDailyReport(reportDateStr) {
+const PAYMENT_METHOD_LABELS = {
+  cash: 'Cash',
+  bank_transfer: 'Bank',
+  cheque: 'Cheque',
+  card: 'Card',
+  other: 'Other'
+};
+
+export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
   const [loading, setLoading] = useState(true);
   const [savedRecord, setSavedRecord] = useState(null);
 
@@ -9,10 +17,18 @@ export function useDailyReport(reportDateStr) {
   const [sales, setSales] = useState([]);
   const [debts, setDebts] = useState([]);
   const [settlements, setSettlements] = useState([]);
-  const [expenses, setExpenses] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [invTransactions, setInvTransactions] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [attendance, setAttendance] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
+  const [trips, setTrips] = useState([]);
+  const [notes, setNotes] = useState([]);
+  const [expenseCategories, setExpenseCategories] = useState([]);
+  const [expenseItems, setExpenseItems] = useState([]);
+  const [expenseLedgerRows, setExpenseLedgerRows] = useState([]);
+  const [expenseAmounts, setExpenseAmounts] = useState([]);
 
   // Manual Input State (for manager entries & cash/bank logs)
   const [manualInputs, setManualInputs] = useState({
@@ -28,17 +44,16 @@ export function useDailyReport(reportDateStr) {
     cashOnHand: 0,
     cashOnHandConfirmed: false,
     chequesOnHand: 0,
-    employeeLogs: [],
-    vehicleLogs: [],
     chequeEntries: [],
     withdrawals: [],
     otherDetails: '',
     verifiedBy: ''
   });
 
-  const targetDateStr = reportDateStr || new Date().toISOString().slice(0, 10);
+  const targetFromStr = fromDateStr || new Date().toISOString().slice(0, 10);
+  const targetToStr = toDateStr || targetFromStr;
 
-  // Fetch all relevant data for the date with bulletproof per-table error catching
+  // Fetch all relevant data for the range with bulletproof per-table error catching
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
@@ -46,28 +61,44 @@ export function useDailyReport(reportDateStr) {
         salesRes,
         debtsRes,
         settlementsRes,
-        expensesRes,
         customersRes,
         inventoryRes,
         invTxnRes,
+        employeesRes,
+        attendanceRes,
+        vehiclesRes,
+        tripsRes,
+        notesRes,
+        expenseCategoriesRes,
+        expenseItemsRes,
+        expenseLedgerRes,
+        expenseAmountsRes,
         savedReportRes,
         previousReportRes
       ] = await Promise.all([
         supabase.from('sales').select('*, customer:customers(*)').then(res => res.data || []).catch(() => []),
         supabase.from('debts').select('*, customer:customers(*), sale:sales(*)').then(res => res.data || []).catch(() => []),
         supabase.from('debt_settlements').select('*, customer:customers(*)').then(res => res.data || []).catch(() => []),
-        supabase.from('operating_expenses').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('customers').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('inventory').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('inventory_transactions').select('*, inventory(*)').then(res => res.data || []).catch(() => []),
-        supabase.from('daily_manager_reports').select('*').eq('report_date', targetDateStr).maybeSingle().then(res => res.data || null).catch(() => null),
+        supabase.from('employees').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('employee_attendance').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('vehicles').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('vehicle_trips').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('notes').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('expense_categories').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('expense_items').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('expense_ledger_rows').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('expense_amounts').select('*').then(res => res.data || []).catch(() => []),
+        supabase.from('daily_manager_reports').select('*').eq('report_date', targetFromStr).maybeSingle().then(res => res.data || null).catch(() => null),
         // Most recent PRIOR day's saved report, used to carry forward the
         // true running cash/bank balances (closing balance -> next day's
         // opening balance) when today has no saved report yet. Without this,
         // a new day silently starts assuming an empty till/bank account.
         supabase.from('daily_manager_reports')
           .select('cash_on_hand, bank_deposit_amount, cheques_on_hand, cash_on_hand_confirmed')
-          .lt('report_date', targetDateStr)
+          .lt('report_date', targetFromStr)
           .order('report_date', { ascending: false })
           .limit(1)
           .maybeSingle()
@@ -78,9 +109,17 @@ export function useDailyReport(reportDateStr) {
       setSales(salesRes);
       setDebts(debtsRes);
       setSettlements(settlementsRes);
-      setExpenses(expensesRes);
       setCustomers(customersRes);
       setInventory(inventoryRes);
+      setEmployees(employeesRes);
+      setAttendance(attendanceRes);
+      setVehicles(vehiclesRes);
+      setTrips(tripsRes);
+      setNotes(notesRes);
+      setExpenseCategories(expenseCategoriesRes);
+      setExpenseItems(expenseItemsRes);
+      setExpenseLedgerRows(expenseLedgerRes);
+      setExpenseAmounts(expenseAmountsRes);
 
       // Fallback to local storage if Supabase transactions empty or error
       if (!invTxnRes || invTxnRes.length === 0) {
@@ -90,7 +129,7 @@ export function useDailyReport(reportDateStr) {
         setInvTransactions(invTxnRes);
       }
 
-      const localKey = `saga_daily_report_${targetDateStr}`;
+      const localKey = `saga_daily_report_${targetFromStr}`;
       const localData = localStorage.getItem(localKey);
       let localParsed = {};
       if (localData) {
@@ -117,8 +156,6 @@ export function useDailyReport(reportDateStr) {
           // rather than retroactively treated as "unconfirmed".
           cashOnHandConfirmed: savedReportRes.cash_on_hand_confirmed ?? localParsed.cashOnHandConfirmed ?? true,
           chequesOnHand: savedReportRes.cheques_on_hand ?? localParsed.chequesOnHand ?? 0,
-          employeeLogs: Array.isArray(savedReportRes.employee_logs) && savedReportRes.employee_logs.length > 0 ? savedReportRes.employee_logs : (localParsed.employeeLogs || []),
-          vehicleLogs: Array.isArray(savedReportRes.vehicle_logs) && savedReportRes.vehicle_logs.length > 0 ? savedReportRes.vehicle_logs : (localParsed.vehicleLogs || []),
           chequeEntries: Array.isArray(savedReportRes.cheque_entries) && savedReportRes.cheque_entries.length > 0 ? savedReportRes.cheque_entries : (localParsed.chequeEntries || []),
           withdrawals: Array.isArray(savedReportRes.withdrawals) && savedReportRes.withdrawals.length > 0 ? savedReportRes.withdrawals : (localParsed.withdrawals || []),
           otherDetails: savedReportRes.other_details || localParsed.otherDetails || '',
@@ -151,8 +188,6 @@ export function useDailyReport(reportDateStr) {
             cashOnHand: priorConfirmed ? (previousReportRes?.cash_on_hand ?? 0) : 0,
             cashOnHandConfirmed: priorConfirmed,
             chequesOnHand: previousReportRes?.cheques_on_hand ?? 0,
-            employeeLogs: [],
-            vehicleLogs: [],
             chequeEntries: [],
             withdrawals: [],
             otherDetails: '',
@@ -167,7 +202,7 @@ export function useDailyReport(reportDateStr) {
     } finally {
       setLoading(false);
     }
-  }, [targetDateStr]);
+  }, [targetFromStr]);
 
   useEffect(() => {
     fetchData();
@@ -176,8 +211,12 @@ export function useDailyReport(reportDateStr) {
       .channel(`daily-report-realtime-${Math.random()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'debt_settlements' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'operating_expenses' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_ledger_rows' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_amounts' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_transactions' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_attendance' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_trips' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_manager_reports' }, () => fetchData())
       .subscribe();
 
@@ -186,22 +225,24 @@ export function useDailyReport(reportDateStr) {
     };
   }, [fetchData]);
 
-  // Compute live metrics for targetDateStr
+  // Compute live metrics for the selected [fromDate, toDate] x [fromTime, toTime] window
   const reportData = useMemo(() => {
-    // Robust local YYYY-MM-DD date formatter
-    const toLocalDateStr = (dStr) => {
-      if (!dStr) return '';
+    const fromDateTime = new Date(`${targetFromStr}T${fromTime || '00:00'}:00`);
+    const toDateTime = new Date(`${targetToStr}T${toTime || '23:59'}:59`);
+
+    // For timestamptz columns (sale_date, settlement_date, created_at) — full date+time range.
+    const isInRange = (dStr) => {
+      if (!dStr) return false;
       const d = new Date(dStr);
-      if (isNaN(d.getTime())) return '';
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
+      if (isNaN(d.getTime())) return false;
+      return d >= fromDateTime && d <= toDateTime;
     };
 
-    const isSameDate = (dStr) => {
-      if (!dStr) return false;
-      return toLocalDateStr(dStr) === targetDateStr;
+    // For plain `date` columns (entry_date, attendance_date, trip_date) which carry no
+    // time-of-day to filter against — date-only range, ISO strings compare lexicographically.
+    const isInDateRange = (dateStr) => {
+      if (!dateStr) return false;
+      return dateStr >= targetFromStr && dateStr <= targetToStr;
     };
 
     // Helper to get inventory item by type
@@ -209,16 +250,16 @@ export function useDailyReport(reportDateStr) {
     const rscItem = inventory.find(i => i.type === 'resell');
     const wstItem = inventory.find(i => i.type === 'waste');
 
-    // 1. Stock / Production Details for targetDateStr
+    // 1. Stock / Production Details for the selected range
     let mfcTxnAdditions = 0;
     let rscTxnAdditions = 0;
     let brineTxnAdditions = 0;
 
     invTransactions.forEach(txn => {
-      if (isSameDate(txn.created_at) && (txn.transaction_type === 'add' || Number(txn.quantity_change) > 0)) {
+      if (isInRange(txn.created_at) && (txn.transaction_type === 'add' || Number(txn.quantity_change) > 0)) {
         const invId = txn.inventory_id;
         const qty = Number(txn.quantity_change) || 0;
-        
+
         if (mfcItem && Number(invId) === Number(mfcItem.id)) {
           mfcTxnAdditions += qty;
         } else if (rscItem && Number(invId) === Number(rscItem.id)) {
@@ -229,15 +270,21 @@ export function useDailyReport(reportDateStr) {
       }
     });
 
-    // Production = Production Cubes added today
+    // Production = Production Cubes added in range
     const todaysProduction = mfcTxnAdditions;
-    // Purchases = Resell Cubes added today
+    // Purchases = Resell Cubes added in range
     const todaysPurchase = rscTxnAdditions;
 
-    const todaysSalesRecords = sales.filter(s => isSameDate(s.sale_date));
+    const todaysSalesRecords = sales.filter(s => isInRange(s.sale_date));
     const todaysSalesQty = todaysSalesRecords.reduce((sum, s) => sum + (Number(s.quantity) || 0), 0);
 
-    // Brine Cubes = Brine cubes added today or manual entry
+    // Cubes sent to the "Branch PK" customer specifically, broken out from
+    // the aggregate sales total per the Daily Manager Report spec.
+    const branchCubes = todaysSalesRecords
+      .filter(s => (s.customer?.name || customers.find(c => Number(c.id) === Number(s.customer_id))?.name) === 'Branch PK')
+      .reduce((sum, s) => sum + (Number(s.quantity) || 0), 0);
+
+    // Brine Cubes = Brine cubes added in range or manual entry
     // A manager explicitly entering 0 to correct the auto-calculated value
     // must be honored — checking `> 0` would treat that 0 as "not entered"
     // and silently revert to the auto value. brineCubesConfirmed is the
@@ -247,13 +294,13 @@ export function useDailyReport(reportDateStr) {
     const freeIssue = Number(manualInputs.freeIssue) || 0;
     const damagedCubes = Number(manualInputs.damagedCubes) || 0;
 
-    // `inventory.quantity` is a LIVE figure — it already reflects today's
-    // production, purchases, brine additions, and sales the moment they
-    // happen (via the atomic RPCs). So the true opening ("previous day")
-    // balance is today's live total with today's movements backed OUT, not
-    // the live total itself. Re-adding those same movements on top of the
-    // live total (the old behavior) double-counted every day there was any
-    // activity — see Audit_Issues_And_Fixes.md #4.1.
+    // `inventory.quantity` is a LIVE figure — it already reflects the
+    // range's production, purchases, brine additions, and sales the moment
+    // they happen (via the atomic RPCs). So the true opening ("previous")
+    // balance is today's live total with the range's movements backed OUT,
+    // not the live total itself. Re-adding those same movements on top of
+    // the live total (the old behavior) double-counted every day there was
+    // any activity — see Audit_Issues_And_Fixes.md #4.1.
     const currentTotalStock = inventory.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
     const previousDayBalance = currentTotalStock - todaysProduction - todaysPurchase - brineCubes + todaysSalesQty;
 
@@ -271,7 +318,7 @@ export function useDailyReport(reportDateStr) {
     const creditSalesRecords = todaysSalesRecords.filter(s => s.payment_type === 'debt');
     const creditSalesAmount = creditSalesRecords.reduce((sum, s) => sum + (Number(s.total_amount) || 0), 0);
 
-    const todaysSettlements = settlements.filter(setl => isSameDate(setl.settlement_date));
+    const todaysSettlements = settlements.filter(setl => isInRange(setl.settlement_date));
     const creditAmountReceived = todaysSettlements.reduce((sum, setl) => sum + (Number(setl.amount_paid) || 0), 0);
 
     const otherReceipts = Number(manualInputs.otherReceipts) || 0;
@@ -280,13 +327,20 @@ export function useDailyReport(reportDateStr) {
     // 3. Details of Credit Given Today
     const creditGivenList = creditSalesRecords.map((s, idx) => {
       const cust = s.customer || customers.find(c => Number(c.id) === Number(s.customer_id));
+      // Cumulative outstanding balance for this customer across ALL their
+      // debts (not just this one sale's debt) — the spec's "Total Debt
+      // Balance LKR" is a running balance, distinct from today's amount.
+      const totalDebtBalance = debts
+        .filter(d => Number(d.customer_id) === Number(cust?.id))
+        .reduce((sum, d) => sum + (Number(d.remaining_amount) || 0), 0);
       return {
         no: idx + 1,
         location: cust?.address || 'Plant',
         customerName: cust?.name || 'Walk-in',
         phone: cust?.whatsapp_number || cust?.contact_number || 'N/A',
         quantity: s.quantity,
-        amount: Number(s.total_amount)
+        amount: Number(s.total_amount),
+        totalDebtBalance
       };
     });
     const totalCreditGivenAmount = creditGivenList.reduce((sum, item) => sum + item.amount, 0);
@@ -301,28 +355,41 @@ export function useDailyReport(reportDateStr) {
       const matchingDebt = debts.find(d => Number(d.id) === Number(setl.debt_id));
       return {
         name: cust?.name || 'Customer',
-        method: 'Cash',
+        method: PAYMENT_METHOD_LABELS[setl.payment_method] || 'Cash',
+        debtAmount: matchingDebt ? Number(matchingDebt.total_amount) : 0,
         amountReceived: Number(setl.amount_paid),
         outstandingAmount: matchingDebt ? Number(matchingDebt.remaining_amount) : 0
       };
     });
     const totalCreditCollectedAmount = creditCollectionList.reduce((sum, item) => sum + item.amountReceived, 0);
 
-    // 5. Expense Details
-    const todaysExpenses = expenses.filter(exp => isSameDate(exp.expense_date));
-    const expenseList = todaysExpenses.map(exp => {
-      const amt = Number(exp.amount) || 0;
-      const rupees = Math.floor(amt);
-      const cents = Math.round((amt - rupees) * 100);
-      return {
-        code: exp.expense_code,
-        description: exp.description,
-        rupees,
-        cents: String(cents).padStart(2, '0'),
-        totalAmount: amt
-      };
-    });
-    const totalExpensesAmount = expenseList.reduce((sum, item) => sum + item.totalAmount, 0);
+    // 5. Expense Details — sourced from the Cash Book grid schema
+    // (expense_ledger_rows x expense_amounts), which replaced the old flat
+    // operating_expenses table. One ledger row (date + description) can
+    // carry amounts across several expense items/categories, so each
+    // non-zero amount becomes its own report line.
+    const expenseCategoryById = new Map(expenseCategories.map(c => [c.id, c]));
+    const expenseItemById = new Map(expenseItems.map(i => [i.id, i]));
+    const rangeLedgerRows = expenseLedgerRows.filter(r => isInDateRange(r.entry_date));
+    const rangeLedgerRowIds = new Set(rangeLedgerRows.map(r => r.id));
+    const ledgerRowById = new Map(rangeLedgerRows.map(r => [r.id, r]));
+
+    const expenseList = expenseAmounts
+      .filter(a => rangeLedgerRowIds.has(a.ledger_row_id) && Number(a.amount) > 0)
+      .map(a => {
+        const row = ledgerRowById.get(a.ledger_row_id);
+        const item = expenseItemById.get(a.expense_item_id);
+        const category = item ? expenseCategoryById.get(item.category_id) : null;
+        return {
+          date: row?.entry_date || '',
+          description: row?.description || item?.name || '',
+          category: category?.name || 'Uncategorized',
+          amount: Number(a.amount) || 0
+        };
+      })
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+      .map((item, idx) => ({ no: idx + 1, ...item }));
+    const totalExpensesAmount = expenseList.reduce((sum, item) => sum + item.amount, 0);
 
     // Cash & Bank withdrawals summary
     const withdrawalsList = manualInputs.withdrawals || [];
@@ -333,8 +400,56 @@ export function useDailyReport(reportDateStr) {
     const chequeList = manualInputs.chequeEntries || [];
     const totalChequesValue = chequeList.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
 
+    const bankDepositAmount = Number(manualInputs.bankDepositAmount) || 0;
+    const cashOnHand = Number(manualInputs.cashOnHand) || 0;
+    const chequesOnHand = Number(manualInputs.chequesOnHand) || totalChequesValue;
+    const totalBankDeposit = bankDepositAmount + cashOnHand + chequesOnHand;
+
+    // 7. Employee Details — real attendance history, not manual entry
+    const employeeById = new Map(employees.map(e => [e.id, e]));
+    const employeeAttendanceList = attendance
+      .filter(a => isInDateRange(a.attendance_date))
+      .map(a => ({
+        employeeName: employeeById.get(a.employee_id)?.name || 'Unknown',
+        date: a.attendance_date,
+        startTime: (a.start_time || '').slice(0, 5) || '-',
+        endTime: (a.end_time || '').slice(0, 5) || '-'
+      }))
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+    // 8. Vehicle Details — real trip history, not manual entry
+    const vehicleById = new Map(vehicles.map(v => [v.id, v]));
+    const vehicleTripList = trips
+      .filter(t => isInDateRange(t.trip_date))
+      .map(t => ({
+        tripId: `TRIP-${String(t.id).padStart(4, '0')}`,
+        date: t.trip_date,
+        vehicleNo: vehicleById.get(t.vehicle_id)?.vehicle_no || '',
+        description: t.description || '',
+        startKm: Number(t.start_odometer) || 0,
+        endKm: Number(t.end_odometer) || 0,
+        distance: Number(t.distance_travelled ?? (t.end_odometer - t.start_odometer)) || 0
+      }))
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+      .map((trip, idx) => ({ no: idx + 1, ...trip }));
+    const totalVehicleDistance = vehicleTripList.reduce((sum, t) => sum + t.distance, 0);
+
+    // 9. Notes — real ledger from the Notes & Messages tab
+    const notesList = notes
+      .filter(n => isInRange(n.created_at))
+      .map(n => ({
+        text: n.note_text,
+        createdBy: n.created_by,
+        createdAt: n.created_at
+      }))
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
     return {
-      reportDate: targetDateStr,
+      reportDate: targetFromStr,
+      reportDateFrom: targetFromStr,
+      reportDateTo: targetToStr,
+      reportTimeFrom: fromTime || '00:00',
+      reportTimeTo: toTime || '23:59',
       stockDetails: {
         previousDayBalance,
         todaysProduction,
@@ -343,6 +458,7 @@ export function useDailyReport(reportDateStr) {
         freeIssue,
         damagedCubes,
         todaysSalesQty,
+        branchCubes,
         closingBalance,
         pmProductionQty: Number(manualInputs.pmProductionQty) || 0,
         breakdown: {
@@ -366,23 +482,26 @@ export function useDailyReport(reportDateStr) {
       expenseList,
       totalExpensesAmount,
       cashDetails: {
-        bankDepositAmount: Number(manualInputs.bankDepositAmount) || 0,
+        bankDepositAmount,
         bankDepositToday: Number(manualInputs.bankDepositToday) || 0,
         cashDepositedToday: Number(manualInputs.cashDepositedToday) || 0,
-        cashOnHand: Number(manualInputs.cashOnHand) || 0,
+        cashOnHand,
         cashOnHandConfirmed: !!manualInputs.cashOnHandConfirmed,
-        chequesOnHand: Number(manualInputs.chequesOnHand) || totalChequesValue,
+        chequesOnHand,
+        totalBankDeposit,
         cashWithdrawals,
         bankWithdrawals,
         chequeEntries: chequeList,
         withdrawals: withdrawalsList
       },
-      employeeLogs: manualInputs.employeeLogs || [],
-      vehicleLogs: manualInputs.vehicleLogs || [],
+      employeeAttendanceList,
+      vehicleTripList,
+      totalVehicleDistance,
+      notesList,
       otherDetails: manualInputs.otherDetails || '',
       verifiedBy: manualInputs.verifiedBy || ''
     };
-  }, [targetDateStr, sales, debts, settlements, expenses, customers, inventory, invTransactions, manualInputs]);
+  }, [targetFromStr, targetToStr, fromTime, toTime, sales, debts, settlements, customers, inventory, invTransactions, employees, attendance, vehicles, trips, notes, expenseCategories, expenseItems, expenseLedgerRows, expenseAmounts, manualInputs]);
 
   // Save manual updates with safe column handling
   const saveDailyReport = async (updatedInputs) => {
@@ -394,10 +513,10 @@ export function useDailyReport(reportDateStr) {
     setManualInputs(payload);
 
     // Save to LocalStorage immediately
-    localStorage.setItem(`saga_daily_report_${targetDateStr}`, JSON.stringify(payload));
+    localStorage.setItem(`saga_daily_report_${targetFromStr}`, JSON.stringify(payload));
 
     const dbPayload = {
-      report_date: targetDateStr,
+      report_date: targetFromStr,
       brine_cubes: Number(payload.brineCubes) || 0,
       brine_cubes_confirmed: !!payload.brineCubesConfirmed,
       free_issue: Number(payload.freeIssue) || 0,
@@ -410,8 +529,6 @@ export function useDailyReport(reportDateStr) {
       cash_on_hand: Number(payload.cashOnHand) || 0,
       cash_on_hand_confirmed: !!payload.cashOnHandConfirmed,
       cheques_on_hand: Number(payload.chequesOnHand) || 0,
-      employee_logs: payload.employeeLogs || [],
-      vehicle_logs: payload.vehicleLogs || [],
       cheque_entries: payload.chequeEntries || [],
       withdrawals: payload.withdrawals || [],
       other_details: payload.otherDetails || '',
@@ -430,7 +547,7 @@ export function useDailyReport(reportDateStr) {
         console.warn("Supabase upsert daily report warning (trying basic payload):", error.message);
         // Fallback without new jsonb columns if they don't exist yet on DB
         const basicPayload = {
-          report_date: targetDateStr,
+          report_date: targetFromStr,
           brine_cubes: Number(payload.brineCubes) || 0,
           brine_cubes_confirmed: !!payload.brineCubesConfirmed,
           free_issue: Number(payload.freeIssue) || 0,
@@ -443,8 +560,6 @@ export function useDailyReport(reportDateStr) {
           cash_on_hand: Number(payload.cashOnHand) || 0,
           cash_on_hand_confirmed: !!payload.cashOnHandConfirmed,
           cheques_on_hand: Number(payload.chequesOnHand) || 0,
-          employee_logs: payload.employeeLogs || [],
-          vehicle_logs: payload.vehicleLogs || [],
           other_details: payload.otherDetails || '',
           verified_by: payload.verifiedBy || ''
         };
