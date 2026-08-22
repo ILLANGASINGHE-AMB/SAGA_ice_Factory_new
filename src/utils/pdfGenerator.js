@@ -3,6 +3,35 @@ import { applyPlugin } from 'jspdf-autotable';
 
 applyPlugin(jsPDF);
 
+// Shared brand palette — keeps every generated PDF (bills, statements,
+// receipts, reports) visually consistent instead of each function picking
+// its own grays.
+const BRAND_PRIMARY = [67, 56, 202];    // Indigo-700 — header band start, primary table headers
+const BRAND_SECONDARY = [99, 102, 241]; // Indigo-500 — secondary table headers
+const BRAND_LIGHT = [14, 165, 233];     // Sky-500 — header band end, accent lines
+const BRAND_TINT = [238, 242, 255];     // Indigo-50 — light fills, footer totals, striped rows
+const AMBER = [217, 119, 6];            // Amber-600 — grand total emphasis
+const SUCCESS = [5, 150, 105];          // Emerald-600 — paid status
+const SUCCESS_BG = [209, 250, 229];     // Emerald-100
+const SUCCESS_BORDER = [110, 231, 183]; // Emerald-300
+const DANGER = [190, 18, 60];           // Rose-700 — credit/debt status
+const DANGER_BG = [255, 228, 230];      // Rose-100
+const DANGER_BORDER = [253, 164, 175];  // Rose-300
+
+// Helper to paint a smooth left-to-right gradient using thin filled strips
+// (jsPDF has no native gradient fill).
+function drawGradientRect(doc, x, y, w, h, startColor, endColor, steps = 48) {
+  const stepWidth = w / steps;
+  for (let i = 0; i < steps; i++) {
+    const t = i / (steps - 1);
+    const r = Math.round(startColor[0] + (endColor[0] - startColor[0]) * t);
+    const g = Math.round(startColor[1] + (endColor[1] - startColor[1]) * t);
+    const b = Math.round(startColor[2] + (endColor[2] - startColor[2]) * t);
+    doc.setFillColor(r, g, b);
+    doc.rect(x + i * stepWidth, y, stepWidth + 0.5, h, 'F');
+  }
+}
+
 // Helper to extract image format from data URL
 function getImageFormat(dataUrl) {
   if (!dataUrl) return 'PNG';
@@ -17,75 +46,83 @@ function getImageFormat(dataUrl) {
   return 'PNG';
 }
 
-// Helper to draw clean invoice headers
+// Helper to draw clean, colorful invoice headers
 function drawHeader(doc, settings, title, uniqueCode) {
   const companyName = settings?.company_name || 'Sagacious Ice Factory';
   const companyAddress = settings?.company_address || 'Colombo, Sri Lanka';
   const companyPhone = settings?.company_phone || 'N/A';
   const companyEmail = settings?.company_email || 'N/A';
 
-  // Draw logo
+  // Full-width gradient band
+  drawGradientRect(doc, 0, 0, 210, 38, BRAND_PRIMARY, BRAND_LIGHT);
+
+  // White logo card sitting on the gradient for contrast
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(14, 8, 20, 20, 2, 2, 'F');
   if (settings?.logo_url) {
     try {
       const format = getImageFormat(settings.logo_url);
-      doc.addImage(settings.logo_url, format, 14, 15, 20, 20);
+      doc.addImage(settings.logo_url, format, 15.5, 9.5, 17, 17);
     } catch (e) {
       console.error("Failed to add logo image to PDF:", e);
-      // Fallback stylized branding logo box (top left)
-      doc.setFillColor(15, 23, 42); // Navy-900
-      doc.rect(14, 15, 20, 20, 'F');
-      doc.setTextColor(255, 255, 255);
+      doc.setTextColor(BRAND_PRIMARY[0], BRAND_PRIMARY[1], BRAND_PRIMARY[2]);
       doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(14);
-      doc.text('S', 22, 28);
+      doc.setFontSize(16);
+      doc.text('S', 24, 21, { align: 'center' });
     }
   } else {
-    // Draw stylized branding logo box (top left)
-    doc.setFillColor(15, 23, 42); // Navy-900
-    doc.rect(14, 15, 20, 20, 'F');
-    doc.setTextColor(255, 255, 255);
+    doc.setTextColor(BRAND_PRIMARY[0], BRAND_PRIMARY[1], BRAND_PRIMARY[2]);
     doc.setFont('Helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.text('S', 22, 28);
+    doc.setFontSize(16);
+    doc.text('S', 24, 21, { align: 'center' });
   }
 
-  // Company details (top right)
-  doc.setTextColor(51, 65, 85); // Slate-700
+  // Company details (top right, on the gradient)
+  doc.setTextColor(255, 255, 255);
   doc.setFont('Helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.text(companyName, 200, 19, { align: 'right' });
+  doc.setFontSize(13);
+  doc.text(companyName, 196, 15, { align: 'right' });
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text(companyAddress, 200, 24, { align: 'right' });
-  doc.text(`Phone: ${companyPhone}  |  Email: ${companyEmail}`, 200, 29, { align: 'right' });
+  doc.setTextColor(224, 242, 254); // Sky-100
+  doc.text(companyAddress, 196, 21, { align: 'right' });
+  doc.text(`Phone: ${companyPhone}  |  Email: ${companyEmail}`, 196, 26, { align: 'right' });
 
-  // Title block
-  doc.setDrawColor(226, 232, 240); // border-slate-200
-  doc.setLineWidth(0.5);
-  doc.line(14, 40, 200, 40);
-
-  doc.setTextColor(15, 23, 42);
+  // Title pill badge
   doc.setFont('Helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.text(title.toUpperCase(), 14, 50);
+  doc.setFontSize(11);
+  const titleText = title.toUpperCase();
+  const titleWidth = doc.getTextWidth(titleText);
+  doc.setFillColor(BRAND_PRIMARY[0], BRAND_PRIMARY[1], BRAND_PRIMARY[2]);
+  doc.roundedRect(14, 44, titleWidth + 12, 9, 2, 2, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.text(titleText, 20, 50);
 
-  doc.setTextColor(94, 108, 132);
+  doc.setTextColor(100, 116, 139);
+  doc.setFont('Helvetica', 'normal');
   doc.setFontSize(10);
-  doc.text(`#${uniqueCode}`, 200, 50, { align: 'right' });
+  doc.text(`#${uniqueCode}`, 196, 49.5, { align: 'right' });
+
+  // Accent divider
+  doc.setDrawColor(BRAND_LIGHT[0], BRAND_LIGHT[1], BRAND_LIGHT[2]);
+  doc.setLineWidth(0.8);
+  doc.line(14, 58, 196, 58);
 }
 
-// Helper to draw clean invoice footers
+// Helper to draw clean, colorful invoice footers
 function drawFooter(doc) {
-  doc.setDrawColor(226, 232, 240);
-  doc.line(14, 275, 200, 275);
-  
-  doc.setTextColor(148, 163, 184); // Slate-400
+  doc.setDrawColor(BRAND_LIGHT[0], BRAND_LIGHT[1], BRAND_LIGHT[2]);
+  doc.setLineWidth(0.8);
+  doc.line(14, 275, 196, 275);
+
+  doc.setTextColor(BRAND_PRIMARY[0], BRAND_PRIMARY[1], BRAND_PRIMARY[2]);
   doc.setFontSize(8);
   doc.setFont('Helvetica', 'italic');
   doc.text('Thank you for your business!', 105, 282, { align: 'center' });
-  
+
+  doc.setTextColor(148, 163, 184); // Slate-400
   const generatedTime = new Date().toLocaleString();
-  doc.text(`Generated: ${generatedTime}`, 200, 282, { align: 'right' });
+  doc.text(`Generated: ${generatedTime}`, 196, 282, { align: 'right' });
 }
 
 // 1. Generate Bill PDF
@@ -140,7 +177,7 @@ export function generateBillPDF(sale, settings) {
     body: tableData,
     theme: 'striped',
     headStyles: {
-      fillColor: [15, 23, 42],
+      fillColor: BRAND_PRIMARY,
       textColor: [255, 255, 255],
       fontStyle: 'bold',
       fontSize: 9
@@ -148,6 +185,9 @@ export function generateBillPDF(sale, settings) {
     bodyStyles: {
       fontSize: 9,
       textColor: [51, 65, 85]
+    },
+    alternateRowStyles: {
+      fillColor: BRAND_TINT
     },
     columnStyles: {
       0: { width: 90 },
@@ -166,51 +206,61 @@ export function generateBillPDF(sale, settings) {
     }
   });
 
-  // Grand Total Block
+  // Grand Total Block — indigo accent bar + tinted fill, amber total for emphasis
   const finalY = doc.lastAutoTable.finalY + 10;
-  
-  doc.setDrawColor(241, 245, 249);
-  doc.setFillColor(248, 250, 252);
+
+  doc.setDrawColor(BRAND_TINT[0], BRAND_TINT[1], BRAND_TINT[2]);
+  doc.setFillColor(BRAND_TINT[0], BRAND_TINT[1], BRAND_TINT[2]);
   doc.rect(120, finalY, 80, 22, 'FD');
-  
+  doc.setFillColor(BRAND_PRIMARY[0], BRAND_PRIMARY[1], BRAND_PRIMARY[2]);
+  doc.rect(120, finalY, 1.5, 22, 'F');
+
   doc.setFont('Helvetica', 'bold');
   doc.setTextColor(71, 85, 105);
   doc.setFontSize(9);
-  doc.text('Subtotal:', 124, finalY + 7);
-  doc.text('GRAND TOTAL:', 124, finalY + 15);
-  
+  doc.text('Subtotal:', 126, finalY + 7);
+  doc.text('GRAND TOTAL:', 126, finalY + 16);
+
   doc.setFont('Helvetica', 'normal');
   doc.text(`LKR ${sale.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 196, finalY + 7, { align: 'right' });
   doc.setFont('Helvetica', 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.setFontSize(10);
-  doc.text(`LKR ${sale.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 196, finalY + 15, { align: 'right' });
+  doc.setTextColor(AMBER[0], AMBER[1], AMBER[2]);
+  doc.setFontSize(12);
+  doc.text(`LKR ${sale.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 196, finalY + 16, { align: 'right' });
 
-  // Payment Status Notice
-  doc.setFontSize(8);
-  doc.setTextColor(100, 116, 139);
+  // Payment Status Notice — colorful rounded badge
   if (sale.payment_type === 'debt') {
-    doc.setFillColor(254, 242, 242);
-    doc.setDrawColor(254, 226, 226);
-    doc.rect(14, finalY, 95, 22, 'FD');
-    doc.setTextColor(185, 28, 28);
+    doc.setFillColor(DANGER_BG[0], DANGER_BG[1], DANGER_BG[2]);
+    doc.setDrawColor(DANGER_BORDER[0], DANGER_BORDER[1], DANGER_BORDER[2]);
+    doc.setLineWidth(0.6);
+    doc.roundedRect(14, finalY, 95, 22, 2, 2, 'FD');
+    doc.setFillColor(DANGER[0], DANGER[1], DANGER[2]);
+    doc.circle(20, finalY + 7, 2, 'F');
+    doc.setTextColor(DANGER[0], DANGER[1], DANGER[2]);
     doc.setFont('Helvetica', 'bold');
-    doc.text('CREDIT BALANCE NOTICE', 18, finalY + 7);
+    doc.setFontSize(8.5);
+    doc.text('CREDIT BALANCE NOTICE', 25, finalY + 8);
     doc.setFont('Helvetica', 'normal');
     doc.setFontSize(7.5);
-    doc.text('This invoice was issued on credit terms. The amount is recorded', 18, finalY + 12);
-    doc.text('in your pending debts statement.', 18, finalY + 16);
+    doc.setTextColor(100, 116, 139);
+    doc.text('This invoice was issued on credit terms. The amount is recorded', 18, finalY + 14);
+    doc.text('in your pending debts statement.', 18, finalY + 18.5);
   } else {
-    doc.setFillColor(240, 253, 250);
-    doc.setDrawColor(204, 251, 241);
-    doc.rect(14, finalY, 95, 22, 'FD');
-    doc.setTextColor(15, 118, 110);
+    doc.setFillColor(SUCCESS_BG[0], SUCCESS_BG[1], SUCCESS_BG[2]);
+    doc.setDrawColor(SUCCESS_BORDER[0], SUCCESS_BORDER[1], SUCCESS_BORDER[2]);
+    doc.setLineWidth(0.6);
+    doc.roundedRect(14, finalY, 95, 22, 2, 2, 'FD');
+    doc.setFillColor(SUCCESS[0], SUCCESS[1], SUCCESS[2]);
+    doc.circle(20, finalY + 7, 2, 'F');
+    doc.setTextColor(SUCCESS[0], SUCCESS[1], SUCCESS[2]);
     doc.setFont('Helvetica', 'bold');
-    doc.text('TRANSACTION PAID', 18, finalY + 7);
+    doc.setFontSize(8.5);
+    doc.text('TRANSACTION PAID', 25, finalY + 8);
     doc.setFont('Helvetica', 'normal');
     doc.setFontSize(7.5);
-    doc.text('Thank you! This invoice has been settled in full via cash', 18, finalY + 12);
-    doc.text('on the date of purchase.', 18, finalY + 16);
+    doc.setTextColor(100, 116, 139);
+    doc.text('Thank you! This invoice has been settled in full via cash', 18, finalY + 14);
+    doc.text('on the date of purchase.', 18, finalY + 18.5);
   }
 
   drawFooter(doc);
@@ -277,7 +327,7 @@ export function generateDebtStatementPDF(debt, settings) {
     body: tableData,
     theme: 'grid',
     headStyles: {
-      fillColor: [15, 23, 42],
+      fillColor: BRAND_PRIMARY,
       textColor: [255, 255, 255],
       fontStyle: 'bold',
       fontSize: 9
@@ -285,6 +335,9 @@ export function generateDebtStatementPDF(debt, settings) {
     bodyStyles: {
       fontSize: 8.5,
       textColor: [51, 65, 85]
+    },
+    alternateRowStyles: {
+      fillColor: BRAND_TINT
     },
     columnStyles: {
       0: { width: 30 },
@@ -298,9 +351,11 @@ export function generateDebtStatementPDF(debt, settings) {
   const finalY = doc.lastAutoTable.finalY + 10;
   const boxHeight = isSettled ? 28 : 20;
 
-  doc.setDrawColor(226, 232, 240);
-  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(BRAND_TINT[0], BRAND_TINT[1], BRAND_TINT[2]);
+  doc.setFillColor(BRAND_TINT[0], BRAND_TINT[1], BRAND_TINT[2]);
   doc.rect(120, finalY, 80, boxHeight, 'FD');
+  doc.setFillColor(BRAND_PRIMARY[0], BRAND_PRIMARY[1], BRAND_PRIMARY[2]);
+  doc.rect(120, finalY, 1.5, boxHeight, 'F');
 
   doc.setFont('Helvetica', 'bold');
   doc.setTextColor(71, 85, 105);
@@ -308,24 +363,25 @@ export function generateDebtStatementPDF(debt, settings) {
 
   if (isSettled) {
     const lastSettlement = settlements[settlements.length - 1];
-    doc.text('Settled Amount:', 124, finalY + 7);
-    doc.text('Settled Date:', 124, finalY + 14);
-    doc.text('Remaining Debt:', 124, finalY + 21);
+    doc.text('Settled Amount:', 126, finalY + 7);
+    doc.text('Settled Date:', 126, finalY + 14);
+    doc.text('Remaining Debt:', 126, finalY + 21);
 
     doc.setFont('Helvetica', 'normal');
     doc.text(`LKR ${Number(debt.paid_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 196, finalY + 7, { align: 'right' });
     doc.text(lastSettlement ? new Date(lastSettlement.settlement_date).toLocaleDateString() : 'N/A', 196, finalY + 14, { align: 'right' });
     doc.setFont('Helvetica', 'bold');
-    doc.setTextColor(15, 118, 110);
+    doc.setTextColor(SUCCESS[0], SUCCESS[1], SUCCESS[2]);
     doc.text('LKR 0.00', 196, finalY + 21, { align: 'right' });
   } else {
-    doc.text('Amount Paid:', 124, finalY + 7);
-    doc.text('Remaining Debt:', 124, finalY + 14);
+    doc.text('Amount Paid:', 126, finalY + 7);
+    doc.text('Remaining Debt:', 126, finalY + 14);
 
     doc.setFont('Helvetica', 'normal');
     doc.text(`LKR ${Number(debt.paid_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 196, finalY + 7, { align: 'right' });
     doc.setFont('Helvetica', 'bold');
-    doc.setTextColor(185, 28, 28);
+    doc.setTextColor(DANGER[0], DANGER[1], DANGER[2]);
+    doc.setFontSize(11);
     doc.text(`LKR ${Number(debt.remaining_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 196, finalY + 14, { align: 'right' });
   }
 
@@ -401,7 +457,7 @@ export function generateSettlementReceiptPDF(settlement, settings) {
     body: tableData,
     theme: 'grid',
     headStyles: {
-      fillColor: [15, 23, 42],
+      fillColor: BRAND_PRIMARY,
       textColor: [255, 255, 255],
       fontStyle: 'bold',
       fontSize: 9
@@ -409,6 +465,9 @@ export function generateSettlementReceiptPDF(settlement, settings) {
     bodyStyles: {
       fontSize: 9,
       textColor: [51, 65, 85]
+    },
+    alternateRowStyles: {
+      fillColor: BRAND_TINT
     },
     columnStyles: {
       0: { width: 90 },
@@ -427,18 +486,18 @@ export function generateSettlementReceiptPDF(settlement, settings) {
     }
   });
 
-  // Stamp Box
+  // Stamp Box — bold rounded seal in success green
   const finalY = doc.lastAutoTable.finalY + 15;
-  doc.setDrawColor(16, 185, 129);
-  doc.setFillColor(240, 253, 250);
+  doc.setDrawColor(SUCCESS[0], SUCCESS[1], SUCCESS[2]);
+  doc.setFillColor(SUCCESS_BG[0], SUCCESS_BG[1], SUCCESS_BG[2]);
   doc.setLineWidth(1);
-  doc.rect(70, finalY, 70, 20, 'FD');
-  doc.setTextColor(15, 118, 110);
+  doc.roundedRect(65, finalY, 80, 22, 3, 3, 'FD');
+  doc.setTextColor(SUCCESS[0], SUCCESS[1], SUCCESS[2]);
   doc.setFont('Helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.text('RECEIPTED & VERIFIED', 105, finalY + 8, { align: 'center' });
-  doc.setFontSize(8);
-  doc.text(`LKR ${settlement.amount_paid.toLocaleString()} Paid`, 105, finalY + 14, { align: 'center' });
+  doc.setFontSize(13);
+  doc.text('RECEIPTED & VERIFIED', 105, finalY + 9, { align: 'center' });
+  doc.setFontSize(9);
+  doc.text(`LKR ${settlement.amount_paid.toLocaleString()} Paid`, 105, finalY + 16, { align: 'center' });
 
   drawFooter(doc);
   return doc;
@@ -499,7 +558,7 @@ export function generateReportPDF(reportTitle, dateStr, salesData, summaryData, 
     body: tableRows,
     theme: 'striped',
     headStyles: {
-      fillColor: [15, 23, 42],
+      fillColor: BRAND_PRIMARY,
       textColor: [255, 255, 255],
       fontStyle: 'bold',
       fontSize: 8.5
@@ -598,7 +657,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
       stockData.closingBalance.toLocaleString()
     ]],
     theme: 'grid',
-    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold', halign: 'center' },
+    headStyles: { fillColor: BRAND_PRIMARY, textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold', halign: 'center' },
     bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85], halign: 'center' },
     margin: { left: 14, right: 14 }
   });
@@ -642,7 +701,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
       incData.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2 })
     ]],
     theme: 'grid',
-    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 7.5, fontStyle: 'bold' },
+    headStyles: { fillColor: BRAND_PRIMARY, textColor: [255, 255, 255], fontSize: 7.5, fontStyle: 'bold' },
     bodyStyles: { fontSize: 8, textColor: [51, 65, 85] },
     columnStyles: { 1: { halign: 'center' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
     margin: { left: 14, right: 14 }
@@ -664,12 +723,12 @@ export function generateDailyManagerReportPDF(reportData, settings) {
     head: [[headCell('No.', 'center'), 'Customer Name', 'Phone No', headCell('Cubes on Debt', 'right'), headCell('Amount LKR', 'right'), headCell('Total Debt Balance LKR', 'right')]],
     body: creditGivenRows,
     theme: 'striped',
-    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
+    headStyles: { fillColor: BRAND_SECONDARY, textColor: [255, 255, 255], fontSize: 7.5 },
     bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
     columnStyles: { 0: { width: 10, halign: 'center' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
     margin: { left: 14, right: 14 },
     foot: [['', '', '', 'Total:', `LKR ${reportData.totalCreditGivenAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, '']],
-    footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7.5 }
+    footStyles: { fillColor: BRAND_TINT, textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7.5 }
   });
 
   currentY = doc.lastAutoTable.finalY + 8;
@@ -694,12 +753,12 @@ export function generateDailyManagerReportPDF(reportData, settings) {
     head: [[headCell('No.', 'center'), 'Customer Name', 'Payment Method', 'Settlement Date', headCell('Debt Amount LKR', 'right'), headCell('Paid Debt LKR', 'right'), headCell('Remaining Debt LKR', 'right')]],
     body: creditCollectionRows,
     theme: 'striped',
-    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
+    headStyles: { fillColor: BRAND_SECONDARY, textColor: [255, 255, 255], fontSize: 7.5 },
     bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
     columnStyles: { 0: { width: 10, halign: 'center' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' } },
     margin: { left: 14, right: 14 },
     foot: [['', '', '', '', 'Total:', `LKR ${reportData.totalCreditCollectedAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, '']],
-    footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7.5 }
+    footStyles: { fillColor: BRAND_TINT, textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7.5 }
   });
 
   currentY = doc.lastAutoTable.finalY + 8;
@@ -723,12 +782,12 @@ export function generateDailyManagerReportPDF(reportData, settings) {
     head: [[headCell('No.', 'center'), 'Date', 'Description', 'Expense Category', 'Expense Type', headCell('Amount LKR', 'right')]],
     body: expRows,
     theme: 'grid',
-    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
+    headStyles: { fillColor: BRAND_SECONDARY, textColor: [255, 255, 255], fontSize: 7.5 },
     bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
     columnStyles: { 0: { width: 10, halign: 'center' }, 5: { halign: 'right' } },
     margin: { left: 14, right: 14 },
     foot: [['', '', '', '', 'Total:', reportData.totalExpensesAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })]],
-    footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7.5 }
+    footStyles: { fillColor: BRAND_TINT, textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7.5 }
   });
 
   currentY = doc.lastAutoTable.finalY + 8;
@@ -757,7 +816,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
       `LKR ${(cashData?.handChequesTotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
     ]],
     theme: 'grid',
-    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 7.5, halign: 'center' },
+    headStyles: { fillColor: BRAND_PRIMARY, textColor: [255, 255, 255], fontSize: 7.5, halign: 'center' },
     bodyStyles: { fontSize: 8, textColor: [51, 65, 85], halign: 'center' },
     margin: { left: 14, right: 14 }
   });
@@ -783,7 +842,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
     head: [['Employee Name', 'Date', 'Start Time', 'End Time']],
     body: empRows,
     theme: 'striped',
-    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
+    headStyles: { fillColor: BRAND_SECONDARY, textColor: [255, 255, 255], fontSize: 7.5 },
     bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
     margin: { left: 14, right: 14 }
   });
@@ -817,12 +876,12 @@ export function generateDailyManagerReportPDF(reportData, settings) {
     head: [[headCell('No.', 'center'), 'Trip ID', 'Date', 'Description', headCell('Start Km', 'right'), headCell('End Km', 'right'), headCell('Total Distance', 'right')]],
     body: vehRows,
     theme: 'striped',
-    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
+    headStyles: { fillColor: BRAND_SECONDARY, textColor: [255, 255, 255], fontSize: 7.5 },
     bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
     columnStyles: { 0: { width: 10, halign: 'center' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' } },
     margin: { left: 14, right: 14 },
     foot: [['', '', '', '', '', 'Total:', `${(reportData.totalVehicleDistance || 0).toLocaleString()} km`]],
-    footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7.5 }
+    footStyles: { fillColor: BRAND_TINT, textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7.5 }
   });
 
   currentY = doc.lastAutoTable.finalY + 8;
@@ -846,7 +905,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
     head: [['Note', 'By', 'Date/Time']],
     body: notesRows,
     theme: 'striped',
-    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
+    headStyles: { fillColor: BRAND_SECONDARY, textColor: [255, 255, 255], fontSize: 7.5 },
     bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
     margin: { left: 14, right: 14 }
   });
