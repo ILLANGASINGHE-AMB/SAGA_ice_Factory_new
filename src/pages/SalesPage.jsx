@@ -15,7 +15,7 @@ import { Modal } from '../components/Modal';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Input, Select } from '../components/FormFields';
 import { generateBillPDF } from '../utils/pdfGenerator';
-import { ShoppingCart, Search, FileDown, MessageSquare, ArrowRight, ArrowLeft, Check, Trash2, Eye, Pencil } from 'lucide-react';
+import { ShoppingCart, Search, FileDown, MessageSquare, ArrowRight, ArrowLeft, Check, Trash2, Eye, Pencil, CalendarRange } from 'lucide-react';
 
 export function SalesPage() {
   const { sales, isLoading: salesLoading, placeOrder, updateSale, deleteSale } = useSales();
@@ -32,6 +32,15 @@ export function SalesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortKey, setSortKey] = useState('sale_date');
   const [sortDirection, setSortDirection] = useState('desc');
+
+  // --- Period Filter: Daily / Monthly / Yearly, each with its own from-to range ---
+  const [periodType, setPeriodType] = useState('all'); // 'all' | 'daily' | 'monthly' | 'yearly'
+  const [fromDate, setFromDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [fromMonth, setFromMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [toMonth, setToMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [fromYear, setFromYear] = useState(() => String(new Date().getFullYear()));
+  const [toYear, setToYear] = useState(() => String(new Date().getFullYear()));
 
   // --- New Order Wizard State ---
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -444,9 +453,40 @@ ${billURL}`;
     }
   };
 
+  // Robust local YYYY-MM-DD formatter — sale_date is a timestamptz, and
+  // comparing raw ISO strings would shift the effective day across
+  // timezones, same reasoning as the equivalent helper in useDailyReport.
+  const toLocalDateStr = (dStr) => {
+    if (!dStr) return '';
+    const d = new Date(dStr);
+    if (isNaN(d.getTime())) return '';
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const filteredSales = useMemo(() => {
     if (!sales) return [];
     let result = sales.slice();
+
+    // Period filter — Daily/Monthly/Yearly, each with its own from-to range
+    if (periodType === 'daily') {
+      result = result.filter(s => {
+        const d = toLocalDateStr(s.sale_date);
+        return d && d >= fromDate && d <= toDate;
+      });
+    } else if (periodType === 'monthly') {
+      result = result.filter(s => {
+        const d = toLocalDateStr(s.sale_date).slice(0, 7);
+        return d && d >= fromMonth && d <= toMonth;
+      });
+    } else if (periodType === 'yearly') {
+      result = result.filter(s => {
+        const y = toLocalDateStr(s.sale_date).slice(0, 4);
+        return y && y >= fromYear && y <= toYear;
+      });
+    }
 
     // Search query filter
     const query = searchQuery.toLowerCase().trim();
@@ -474,7 +514,7 @@ ${billURL}`;
     });
 
     return result;
-  }, [sales, searchQuery, sortKey, sortDirection]);
+  }, [sales, searchQuery, sortKey, sortDirection, periodType, fromDate, toDate, fromMonth, toMonth, fromYear, toYear]);
 
   if (salesLoading || inventoryLoading || !customers) {
     return (
@@ -553,6 +593,49 @@ ${billURL}`;
           <ShoppingCart size={16} />
           <span>New Order</span>
         </Button>
+      </div>
+
+      {/* 2.5 Period Filter — Daily / Monthly / Yearly, each with its own from-to range */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-3.5 sm:p-4 space-y-3">
+        <div className="flex items-center space-x-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+          <CalendarRange size={15} />
+          <span>Filter by Period</span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <Select
+            label="Period"
+            name="periodType"
+            value={periodType}
+            onChange={(e) => setPeriodType(e.target.value)}
+            options={[
+              { value: 'all', label: 'All Time' },
+              { value: 'daily', label: 'Daily' },
+              { value: 'monthly', label: 'Monthly' },
+              { value: 'yearly', label: 'Yearly' }
+            ]}
+          />
+
+          {periodType === 'daily' && (
+            <>
+              <Input label="From Date" name="fromDate" type="date" value={fromDate} max={toDate} onChange={(e) => setFromDate(e.target.value)} />
+              <Input label="To Date" name="toDate" type="date" value={toDate} min={fromDate} onChange={(e) => setToDate(e.target.value)} />
+            </>
+          )}
+
+          {periodType === 'monthly' && (
+            <>
+              <Input label="From Month" name="fromMonth" type="month" value={fromMonth} max={toMonth} onChange={(e) => setFromMonth(e.target.value)} />
+              <Input label="To Month" name="toMonth" type="month" value={toMonth} min={fromMonth} onChange={(e) => setToMonth(e.target.value)} />
+            </>
+          )}
+
+          {periodType === 'yearly' && (
+            <>
+              <Input label="From Year" name="fromYear" type="number" value={fromYear} onChange={(e) => setFromYear(e.target.value)} />
+              <Input label="To Year" name="toYear" type="number" value={toYear} onChange={(e) => setToYear(e.target.value)} />
+            </>
+          )}
+        </div>
       </div>
 
       {/* 3. Sales Table */}
