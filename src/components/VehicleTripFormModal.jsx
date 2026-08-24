@@ -1,26 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { Button } from './Button';
-import { Input, TextArea } from './FormFields';
+import { Input, Select, TextArea } from './FormFields';
+import { todayStr } from '../utils/date';
 
-const emptyValues = {
-  trip_date: new Date().toISOString().slice(0, 10),
+const buildEmptyValues = () => ({
+  trip_date: todayStr(),
+  employee_id: '',
   start_odometer: '',
   end_odometer: '',
   description: ''
-};
+});
 
-export function VehicleTripFormModal({ isOpen, onClose, onSubmit }) {
-  const [values, setValues] = useState(emptyValues);
+export function VehicleTripFormModal({ isOpen, onClose, onSubmit, employees = [], defaultStartOdometer = '' }) {
+  const [values, setValues] = useState(buildEmptyValues);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setValues(emptyValues);
+      // Pre-fill Start Odometer with where the vehicle was last left, so the
+      // operator only has to enter the reading at the end of the trip.
+      setValues({ ...buildEmptyValues(), start_odometer: String(defaultStartOdometer ?? '') });
       setError('');
     }
-  }, [isOpen]);
+  }, [isOpen, defaultStartOdometer]);
 
   const handleChange = (field) => (e) => {
     setValues(prev => ({ ...prev, [field]: e.target.value }));
@@ -32,6 +36,10 @@ export function VehicleTripFormModal({ isOpen, onClose, onSubmit }) {
 
     if (!values.trip_date) {
       setError("Trip date is required");
+      return;
+    }
+    if (!values.employee_id) {
+      setError("Select the driver for this trip");
       return;
     }
     const start = Number(values.start_odometer);
@@ -63,14 +71,27 @@ export function VehicleTripFormModal({ isOpen, onClose, onSubmit }) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Add Trip Record" size="md">
       <form onSubmit={handleSubmit} className="space-y-3">
-        <Input
-          label="Date"
-          name="trip_date"
-          type="date"
-          required
-          value={values.trip_date}
-          onChange={handleChange('trip_date')}
-        />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Input
+            label="Date"
+            name="trip_date"
+            type="date"
+            required
+            value={values.trip_date}
+            onChange={handleChange('trip_date')}
+          />
+          <Select
+            label="Driver"
+            name="employee_id"
+            required
+            value={values.employee_id}
+            onChange={handleChange('employee_id')}
+            options={[
+              { value: '', label: employees.length ? 'Select a driver...' : 'No employees registered' },
+              ...employees.map(e => ({ value: String(e.id), label: `${e.employee_code} — ${e.name}` }))
+            ]}
+          />
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Input

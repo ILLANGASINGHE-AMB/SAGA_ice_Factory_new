@@ -30,6 +30,7 @@ const CashBankPage = lazy(() => import('./pages/CashBankPage').then(m => ({ defa
 const PublicBillPage = lazy(() => import('./pages/PublicBillPage').then(m => ({ default: m.PublicBillPage })));
 const RecentActionsPage = lazy(() => import('./pages/RecentActionsPage').then(m => ({ default: m.RecentActionsPage })));
 const TrashPage = lazy(() => import('./pages/TrashPage').then(m => ({ default: m.TrashPage })));
+const NotificationsPage = lazy(() => import('./pages/NotificationsPage').then(m => ({ default: m.NotificationsPage })));
 
 
 
@@ -252,6 +253,17 @@ function App() {
                       <ReportsPage />
                     </AppShell>
                   </AdminRoute>
+                }
+              />
+
+              <Route
+                path="/notifications"
+                element={
+                  <ProtectedRoute>
+                    <AppShell>
+                      <NotificationsPage />
+                    </AppShell>
+                  </ProtectedRoute>
                 }
               />
 

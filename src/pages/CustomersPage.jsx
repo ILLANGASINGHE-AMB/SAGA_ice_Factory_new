@@ -14,6 +14,9 @@ export function CustomersPage() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
+  // Walk-in buyers are recorded so their sales stay attributed, but they
+  // aren't accounts — they're hidden from the registry unless asked for.
+  const [showOneTime, setShowOneTime] = useState(false);
 
   const handleSaved = ({ mode, name, customer_code, error }) => {
     if (mode === 'error') {
@@ -28,15 +31,21 @@ export function CustomersPage() {
   // Filtered customer records based on Search query
   const filteredCustomers = useMemo(() => {
     if (!customers) return [];
+    const scoped = showOneTime ? customers : customers.filter(c => !c.is_one_time);
     const query = searchQuery.toLowerCase().trim();
-    if (!query) return customers;
-    return customers.filter(c =>
+    if (!query) return scoped;
+    return scoped.filter(c =>
       c.name.toLowerCase().includes(query) ||
       c.whatsapp_number?.includes(query) ||
       c.contact_number?.includes(query) ||
       c.customer_code.toLowerCase().includes(query)
     );
-  }, [customers, searchQuery]);
+  }, [customers, searchQuery, showOneTime]);
+
+  const oneTimeCount = useMemo(
+    () => (customers || []).filter(c => c.is_one_time).length,
+    [customers]
+  );
 
   return (
     <div className="space-y-6">
@@ -57,15 +66,29 @@ export function CustomersPage() {
           />
         </div>
 
-        {/* Add customer button */}
-        <Button
-          variant="primary"
-          onClick={() => setModalOpen(true)}
-          className="flex items-center justify-center space-x-1.5 px-4 py-2 rounded-xl"
-        >
-          <Plus size={16} />
-          <span>Add New Customer</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowOneTime(v => !v)}
+            className={`px-3 py-2 rounded-xl text-xs font-bold border transition whitespace-nowrap ${
+              showOneTime
+                ? 'bg-navy-600 text-white border-navy-600 shadow-xs'
+                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+            }`}
+            title="One-time walk-in buyers recorded at the till"
+          >
+            One-Time ({oneTimeCount.toLocaleString()})
+          </button>
+
+          {/* Add customer button */}
+          <Button
+            variant="primary"
+            onClick={() => setModalOpen(true)}
+            className="flex items-center justify-center space-x-1.5 px-4 py-2 rounded-xl"
+          >
+            <Plus size={16} />
+            <span>Add New Customer</span>
+          </Button>
+        </div>
       </div>
 
       {/* Customer Registry Grid */}
@@ -91,6 +114,14 @@ export function CustomersPage() {
                     className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-600 text-white text-[9px] font-bold shrink-0"
                   >
                     B
+                  </span>
+                )}
+                {customer.is_one_time && (
+                  <span
+                    title="One-time walk-in buyer — not a registered account"
+                    className="px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[9px] font-bold uppercase tracking-wide shrink-0"
+                  >
+                    One-Time
                   </span>
                 )}
               </span>

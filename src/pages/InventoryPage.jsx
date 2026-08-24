@@ -7,6 +7,7 @@ import { Button } from '../components/Button';
 import { Modal } from '../components/Modal';
 import { Input, Select } from '../components/FormFields';
 import { Plus, Minus, Edit, AlertTriangle, Table2, LineChart as LineChartIcon } from 'lucide-react';
+import { toLocalDateStr, toLocalMonthStr, todayStr, thisMonthStr, thisYearStr } from '../utils/date';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
@@ -19,6 +20,13 @@ const GRAPH_COLORS = {
 };
 
 const CUBE_TYPE_LABELS = { manufactured: 'Production', resell: 'Resell', waste: 'Brine' };
+
+// Year filter options, derived from the current year rather than hardcoded so
+// the list never goes stale.
+const YEAR_OPTIONS = (() => {
+  const current = new Date().getFullYear();
+  return [current + 1, current, current - 1, current - 2].map(String);
+})();
 
 export function InventoryPage() {
   const { inventory, transactions, isLoading, addStock, removeStock, updatePrice } = useInventory();
@@ -37,9 +45,9 @@ export function InventoryPage() {
   // Production History section states
   const [historyViewMode, setHistoryViewMode] = useState('table'); // 'table' | 'graph'
   const [historyFilterType, setHistoryFilterType] = useState('daily'); // 'daily' | 'monthly' | 'yearly'
-  const [historyDate, setHistoryDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [historyMonth, setHistoryMonth] = useState(() => new Date().toISOString().slice(0, 7));
-  const [historyYear, setHistoryYear] = useState(() => new Date().getFullYear().toString());
+  const [historyDate, setHistoryDate] = useState(todayStr);
+  const [historyMonth, setHistoryMonth] = useState(thisMonthStr);
+  const [historyYear, setHistoryYear] = useState(thisYearStr);
   const [historyCubeType, setHistoryCubeType] = useState('all'); // 'all' | 'manufactured' | 'resell' | 'waste'
 
   const openModal = (type, item) => {
@@ -134,9 +142,9 @@ export function InventoryPage() {
       const txnDate = new Date(txn.created_at);
 
       if (historyFilterType === 'daily') {
-        return txnDate.toISOString().slice(0, 10) === historyDate;
+        return toLocalDateStr(txnDate) === historyDate;
       } else if (historyFilterType === 'monthly') {
-        return txnDate.toISOString().slice(0, 7) === historyMonth; // YYYY-MM
+        return toLocalMonthStr(txnDate) === historyMonth; // YYYY-MM
       } else if (historyFilterType === 'yearly') {
         return txnDate.getFullYear().toString() === historyYear;
       }
@@ -166,10 +174,17 @@ export function InventoryPage() {
     return { added, deducted, net: added - deducted };
   }, [filteredTransactions, historyCubeType]);
 
+  // Cube types the graph should draw a line for. The Cube Type filter applies
+  // here exactly as it does to the table below — picking "Production (MFC)"
+  // previously narrowed the table but left the graph showing all three series,
+  // which read as the filter being broken in Graph View.
+  const graphSeries = useMemo(() => {
+    if (historyCubeType === 'all') return ['Production', 'Resell', 'Brine'];
+    return [CUBE_TYPE_LABELS[historyCubeType]];
+  }, [historyCubeType]);
+
   // Graph View: net cube movement per cube type, bucketed across the time axis
   // implied by the selected filter (hours for a day, days for a month, months for a year).
-  // Always uses all three cube types regardless of the Cube Type filter, since the graph
-  // is defined as three colored lines (Production / Resell / Brine).
   const graphData = useMemo(() => {
     let buckets;
     if (historyFilterType === 'daily') {
@@ -196,11 +211,12 @@ export function InventoryPage() {
       const bucket = buckets[idx];
       const seriesKey = CUBE_TYPE_LABELS[txn.inventory?.type];
       if (!bucket || !seriesKey) return;
+      if (!graphSeries.includes(seriesKey)) return;
       bucket[seriesKey] += Number(txn.quantity_change) || 0;
     });
 
     return buckets;
-  }, [dateFilteredTransactions, historyFilterType, historyMonth]);
+  }, [dateFilteredTransactions, historyFilterType, historyMonth, graphSeries]);
 
   if (isLoading) {
     return (
@@ -410,9 +426,9 @@ export function InventoryPage() {
               onChange={(e) => setHistoryYear(e.target.value)}
               className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
             >
-              <option value="2026">2026</option>
-              <option value="2025">2025</option>
-              <option value="2027">2027</option>
+              {YEAR_OPTIONS.map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
             </select>
           )}
 
@@ -548,7 +564,7 @@ export function InventoryPage() {
               Cube Movement Trend
             </h3>
             <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 capitalize">
-              {historyFilterType} view
+              {historyFilterType} view · {historyCubeType === 'all' ? 'All cube types' : CUBE_TYPE_LABELS[historyCubeType]}
             </span>
           </div>
           <div className="h-64 sm:h-80">
@@ -567,9 +583,15 @@ export function InventoryPage() {
                   contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)', fontSize: '11px' }}
                 />
                 <Legend wrapperStyle={{ fontSize: '11px' }} />
-                <Line type="monotone" dataKey="Production" stroke={GRAPH_COLORS.manufactured} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
-                <Line type="monotone" dataKey="Resell" stroke={GRAPH_COLORS.resell} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
-                <Line type="monotone" dataKey="Brine" stroke={GRAPH_COLORS.waste} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+                {graphSeries.includes('Production') && (
+                  <Line type="monotone" dataKey="Production" stroke={GRAPH_COLORS.manufactured} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+                )}
+                {graphSeries.includes('Resell') && (
+                  <Line type="monotone" dataKey="Resell" stroke={GRAPH_COLORS.resell} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+                )}
+                {graphSeries.includes('Brine') && (
+                  <Line type="monotone" dataKey="Brine" stroke={GRAPH_COLORS.waste} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+                )}
               </LineChart>
             </ResponsiveContainer>
           </div>

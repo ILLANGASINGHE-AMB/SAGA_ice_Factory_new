@@ -14,6 +14,7 @@ export function useCashBank() {
   const [bankDeposits, setBankDeposits] = useState([]);
   const [chequeRecords, setChequeRecords] = useState([]);
   const [bankWithdrawals, setBankWithdrawals] = useState([]);
+  const [openingBalances, setOpeningBalances] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchAll = async () => {
@@ -24,18 +25,20 @@ export function useCashBank() {
         { data: receivesData, error: receivesErr },
         { data: depositsData, error: depositsErr },
         { data: chequesData, error: chequesErr },
-        { data: withdrawalsData, error: withdrawalsErr }
+        { data: withdrawalsData, error: withdrawalsErr },
+        { data: openingData, error: openingErr }
       ] = await Promise.all([
         supabase.from('sales').select('total_amount, payment_type, sale_date').eq('payment_type', 'cash'),
         supabase.from('debt_settlements').select('amount_paid, settlement_date'),
         supabase.from('cash_receives').select('*').order('received_at', { ascending: false }),
         supabase.from('bank_deposits').select('*').order('deposited_at', { ascending: false }),
-        supabase.from('cheque_records').select('*').order('received_at', { ascending: false }),
-        supabase.from('bank_withdrawals').select('*').order('withdrawn_at', { ascending: false })
+        supabase.from('cheque_records').select('*, customer:customers(id, customer_code, name, is_one_time)').order('received_at', { ascending: false }),
+        supabase.from('bank_withdrawals').select('*').order('withdrawn_at', { ascending: false }),
+        supabase.from('opening_balances').select('*')
       ]);
 
-      if (salesErr || settlementsErr || receivesErr || depositsErr || chequesErr || withdrawalsErr) {
-        throw salesErr || settlementsErr || receivesErr || depositsErr || chequesErr || withdrawalsErr;
+      if (salesErr || settlementsErr || receivesErr || depositsErr || chequesErr || withdrawalsErr || openingErr) {
+        throw salesErr || settlementsErr || receivesErr || depositsErr || chequesErr || withdrawalsErr || openingErr;
       }
 
       setSales(salesData || []);
@@ -44,6 +47,7 @@ export function useCashBank() {
       setBankDeposits(depositsData || []);
       setChequeRecords(chequesData || []);
       setBankWithdrawals(withdrawalsData || []);
+      setOpeningBalances(openingData || []);
     } catch (err) {
       console.error("Failed to fetch cash & bank data:", err);
     } finally {
@@ -62,6 +66,7 @@ export function useCashBank() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bank_deposits' }, () => fetchAll())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cheque_records' }, () => fetchAll())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bank_withdrawals' }, () => fetchAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'opening_balances' }, () => fetchAll())
       .subscribe();
 
     return () => {
@@ -78,7 +83,10 @@ export function useCashBank() {
     chequesPendingTotal,
     handChequesTotal,
     cashBalance,
-    bankBalance
+    bankBalance,
+    openingCash,
+    openingBank,
+    openingCheques
   } = useMemo(
     () => computeCashBankBalances({
       cashSalesRows: sales,
@@ -86,9 +94,10 @@ export function useCashBank() {
       cashReceives,
       bankDeposits,
       chequeRecords,
-      bankWithdrawals
+      bankWithdrawals,
+      openingBalances
     }),
-    [sales, settlements, cashReceives, bankDeposits, chequeRecords, bankWithdrawals]
+    [sales, settlements, cashReceives, bankDeposits, chequeRecords, bankWithdrawals, openingBalances]
   );
 
   // Combined, normalized audit trail across all 4 ledgers — every entry ever
@@ -159,6 +168,11 @@ export function useCashBank() {
   // actually deposited (minus already withdrawn) under that bank name.
   const bankBalancesByName = useMemo(() => {
     const map = new Map();
+    const openingBank = openingBalances.find(o => o.scope === 'bank');
+    if (openingBank && Number(openingBank.amount) > 0) {
+      const key = (openingBank.bank_name || '').trim() || 'Opening Balance';
+      map.set(key, Number(openingBank.amount));
+    }
     for (const d of bankDeposits) {
       const key = (d.bank_name || '').trim() || 'Unspecified';
       map.set(key, (map.get(key) || 0) + (Number(d.amount) || 0));
@@ -170,7 +184,7 @@ export function useCashBank() {
     return Array.from(map.entries())
       .map(([bankName, balance]) => ({ bankName, balance }))
       .sort((a, b) => b.balance - a.balance);
-  }, [bankDeposits, bankWithdrawals]);
+  }, [bankDeposits, bankWithdrawals, openingBalances]);
 
   const addCashReceive = async ({ amount, receiveType, receivedAt, createdBy }) => {
     const amt = parseFloat(amount);
@@ -235,7 +249,7 @@ export function useCashBank() {
     if (error) throw new Error(error.message || "Failed to delete deposit record");
   };
 
-  const addChequeRecord = async ({ chequeNo, bankName, amount, payerName, createdBy }) => {
+  const addChequeRecord = async ({ chequeNo, bankName, amount, payerName, customerId = null, createdBy }) => {
     const amt = parseFloat(amount);
     if (!chequeNo) throw new Error("Please enter the cheque number");
     if (!bankName) throw new Error("Please enter the bank name");
@@ -247,6 +261,7 @@ export function useCashBank() {
       bank_name: bankName,
       amount: amt,
       payer_name: payerName,
+      customer_id: customerId ? Number(customerId) : null,
       created_by: createdBy || 'Admin'
     }]).select('id').single();
     if (error) throw new Error(error.message || "Failed to save cheque record");
@@ -329,6 +344,39 @@ export function useCashBank() {
     if (error) throw new Error(error.message || "Failed to delete cash receive record");
   };
 
+  // Opening balances are set once at go-live and corrected rarely, so this is
+  // an upsert on `scope` rather than an append-only ledger.
+  const setOpeningBalance = async ({ scope, amount, bankName = null, asOfDate = null, note = '', setBy }) => {
+    if (!['cash', 'bank', 'cheques'].includes(scope)) {
+      throw new Error("Opening balance must be for Cash, Bank or Cheques");
+    }
+    const amt = parseFloat(amount);
+    if (isNaN(amt) || amt < 0) throw new Error("Enter a valid opening amount (0 or more)");
+
+    const payload = {
+      scope,
+      amount: amt,
+      bank_name: scope === 'bank' ? (bankName || null) : null,
+      note: note || '',
+      set_by: setBy || 'Admin',
+      updated_at: new Date().toISOString()
+    };
+    if (asOfDate) payload.as_of_date = asOfDate;
+
+    const { error } = await supabase
+      .from('opening_balances')
+      .upsert([payload], { onConflict: 'scope' });
+
+    if (error) throw new Error(error.message || "Failed to save the opening balance");
+    logActivity({
+      action: 'update',
+      entityType: 'opening_balance',
+      entityLabel: scope,
+      description: `Set ${scope} opening balance to LKR ${amt.toLocaleString()}`,
+      performedBy: setBy
+    });
+  };
+
   return {
     isLoading,
     cashBalance,
@@ -354,6 +402,11 @@ export function useCashBank() {
     depositChequeRecord,
     deleteChequeRecord,
     addWithdrawal,
-    deleteWithdrawal
+    deleteWithdrawal,
+    openingBalances,
+    openingCash,
+    openingBank,
+    openingCheques,
+    setOpeningBalance
   };
 }

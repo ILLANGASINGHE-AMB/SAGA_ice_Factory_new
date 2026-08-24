@@ -40,11 +40,13 @@ export function useCustomers() {
     };
   }, []);
 
-  const addCustomer = async ({ name, whatsapp_number = '', contact_number = '', address = '', notes = '', is_branch = false }) => {
+  const addCustomer = async ({ name, whatsapp_number = '', contact_number = '', address = '', notes = '', is_branch = false, is_one_time = false }) => {
     if (!name || name.trim().length < 2) {
       throw new Error("Name is required and must be at least 2 characters");
     }
-    if (!whatsapp_number && !contact_number) {
+    // A one-time (walk-in) customer often leaves no number at all — that's the
+    // point of the flag, so the contact requirement doesn't apply to them.
+    if (!is_one_time && !whatsapp_number && !contact_number) {
       throw new Error("Provide at least one number (WhatsApp or Contact)");
     }
     if (whatsapp_number && !/^0\d{9}$/.test(whatsapp_number)) {
@@ -72,8 +74,8 @@ export function useCustomers() {
     // already issued, so it can regenerate a code that collides with the
     // `unique` constraint. Refuse cleanly instead of guessing.
     const { data: codeData, error: codeErr } = await supabase.rpc('get_next_code', {
-      p_entity: 'customer',
-      p_prefix: 'CUST'
+      p_entity: is_one_time ? 'one_time_customer' : 'customer',
+      p_prefix: is_one_time ? 'OTC' : 'CUST'
     });
 
     if (codeErr || !codeData) {
@@ -91,6 +93,7 @@ export function useCustomers() {
         address: address.trim(),
         notes: notes ? notes.trim() : '',
         is_branch,
+        is_one_time,
         created_at: new Date().toISOString()
       })
       .select('id')
@@ -98,7 +101,13 @@ export function useCustomers() {
 
     if (insertErr) throw new Error(insertErr.message);
 
-    logActivity({ action: 'create', entityType: 'customer', entityId: data.id, entityLabel: customer_code, description: `Added customer ${customer_code} (${name.trim()})` });
+    logActivity({
+      action: 'create',
+      entityType: 'customer',
+      entityId: data.id,
+      entityLabel: customer_code,
+      description: `Added ${is_one_time ? 'one-time ' : ''}customer ${customer_code} (${name.trim()})`
+    });
     return { id: data.id, customer_code };
   };
 

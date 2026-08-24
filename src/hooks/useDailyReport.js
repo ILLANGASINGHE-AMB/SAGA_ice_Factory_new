@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { todayStr } from '../utils/date';
 import { computeCashBankBalances } from '../utils/cashBankMath';
 import { logActivity } from '../lib/activityLog';
 
@@ -47,7 +48,7 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
     verifiedBy: ''
   });
 
-  const targetFromStr = fromDateStr || new Date().toISOString().slice(0, 10);
+  const targetFromStr = fromDateStr || todayStr();
   const targetToStr = toDateStr || targetFromStr;
 
   // Fetch all relevant data for the range with bulletproof per-table error catching
@@ -129,8 +130,8 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
         try { localParsed = JSON.parse(localData); } catch (e) {}
       }
 
+      setSavedRecord(savedReportRes || null);
       if (savedReportRes) {
-        setSavedRecord(savedReportRes);
         setManualInputs({
           freeIssue: savedReportRes.free_issue ?? localParsed.freeIssue ?? 0,
           damagedCubes: savedReportRes.damaged_cubes ?? localParsed.damagedCubes ?? 0,
@@ -530,6 +531,12 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
     loading,
     reportData,
     manualInputs,
+    savedRecord,
+    // A report that has been saved with a verifying manager's name is a signed
+    // declaration for that day. It stays locked from then on so the figures
+    // can't be quietly changed after the fact; an admin can unlock it to make
+    // a correction.
+    isVerified: Boolean(savedRecord?.verified_by),
     saveDailyReport,
     refetch: fetchData
   };

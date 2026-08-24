@@ -12,9 +12,12 @@ import { Table } from '../components/Table';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { Modal } from '../components/Modal';
-import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Input, Select } from '../components/FormFields';
 import { generateBillPDF } from '../utils/pdfGenerator';
+import { buildSaleNotification, notificationUrl, toWhatsAppNumber } from '../utils/notifications';
+import { SendNotificationDialog } from '../components/SendNotificationDialog';
+import { recordNotification } from '../hooks/useNotifications';
+import { toLocalDateStr, todayStr, thisMonthStr, thisYearStr } from '../utils/date';
 import { ShoppingCart, Search, FileDown, MessageSquare, ArrowRight, ArrowLeft, Check, Trash2, Eye, Pencil, CalendarRange } from 'lucide-react';
 
 export function SalesPage() {
@@ -35,12 +38,12 @@ export function SalesPage() {
 
   // --- Period Filter: Daily / Monthly / Yearly, each with its own from-to range ---
   const [periodType, setPeriodType] = useState('all'); // 'all' | 'daily' | 'monthly' | 'yearly'
-  const [fromDate, setFromDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [fromMonth, setFromMonth] = useState(() => new Date().toISOString().slice(0, 7));
-  const [toMonth, setToMonth] = useState(() => new Date().toISOString().slice(0, 7));
-  const [fromYear, setFromYear] = useState(() => String(new Date().getFullYear()));
-  const [toYear, setToYear] = useState(() => String(new Date().getFullYear()));
+  const [fromDate, setFromDate] = useState(todayStr);
+  const [toDate, setToDate] = useState(todayStr);
+  const [fromMonth, setFromMonth] = useState(thisMonthStr);
+  const [toMonth, setToMonth] = useState(thisMonthStr);
+  const [fromYear, setFromYear] = useState(thisYearStr);
+  const [toYear, setToYear] = useState(thisYearStr);
   const [paymentFilter, setPaymentFilter] = useState('all'); // 'all' | 'cash' | 'debt'
 
   // --- New Order Wizard State ---
@@ -56,6 +59,12 @@ export function SalesPage() {
   const [newCustPhone, setNewCustPhone] = useState('');
   const [showMiniCustomerForm, setShowMiniCustomerForm] = useState(false);
   const [customerFieldFocused, setCustomerFieldFocused] = useState(false);
+
+  // One-time (walk-in) sale: a buyer who isn't a registered account and
+  // doesn't want to become one. Only a name is required — no phone, no
+  // registry entry cluttering the customer list.
+  const [oneTimeMode, setOneTimeMode] = useState(false);
+  const [oneTimeName, setOneTimeName] = useState('');
 
   // Order items — fixed two categories (Production/MFC and Resell/RSC),
   // both always present so the operator never has to pick a category.
@@ -112,6 +121,8 @@ export function SalesPage() {
     setNewCustName('');
     setNewCustPhone('');
     setShowMiniCustomerForm(false);
+    setOneTimeMode(false);
+    setOneTimeName('');
     setOrderRows([
       { id: 'mfc', cubeType: 'manufactured', pricePerCube: '', quantity: '' },
       { id: 'rsc', cubeType: 'resell', pricePerCube: '', quantity: '' }
@@ -170,9 +181,13 @@ export function SalesPage() {
   // operator types a search term.
   const filteredCustomersForSearch = useMemo(() => {
     if (!customers) return [];
+    // One-time walk-ins are real rows so their sales stay attributed, but they
+    // are not accounts — keeping them out stops the registry search filling up
+    // with single-purchase names.
+    const registry = customers.filter(c => !c.is_one_time);
     const q = customerSearchQuery.trim().toLowerCase();
-    if (!q) return customers;
-    return customers.filter(c =>
+    if (!q) return registry;
+    return registry.filter(c =>
       c.name.toLowerCase().includes(q) ||
       c.whatsapp_number?.includes(q) ||
       c.contact_number?.includes(q)
@@ -203,10 +218,20 @@ export function SalesPage() {
     if (step === 1) {
       setStep(2);
     } else if (step === 2) {
-      // Reached only via the mini registration form — picking an existing
-      // customer auto-advances from selectCustomer() above instead.
+      // A one-time sale needs nothing but a name.
+      if (oneTimeMode) {
+        if (!oneTimeName || oneTimeName.trim().length < 2) {
+          toast.error("Enter a name for the one-time customer (min 2 chars)");
+          return;
+        }
+        setOrderRows(rows => rows.map(r => ({ ...r, pricePerCube: resolveDefaultRate(r.cubeType) })));
+        setStep(3);
+        return;
+      }
+      // Otherwise reached only via the mini registration form — picking an
+      // existing customer auto-advances from selectCustomer() above instead.
       if (!showMiniCustomerForm) {
-        toast.error("Please search and select a customer, or toggle the registration form.");
+        toast.error("Please search and select a customer, register a new one, or choose a one-time sale.");
         return;
       }
       if (!newCustName || newCustName.trim().length < 2) {
@@ -255,9 +280,15 @@ export function SalesPage() {
     setActionLoading(true);
     try {
       let finalCustomerId = customerId;
-      
-      // 1. Create customer if mini-form was used
-      if (showMiniCustomerForm) {
+
+      // 1. Create the customer record if one of the inline forms was used.
+      if (oneTimeMode) {
+        const createdCust = await addCustomer({
+          name: oneTimeName,
+          is_one_time: true
+        });
+        finalCustomerId = createdCust.id;
+      } else if (showMiniCustomerForm) {
         const createdCust = await addCustomer({
           name: newCustName,
           whatsapp_number: newCustPhone
@@ -293,9 +324,19 @@ export function SalesPage() {
       }
 
       toast.success(`Order placed successfully! Invoiced: ${sale.sale_code}`);
-      setPlacedSaleRecord(sale);
+      // Capture the balance the customer carried *into* this order — the
+      // notification quotes it, and it's gone from `customerPendingDebt`
+      // once the wizard resets.
+      setPlacedSaleRecord({ ...sale, priorDebt: customerPendingDebt });
       setWizardOpen(false);
-      setWhatsappPromptOpen(true); // Open WhatsApp prompt modal
+      // A one-time walk-in usually leaves no number, so there's nothing to
+      // prompt about — don't put a dead dialog in the operator's way.
+      const notifyPhone = sale.customer?.whatsapp_number || sale.customer?.contact_number;
+      if (notifyPhone) {
+        setWhatsappPromptOpen(true);
+      } else {
+        setPlacedSaleRecord(null);
+      }
     } catch (err) {
       toast.error(err.message || "Failed to place order");
     } finally {
@@ -303,32 +344,77 @@ export function SalesPage() {
     }
   };
 
-  // WhatsApp redirection
-  const handleSendWhatsApp = () => {
-    if (!placedSaleRecord) return;
+  // The invoice notification, ready to hand to whichever messaging app the
+  // operator picks. Composed once so the WhatsApp text, the SMS text and the
+  // logged record can never drift apart.
+  const pendingNotification = useMemo(() => {
+    if (!placedSaleRecord) return null;
+
     const phone = placedSaleRecord.customer?.whatsapp_number || placedSaleRecord.customer?.contact_number;
-    const name = placedSaleRecord.customer?.name;
-    const amount = placedSaleRecord.total_amount;
-    
-    const paymentTypeText = placedSaleRecord.payment_type === 'cash' ? 'Cash' : 'Debit';
-    
-    // Construct 24-hour PDF bill link
-    const billURL = `${window.location.origin}/bill/${placedSaleRecord.sale_code}`;
+    const currentAmount = Number(placedSaleRecord.total_amount) || 0;
+    // For a credit order the customer now owes their previous balance plus
+    // this order; for a cash order the sale settles itself and only any
+    // pre-existing balance is left standing.
+    const priorDebt = Number(placedSaleRecord.priorDebt) || 0;
+    const remainingAmount = placedSaleRecord.payment_type === 'debt'
+      ? priorDebt + currentAmount
+      : Math.max(0, priorDebt - currentAmount);
+    const totalAmount = placedSaleRecord.payment_type === 'debt'
+      ? priorDebt + currentAmount
+      : currentAmount;
 
-    const text = `Hello, ${name},
-Your Order with ${placedSaleRecord.quantity.toLocaleString()} Ice Cubes is completed.
-The Payment type is : ${paymentTypeText}
-The Total is : LKR ${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+    const billUrl = `${window.location.origin}/bill/${placedSaleRecord.sale_code}`;
 
-📄 View/Download 24-Hour PDF Bill:
-${billURL}`;
-    
-    const cleanPhone = phone ? phone.replace(/\D/g, '') : '';
-    const formattedPhone = cleanPhone.length === 10 ? `94${cleanPhone.substring(1)}` : cleanPhone;
+    return {
+      phone,
+      billUrl,
+      currentAmount,
+      remainingAmount,
+      message: buildSaleNotification({
+        customerName: placedSaleRecord.customer?.name,
+        saleCode: placedSaleRecord.sale_code,
+        quantity: placedSaleRecord.quantity,
+        currentAmount,
+        totalAmount,
+        paymentType: placedSaleRecord.payment_type,
+        remainingAmount,
+        billUrl
+      })
+    };
+  }, [placedSaleRecord]);
 
-    const waURL = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(text)}`;
-    window.open(waURL, '_blank');
-    
+  // Dispatch the invoice over the chosen channel — WhatsApp, or the phone's
+  // own messaging app for a customer who doesn't use it. Either way the
+  // dispatch is written to notification_log, so there's a record of what the
+  // customer was told, how, and when.
+  const handleSendNotification = async (channel) => {
+    if (!placedSaleRecord || !pendingNotification) return;
+    const { phone, message, billUrl, currentAmount, remainingAmount } = pendingNotification;
+
+    if (!toWhatsAppNumber(phone)) {
+      toast.error("This customer has no phone number on file — can't send a notification.");
+      setWhatsappPromptOpen(false);
+      setPlacedSaleRecord(null);
+      return;
+    }
+
+    window.open(notificationUrl(channel, phone, message), '_blank');
+
+    await recordNotification({
+      channel,
+      notificationType: 'sale_invoice',
+      customerId: placedSaleRecord.customer_id,
+      customerName: placedSaleRecord.customer?.name,
+      recipientPhone: phone,
+      referenceCode: placedSaleRecord.sale_code,
+      amount: currentAmount,
+      remainingAmount,
+      paymentType: placedSaleRecord.payment_type,
+      message,
+      linkUrl: billUrl,
+      sentBy: user?.fullName || 'Staff Operator'
+    });
+
     setWhatsappPromptOpen(false);
     setPlacedSaleRecord(null);
   };
@@ -455,19 +541,6 @@ ${billURL}`;
       setSortKey(key);
       setSortDirection('asc');
     }
-  };
-
-  // Robust local YYYY-MM-DD formatter — sale_date is a timestamptz, and
-  // comparing raw ISO strings would shift the effective day across
-  // timezones, same reasoning as the equivalent helper in useDailyReport.
-  const toLocalDateStr = (dStr) => {
-    if (!dStr) return '';
-    const d = new Date(dStr);
-    if (isNaN(d.getTime())) return '';
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
   };
 
   const filteredSales = useMemo(() => {
@@ -677,6 +750,7 @@ ${billURL}`;
           { key: 'customerName', label: 'Customer', sortable: true },
           { key: 'cube_type', label: 'Cube Type', sortable: true },
           { key: 'quantity', label: 'Qty', sortable: true },
+          { key: 'price_per_cube', label: 'Rate', sortable: true },
           { key: 'total_amount', label: 'Amount', sortable: true },
           { key: 'payment_type', label: 'Payment', sortable: true },
           { key: 'sale_date', label: 'Date', sortable: true },
@@ -696,6 +770,7 @@ ${billURL}`;
             <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-bold text-slate-900 dark:text-slate-100">
               {filteredTotals.quantity.toLocaleString()}
             </td>
+            <td className="px-2.5 sm:px-4 py-2.5 sm:py-3"></td>
             <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-bold text-slate-900 dark:text-slate-100">
               LKR {filteredTotals.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </td>
@@ -716,6 +791,15 @@ ${billURL}`;
               )}
             </td>
             <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono">{sale.quantity.toLocaleString()}</td>
+            <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono text-slate-500" title="Rate charged on this order, stored with the transaction">
+              {isMultiItem
+                ? (sale.sale_items || [])
+                    .map(i => Number(i.price_per_cube).toFixed(2))
+                    .join(' / ')
+                : sale.price_per_cube != null
+                  ? Number(sale.price_per_cube).toFixed(2)
+                  : '—'}
+            </td>
             <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-semibold font-mono text-slate-800 dark:text-slate-200">LKR {sale.total_amount.toLocaleString()}</td>
             <td className="px-2.5 sm:px-4 py-2.5 sm:py-3"><Badge type={sale.payment_type} /></td>
             <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 text-xs text-slate-400 whitespace-nowrap">{new Date(sale.sale_date).toLocaleString()}</td>
@@ -861,7 +945,40 @@ ${billURL}`;
         {/* STEP 2: Customer Select or Create */}
         {step === 2 && (
           <div className="space-y-3 py-1">
-            {!showMiniCustomerForm ? (
+            {oneTimeMode ? (
+              <div className="space-y-3 bg-slate-50 dark:bg-slate-800/20 p-3.5 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                  One-Time (Walk-In) Sale
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  For a buyer who isn't a registered customer. Only a name is needed — they
+                  won't be added to the customer registry, and no WhatsApp notification is sent.
+                </p>
+                <Input
+                  label="Customer Name (Required)"
+                  name="oneTimeName"
+                  placeholder="e.g. Walk-in — Nimal"
+                  value={oneTimeName}
+                  onChange={(e) => setOneTimeName(e.target.value)}
+                />
+                {paymentType === 'debt' && (
+                  <div className="bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 p-2.5 rounded-lg border border-amber-200/50 dark:border-amber-900/30 text-[11px]">
+                    <strong>Heads up:</strong> this is a credit order. A one-time customer has no
+                    contact number on file, so the debt can't be chased later. Go back to Step 1
+                    and choose Cash unless you're sure.
+                  </div>
+                )}
+                <div className="text-center pt-1">
+                  <button
+                    type="button"
+                    onClick={() => { setOneTimeMode(false); setOneTimeName(''); }}
+                    className="text-xs text-slate-400 font-bold hover:underline"
+                  >
+                    Back to Registry Search
+                  </button>
+                </div>
+              </div>
+            ) : !showMiniCustomerForm ? (
               <>
                 <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
                   Search the registry and tap a result to continue, or register a new client:
@@ -902,18 +1019,34 @@ ${billURL}`;
                   )}
                 </div>
 
-                <div className="text-center pt-1.5">
-                  <span className="text-xs text-slate-400">Not in system registry?</span>{' '}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowMiniCustomerForm(true);
-                      setCustomerId('');
-                    }}
-                    className="text-xs text-navy-600 dark:text-sky-400 font-bold hover:underline"
-                  >
-                    Register Mini-Form
-                  </button>
+                <div className="text-center pt-1.5 space-y-1">
+                  <div>
+                    <span className="text-xs text-slate-400">Not in system registry?</span>{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMiniCustomerForm(true);
+                        setCustomerId('');
+                      }}
+                      className="text-xs text-navy-600 dark:text-sky-400 font-bold hover:underline"
+                    >
+                      Register Mini-Form
+                    </button>
+                  </div>
+                  <div>
+                    <span className="text-xs text-slate-400">Just passing through?</span>{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOneTimeMode(true);
+                        setCustomerId('');
+                        setCustomerSearchQuery('');
+                      }}
+                      className="text-xs text-navy-600 dark:text-sky-400 font-bold hover:underline"
+                    >
+                      One-Time Sale
+                    </button>
+                  </div>
                 </div>
               </>
             ) : (
@@ -1015,7 +1148,7 @@ ${billURL}`;
               </div>
 
               {/* Existing Debt Amount — shown whenever a customer is selected */}
-              {(customerId || showMiniCustomerForm) && (
+              {(customerId || showMiniCustomerForm) && !oneTimeMode && (
                 <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-xl flex justify-between items-center">
                   <span className="text-xs font-semibold text-red-600 dark:text-red-400">Existing Debt Amount:</span>
                   <span className="text-sm font-extrabold font-heading text-red-600 dark:text-red-400">
@@ -1070,13 +1203,21 @@ ${billURL}`;
               <div className="grid grid-cols-2 gap-2 text-xs py-1">
                 <span className="text-slate-400">Customer</span>
                 <span className="font-semibold text-right text-slate-800 dark:text-slate-200">
-                  {showMiniCustomerForm ? newCustName : customers.find(c => c.id === Number(customerId))?.name}
+                  {oneTimeMode
+                    ? `${oneTimeName} (One-Time)`
+                    : showMiniCustomerForm
+                      ? newCustName
+                      : customers.find(c => c.id === Number(customerId))?.name}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs py-1">
                 <span className="text-slate-400">WhatsApp Phone</span>
                 <span className="font-mono text-right text-slate-800 dark:text-slate-200">
-                  {showMiniCustomerForm ? newCustPhone : (customers.find(c => c.id === Number(customerId))?.whatsapp_number || customers.find(c => c.id === Number(customerId))?.contact_number)}
+                  {oneTimeMode
+                    ? '— (walk-in)'
+                    : showMiniCustomerForm
+                      ? newCustPhone
+                      : (customers.find(c => c.id === Number(customerId))?.whatsapp_number || customers.find(c => c.id === Number(customerId))?.contact_number)}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs py-1">
@@ -1129,7 +1270,7 @@ ${billURL}`;
               <span>Back</span>
             </Button>
 
-            {step === 2 && !showMiniCustomerForm ? (
+            {step === 2 && !showMiniCustomerForm && !oneTimeMode ? (
               // Tapping a customer result auto-advances (selectCustomer); no
               // manual Next needed unless the operator is registering new.
               <div />
@@ -1149,19 +1290,19 @@ ${billURL}`;
       </Modal>
 
 
-      {/* --- WhatsApp Confirmation Prompt Dialog --- */}
-      <ConfirmDialog
+      {/* --- Invoice Notification Prompt --- */}
+      <SendNotificationDialog
         isOpen={whatsappPromptOpen}
         onClose={() => {
           setWhatsappPromptOpen(false);
           setPlacedSaleRecord(null);
         }}
-        onConfirm={handleSendWhatsApp}
-        title="Send Invoice to WhatsApp?"
-        message={`Sale order complete. Would you like to launch WhatsApp to send the invoice notification message to customer: ${placedSaleRecord?.customer?.name}?`}
-        confirmLabel="Send Notification"
-        cancelLabel="Skip Notification"
-        variant="primary"
+        onSend={handleSendNotification}
+        title="Send Invoice Notification"
+        intro={`Order ${placedSaleRecord?.sale_code || ''} is complete. Send the invoice to ${placedSaleRecord?.customer?.name || 'the customer'}?`}
+        customerName={placedSaleRecord?.customer?.name}
+        phone={pendingNotification?.phone}
+        message={pendingNotification?.message || ''}
       />
 
       {/* --- Delete Confirmation Modal --- */}

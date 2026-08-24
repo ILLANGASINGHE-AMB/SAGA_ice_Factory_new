@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useExpenses } from '../hooks/useExpenses';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { Button } from '../components/Button';
 import { Modal } from '../components/Modal';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Input, Select } from '../components/FormFields';
 import { ExpenseCashBookGrid } from '../components/ExpenseCashBookGrid';
 import { ExpenseCategoryView } from '../components/ExpenseCategoryView';
@@ -31,11 +33,16 @@ export function ExpenseLedgerPage() {
     isLoading,
     addCategory,
     addExpenseItem,
+    deleteCategory,
+    deleteExpenseItem,
+    categoryDeletionImpact,
+    expenseDeletionImpact,
     reorderCategories,
     reorderExpenseItems,
     saveLedgerRow,
     deleteLedgerRow
   } = useExpenses();
+  const { isAdmin } = useAuth();
   const toast = useToast();
 
   const [viewMode, setViewMode] = useState('cashBook'); // 'cashBook' | 'categoryView'
@@ -48,6 +55,58 @@ export function ExpenseLedgerPage() {
   const [expenseName, setExpenseName] = useState('');
   const [expenseCategoryId, setExpenseCategoryId] = useState('');
   const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
+
+  // Column deletion. Removing a category or an expense name takes its recorded
+  // amounts with it, so the confirm dialog states exactly what will go.
+  const [deleteTarget, setDeleteTarget] = useState(null); // { kind, id, name, message }
+  const [isDeletingColumn, setIsDeletingColumn] = useState(false);
+
+  const requestDeleteCategory = (category) => {
+    const impact = categoryDeletionImpact(category.id);
+    const parts = [`Delete the category "${category.name}"?`];
+    if (impact.itemCount > 0) {
+      parts.push(
+        `This also removes ${impact.itemCount} expense ${impact.itemCount === 1 ? 'name' : 'names'} under it` +
+        (impact.amountCount > 0
+          ? `, along with ${impact.amountCount} recorded ${impact.amountCount === 1 ? 'amount' : 'amounts'} totalling LKR ${impact.amountTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}.`
+          : '.')
+      );
+    }
+    parts.push('It can be restored from Trash.');
+    setDeleteTarget({ kind: 'category', id: category.id, name: category.name, message: parts.join(' ') });
+  };
+
+  const requestDeleteExpenseItem = (item) => {
+    const impact = expenseDeletionImpact(item.id);
+    const parts = [`Delete the expense "${item.name}"?`];
+    if (impact.amountCount > 0) {
+      parts.push(
+        `This removes ${impact.amountCount} recorded ${impact.amountCount === 1 ? 'amount' : 'amounts'} ` +
+        `totalling LKR ${impact.amountTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}.`
+      );
+    }
+    parts.push('It can be restored from Trash.');
+    setDeleteTarget({ kind: 'item', id: item.id, name: item.name, message: parts.join(' ') });
+  };
+
+  const handleConfirmColumnDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeletingColumn(true);
+    try {
+      if (deleteTarget.kind === 'category') {
+        await deleteCategory(deleteTarget.id);
+        toast.success(`Deleted category: ${deleteTarget.name}`);
+      } else {
+        await deleteExpenseItem(deleteTarget.id);
+        toast.success(`Deleted expense: ${deleteTarget.name}`);
+      }
+      setDeleteTarget(null);
+    } catch (err) {
+      toast.error(err.message || "Failed to delete");
+    } finally {
+      setIsDeletingColumn(false);
+    }
+  };
 
   const handleAddCategory = async (e) => {
     e.preventDefault();
@@ -203,6 +262,9 @@ export function ExpenseLedgerPage() {
           deleteLedgerRow={deleteLedgerRow}
           reorderCategories={reorderCategories}
           reorderExpenseItems={reorderExpenseItems}
+          onDeleteCategory={requestDeleteCategory}
+          onDeleteExpenseItem={requestDeleteExpenseItem}
+          canManageColumns={isAdmin}
         />
       ) : (
         <ExpenseCategoryView
@@ -285,6 +347,17 @@ export function ExpenseLedgerPage() {
           </div>
         </form>
       </Modal>
+
+      {/* CONFIRM: DELETE CATEGORY / EXPENSE COLUMN */}
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmColumnDelete}
+        title={deleteTarget?.kind === 'category' ? 'Delete Category?' : 'Delete Expense?'}
+        message={deleteTarget?.message || ''}
+        confirmLabel="Delete"
+        isLoading={isDeletingColumn}
+      />
 
     </div>
   );

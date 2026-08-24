@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useVehicles } from '../hooks/useVehicles';
 import { useVehicleTrips } from '../hooks/useVehicleTrips';
+import { useEmployees } from '../hooks/useEmployees';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { Table } from '../components/Table';
@@ -16,17 +17,10 @@ import {
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
+import { toLocalDateStr, isWithinLocalRange } from '../utils/date';
 
 const GRAPH_COLOR = '#22c55e'; // Distance Travelled - green
 const VEHICLE_TYPE_LABELS = { lorry: 'Lorry', pickup: 'Pickup' };
-
-function isWithinRange(dateStr, dateFrom, dateTo) {
-  if (!dateStr) return false;
-  const d = dateStr.slice(0, 10);
-  if (dateFrom && d < dateFrom) return false;
-  if (dateTo && d > dateTo) return false;
-  return true;
-}
 
 export function VehicleProfilePage() {
   const { id } = useParams();
@@ -35,6 +29,7 @@ export function VehicleProfilePage() {
 
   const { vehicles, isLoading: vehiclesLoading, updateVehicle, deleteVehicle } = useVehicles();
   const { trips, isLoading: tripsLoading, addTrip } = useVehicleTrips(vehicleId);
+  const { employees } = useEmployees();
   const { isAdmin } = useAuth();
   const toast = useToast();
 
@@ -51,15 +46,24 @@ export function VehicleProfilePage() {
   const [actionLoading, setActionLoading] = useState(false);
 
   const filteredTrips = useMemo(() => {
-    return trips.filter(t => isWithinRange(t.trip_date, dateFrom, dateTo));
+    return trips.filter(t => isWithinLocalRange(t.trip_date, dateFrom, dateTo));
   }, [trips, dateFrom, dateTo]);
 
   const totalDistance = filteredTrips.reduce((sum, t) => sum + Number(t.distance_travelled || 0), 0);
 
+  // Where the vehicle was last left: the highest end-odometer across all its
+  // trips, falling back to the locked initial reading when it has none yet.
+  const lastOdometer = useMemo(() => {
+    return trips.reduce(
+      (max, t) => Math.max(max, Number(t.end_odometer) || 0),
+      Number(vehicle?.initial_odometer) || 0
+    );
+  }, [trips, vehicle]);
+
   const graphData = useMemo(() => {
     let keyFn, labelFn;
     if (granularity === 'daily') {
-      keyFn = (d) => d.toISOString().slice(0, 10);
+      keyFn = (d) => toLocalDateStr(d);
       labelFn = (d) => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     } else if (granularity === 'monthly') {
       keyFn = (d) => `${d.getFullYear()}-${d.getMonth()}`;
@@ -71,7 +75,7 @@ export function VehicleProfilePage() {
 
     const buckets = new Map();
     filteredTrips.forEach(t => {
-      const dateObj = new Date(t.trip_date);
+      const dateObj = new Date(`${String(t.trip_date).slice(0, 10)}T00:00:00`);
       const key = keyFn(dateObj);
       if (!buckets.has(key)) {
         buckets.set(key, { key, label: labelFn(dateObj), sortDate: dateObj, 'Distance Travelled': 0 });
@@ -86,6 +90,7 @@ export function VehicleProfilePage() {
     await addTrip(vehicleId, data, 'Operator');
     toast.success("Trip recorded successfully");
   };
+
 
   const handleSaved = ({ mode, vehicle_no, error }) => {
     if (mode === 'error') {
@@ -264,6 +269,7 @@ export function VehicleProfilePage() {
               enablePagination={false}
               headers={[
                 { key: 'trip_date', label: 'Date' },
+                { key: 'driver', label: 'Driver' },
                 { key: 'distance_travelled', label: 'Distance Travelled' },
                 { key: 'start_odometer', label: 'Start Odometer' },
                 { key: 'end_odometer', label: 'End Odometer' },
@@ -274,7 +280,12 @@ export function VehicleProfilePage() {
               emptyMessage="No trip records found for the selected filters."
               renderRow={(trip) => (
                 <tr key={trip.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
-                  <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono text-slate-500">{new Date(trip.trip_date).toLocaleDateString()}</td>
+                  <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono text-slate-500">
+                    {new Date(`${String(trip.trip_date).slice(0, 10)}T00:00:00`).toLocaleDateString()}
+                  </td>
+                  <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-slate-700 dark:text-slate-300">
+                    {trip.employee ? `${trip.employee.employee_code} — ${trip.employee.name}` : '—'}
+                  </td>
                   <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono font-bold text-emerald-600 dark:text-emerald-400">
                     {Number(trip.distance_travelled).toLocaleString()} km
                   </td>
@@ -333,6 +344,8 @@ export function VehicleProfilePage() {
         isOpen={addTripOpen}
         onClose={() => setAddTripOpen(false)}
         onSubmit={handleAddTrip}
+        employees={employees}
+        defaultStartOdometer={lastOdometer}
       />
 
       {/* Delete Confirmation Dialog */}

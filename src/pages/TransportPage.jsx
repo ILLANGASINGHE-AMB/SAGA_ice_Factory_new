@@ -12,6 +12,7 @@ import { Plus, Square, Table2, LineChart as LineChartIcon } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
+import { toLocalDateStr, isWithinLocalRange } from '../utils/date';
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -26,14 +27,6 @@ function formatDateTime(value) {
   return new Date(value).toLocaleString(undefined, {
     year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
   });
-}
-
-function isWithinRange(dateStr, dateFrom, dateTo) {
-  if (!dateStr) return false;
-  const d = dateStr.slice(0, 10);
-  if (dateFrom && d < dateFrom) return false;
-  if (dateTo && d > dateTo) return false;
-  return true;
 }
 
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -90,7 +83,7 @@ export function TransportPage() {
     return trips.filter(t => {
       if (vehicleFilter && Number(t.vehicle_id) !== Number(vehicleFilter)) return false;
       if (driverFilter && Number(t.employee_id) !== Number(driverFilter)) return false;
-      if (!isWithinRange(t.start_datetime, dateFrom, dateTo)) return false;
+      if (!isWithinLocalRange(t.start_datetime, dateFrom, dateTo)) return false;
       return true;
     });
   }, [trips, vehicleFilter, driverFilter, dateFrom, dateTo]);
@@ -117,7 +110,7 @@ export function TransportPage() {
   const graphData = useMemo(() => {
     let keyFn, labelFn;
     if (graphGranularity === 'daily') {
-      keyFn = (d) => d.toISOString().slice(0, 10);
+      keyFn = (d) => toLocalDateStr(d);
       labelFn = (d) => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     } else if (graphGranularity === 'monthly') {
       keyFn = (d) => `${d.getFullYear()}-${d.getMonth()}`;

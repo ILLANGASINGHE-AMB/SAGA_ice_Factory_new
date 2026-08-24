@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDashboard } from '../hooks/useDashboard';
+import { useAuth } from '../context/AuthContext';
 import { Badge } from '../components/Badge';
 import { Table } from '../components/Table';
 import { Skeleton } from '../components/Skeleton';
@@ -26,6 +27,7 @@ import {
 
 export function DashboardPage() {
   const { dashboardData, isLoading } = useDashboard();
+  const { isAdmin } = useAuth();
   const navigate = useNavigate();
 
   const handleAddNewOrder = () => {
@@ -36,6 +38,8 @@ export function DashboardPage() {
   const COLORS = {
     manufactured: '#22c55e', // Production - green
     resell: '#0ea5e9',       // Resell - light blue
+    total: '#7c3aed',        // Production + Resell combined - violet
+    purchases: '#f59e0b',    // Purchased-in stock - amber
     cash: '#10b981',         // Green
     debt: '#f43f5e'          // Rose
   };
@@ -59,11 +63,11 @@ export function DashboardPage() {
     );
   }
 
-  const { stats, charts, tables } = dashboardData;
+  const { stats, charts, tables, totals } = dashboardData;
 
   const money = (val) => `LKR ${(Number(val) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-  const cardItems = [
+  const cubeCards = [
     // Row 1 — cube counts
     {
       title: 'Sold Today',
@@ -89,7 +93,13 @@ export function DashboardPage() {
       icon: <Layers size={20} className="text-violet-500" />,
       bg: 'bg-violet-50 dark:bg-violet-950/30 border-violet-100 dark:border-violet-900/50 text-violet-500'
     },
-    // Row 2 — money
+  ];
+
+  // Row 2 — takings. Revenue and cash-flow figures are commercially sensitive
+  // and are for administrators only; a staff operator sees the cube counts
+  // and the outstanding-debt total they need to do their job, but nothing
+  // that adds up what the factory earns.
+  const revenueCards = [
     {
       title: 'Monthly Revenue',
       value: money(stats.monthlyRevenue),
@@ -107,14 +117,21 @@ export function DashboardPage() {
       value: money(stats.monthlyCashFlow),
       icon: <Landmark size={20} className="text-blue-500" />,
       bg: 'bg-blue-50 dark:bg-blue-950/30 border-blue-100 dark:border-blue-900/50 text-blue-500'
-    },
-    {
-      title: 'Total Debts',
-      value: money(stats.totalOutstandingDebts),
-      icon: <CreditCard size={20} className="text-rose-500" />,
-      bg: 'bg-rose-50 dark:bg-rose-950/30 border-rose-100 dark:border-rose-900/50 text-rose-500'
     }
   ];
+
+  // Outstanding debt stays visible to everyone — it's a collections worklist,
+  // not a measure of takings.
+  const debtCard = {
+    title: 'Total Debts',
+    value: money(stats.totalOutstandingDebts),
+    icon: <CreditCard size={20} className="text-rose-500" />,
+    bg: 'bg-rose-50 dark:bg-rose-950/30 border-rose-100 dark:border-rose-900/50 text-rose-500'
+  };
+
+  const cardItems = isAdmin
+    ? [...cubeCards, ...revenueCards, debtCard]
+    : [...cubeCards, debtCard];
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -166,6 +183,30 @@ export function DashboardPage() {
               Last 30 Days
             </span>
           </div>
+
+          {/* Period totals — Production + Resell and their combined figure,
+              so the chart answers "how many cubes did we sell this period?"
+              without the reader having to add the bars up. */}
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-xl bg-green-50 dark:bg-green-950/20 border border-green-100 dark:border-green-900/40 py-1.5">
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-green-700 dark:text-green-400">Production</span>
+              <span className="block text-xs sm:text-sm font-bold font-mono text-green-700 dark:text-green-400">
+                {totals.monthlyCubesProduction.toLocaleString()}
+              </span>
+            </div>
+            <div className="rounded-xl bg-sky-50 dark:bg-sky-950/20 border border-sky-100 dark:border-sky-900/40 py-1.5">
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-sky-700 dark:text-sky-400">Retail / Resell</span>
+              <span className="block text-xs sm:text-sm font-bold font-mono text-sky-700 dark:text-sky-400">
+                {totals.monthlyCubesResell.toLocaleString()}
+              </span>
+            </div>
+            <div className="rounded-xl bg-violet-50 dark:bg-violet-950/20 border border-violet-100 dark:border-violet-900/40 py-1.5">
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-400">Total Cubes</span>
+              <span className="block text-xs sm:text-sm font-bold font-mono text-violet-700 dark:text-violet-400">
+                {totals.monthlyCubesTotal.toLocaleString()}
+              </span>
+            </div>
+          </div>
           <div className="h-44 sm:h-52 md:h-56">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={charts.monthly} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -180,6 +221,7 @@ export function DashboardPage() {
                 <Legend iconType="circle" wrapperStyle={{ fontSize: 10, paddingTop: 4 }} />
                 <Bar dataKey="Production" fill={COLORS.manufactured} radius={[4, 4, 0, 0]} />
                 <Bar dataKey="Resell" fill={COLORS.resell} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Total" fill={COLORS.total} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -217,28 +259,92 @@ export function DashboardPage() {
               </PieChart>
             </ResponsiveContainer>
             
-            {/* Center label */}
+            {/* Center label — the month's combined cash + debt sales value */}
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <span className="text-[10px] text-slate-400 font-medium">Split</span>
-              <span className="text-xs font-bold font-heading text-slate-900 dark:text-slate-50">Sales</span>
+              <span className="text-[10px] text-slate-400 font-medium">Total</span>
+              <span className="text-[11px] sm:text-xs font-bold font-heading text-slate-900 dark:text-slate-50">
+                {totals.salesDistributionTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </span>
             </div>
           </div>
           
-          {/* Custom legend */}
-          <div className="flex justify-around text-[11px] font-semibold px-1 pt-1 border-t border-slate-100 dark:border-slate-800">
-            <div className="flex items-center space-x-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-              <span className="text-slate-700 dark:text-slate-300">Cash: {charts.pie[0]?.value.toLocaleString()}</span>
+          {/* Custom legend + monthly total */}
+          <div className="space-y-1.5 px-1 pt-1 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex justify-around text-[11px] font-semibold">
+              <div className="flex items-center space-x-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                <span className="text-slate-700 dark:text-slate-300">Cash: {charts.pie[0]?.value.toLocaleString()}</span>
+              </div>
+              <div className="flex items-center space-x-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+                <span className="text-slate-700 dark:text-slate-300">Debt: {charts.pie[1]?.value.toLocaleString()}</span>
+              </div>
             </div>
-            <div className="flex items-center space-x-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-              <span className="text-slate-700 dark:text-slate-300">Debt: {charts.pie[1]?.value.toLocaleString()}</span>
+            <div className="flex justify-between items-baseline text-[11px] font-bold pt-1 border-t border-dashed border-slate-100 dark:border-slate-800">
+              <span className="text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[10px]">Total (Cash + Debt)</span>
+              <span className="font-mono text-slate-900 dark:text-slate-50">{money(totals.salesDistributionTotal)}</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Monthly Revenue Timeline */}
+      {/* Production & Purchase Trends — cubes ADDED to stock over the last 30
+          days: what the factory manufactured (MFC) versus what it bought in
+          (RSC). This is intake, so sales deductions and manual removals are
+          deliberately excluded. */}
+      <div className="bg-white dark:bg-slate-900/90 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] backdrop-blur-md">
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 mb-3">
+          <h3 className="text-xs sm:text-sm font-bold font-heading text-slate-800 dark:text-slate-100">
+            Production & Purchase Trends
+          </h3>
+          <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+            Cubes Added · Last 30 Days
+          </span>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 text-center mb-3">
+          <div className="rounded-xl bg-green-50 dark:bg-green-950/20 border border-green-100 dark:border-green-900/40 py-1.5">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-green-700 dark:text-green-400">Produced</span>
+            <span className="block text-xs sm:text-sm font-bold font-mono text-green-700 dark:text-green-400">
+              {totals.trendProductionTotal.toLocaleString()}
+            </span>
+          </div>
+          <div className="rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/40 py-1.5">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">Purchased</span>
+            <span className="block text-xs sm:text-sm font-bold font-mono text-amber-700 dark:text-amber-400">
+              {totals.trendPurchaseTotal.toLocaleString()}
+            </span>
+          </div>
+          <div className="rounded-xl bg-violet-50 dark:bg-violet-950/20 border border-violet-100 dark:border-violet-900/40 py-1.5">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-400">Total Intake</span>
+            <span className="block text-xs sm:text-sm font-bold font-mono text-violet-700 dark:text-violet-400">
+              {(totals.trendProductionTotal + totals.trendPurchaseTotal).toLocaleString()}
+            </span>
+          </div>
+        </div>
+
+        <div className="h-40 sm:h-48 md:h-52">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={charts.stockTrend} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" className="dark:hidden" />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.06)" className="hidden dark:block" />
+              <XAxis dataKey="date" stroke="#94a3b8" fontSize={9} tickLine={false} interval={2} />
+              <YAxis stroke="#94a3b8" fontSize={9} tickLine={false} />
+              <Tooltip
+                formatter={(value, name) => [`${Number(value).toLocaleString()} cubes`, name]}
+                contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)', fontSize: '11px' }}
+              />
+              <Legend iconType="circle" wrapperStyle={{ fontSize: 10, paddingTop: 4 }} />
+              <Line type="monotone" dataKey="Production" stroke={COLORS.manufactured} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+              <Line type="monotone" dataKey="Purchases" stroke={COLORS.purchases} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Monthly Revenue Timeline — takings, so administrators only (same
+          rule as the revenue summary cards above). */}
+      {isAdmin && (
       <div className="bg-white dark:bg-slate-900/90 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] backdrop-blur-md">
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 mb-3">
           <h3 className="text-xs sm:text-sm font-bold font-heading text-slate-800 dark:text-slate-100">
@@ -264,6 +370,7 @@ export function DashboardPage() {
           </ResponsiveContainer>
         </div>
       </div>
+      )}
 
       {/* 3. Recent Activity Grid - Landscape 2-Col Split */}
       <div className="grid grid-cols-1 xl:grid-cols-2 landscape:grid-cols-2 gap-4 sm:gap-5">

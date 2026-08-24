@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useDailyReport } from '../hooks/useDailyReport';
 import { useSettings } from '../hooks/useSettings';
+import { useAuth } from '../context/AuthContext';
+import { todayStr } from '../utils/date';
 import { useToast } from '../components/Toast';
 import { Button } from '../components/Button';
 import { generateDailyManagerReportPDF } from '../utils/pdfGenerator';
@@ -21,13 +23,13 @@ import {
 } from 'lucide-react';
 
 export function DailyManagerReportView() {
-  const today = () => new Date().toISOString().slice(0, 10);
-  const [fromDate, setFromDate] = useState(today);
-  const [toDate, setToDate] = useState(today);
+  const [fromDate, setFromDate] = useState(todayStr);
+  const [toDate, setToDate] = useState(todayStr);
   const [fromTime, setFromTime] = useState('00:00');
   const [toTime, setToTime] = useState('23:59');
-  const { loading, reportData, manualInputs, saveDailyReport } = useDailyReport(fromDate, toDate, fromTime, toTime);
+  const { loading, reportData, manualInputs, isVerified, savedRecord, saveDailyReport } = useDailyReport(fromDate, toDate, fromTime, toTime);
   const { settings } = useSettings();
+  const { isAdmin, user } = useAuth();
   const toast = useToast();
 
   // Local form state synced with manualInputs — only Free Issue and Damaged
@@ -39,15 +41,24 @@ export function DailyManagerReportView() {
   const [verifiedBy, setVerifiedBy] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  // Once a day's report carries a verifying manager's name it is a signed
+  // declaration, so its manager entries lock. An admin can reopen it to make a
+  // correction — everyone else sees a read-only record.
+  // The unlock is scoped to the exact range it was granted for, so moving to
+  // another day re-locks automatically rather than leaving it editable.
+  const rangeKey = `${fromDate}|${toDate}`;
+  const [unlockedRange, setUnlockedRange] = useState(null);
+  const isLocked = isVerified && unlockedRange !== rangeKey;
+
   useEffect(() => {
     if (manualInputs) {
       setFreeIssue(manualInputs.freeIssue || 0);
       setDamagedCubes(manualInputs.damagedCubes || 0);
       setOtherReceipts(manualInputs.otherReceipts || 0);
       setOtherDetails(manualInputs.otherDetails || '');
-      setVerifiedBy(manualInputs.verifiedBy || '');
+      setVerifiedBy(manualInputs.verifiedBy || user?.fullName || '');
     }
-  }, [manualInputs, fromDate, toDate]);
+  }, [manualInputs, fromDate, toDate, user?.fullName]);
 
   // Handle Save
   const handleSave = async () => {
@@ -138,11 +149,12 @@ export function DailyManagerReportView() {
           <Button
             variant="secondary"
             onClick={handleSave}
-            disabled={isSaving || loading}
+            disabled={isSaving || loading || isLocked}
+            title={isLocked ? 'This report is verified and locked' : undefined}
             className="flex items-center space-x-2"
           >
             <Save size={16} />
-            <span>{isSaving ? 'Saving...' : 'Save Data'}</span>
+            <span>{isSaving ? 'Saving...' : isLocked ? 'Verified & Locked' : 'Save Data'}</span>
           </Button>
 
           <Button
@@ -210,7 +222,8 @@ export function DailyManagerReportView() {
                     type="number"
                     value={freeIssue}
                     onChange={(e) => setFreeIssue(e.target.value)}
-                    className="w-full mt-0.5 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
+                    disabled={isLocked}
+                    className="w-full mt-0.5 disabled:opacity-60 disabled:cursor-not-allowed bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
                   />
                 </div>
 
@@ -220,7 +233,8 @@ export function DailyManagerReportView() {
                     type="number"
                     value={damagedCubes}
                     onChange={(e) => setDamagedCubes(e.target.value)}
-                    className="w-full mt-0.5 bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-800 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
+                    disabled={isLocked}
+                    className="w-full mt-0.5 disabled:opacity-60 disabled:cursor-not-allowed bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-800 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
                   />
                 </div>
 
@@ -298,7 +312,8 @@ export function DailyManagerReportView() {
                     type="number"
                     value={otherReceipts}
                     onChange={(e) => setOtherReceipts(e.target.value)}
-                    className="w-full mt-0.5 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
+                    disabled={isLocked}
+                    className="w-full mt-0.5 disabled:opacity-60 disabled:cursor-not-allowed bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
                   />
                 </div>
 
@@ -637,7 +652,8 @@ export function DailyManagerReportView() {
                   placeholder="Record any special incidents, plant issues, power outages, or other important events..."
                   value={otherDetails}
                   onChange={(e) => setOtherDetails(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs text-slate-900 dark:text-slate-100 focus:outline-none"
+                  disabled={isLocked}
+                  className="w-full disabled:opacity-60 disabled:cursor-not-allowed bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs text-slate-900 dark:text-slate-100 focus:outline-none"
                 />
               </div>
             </div>
@@ -664,16 +680,34 @@ export function DailyManagerReportView() {
                     placeholder="Enter manager name..."
                     value={verifiedBy}
                     onChange={(e) => setVerifiedBy(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-slate-100 focus:outline-none"
+                    disabled={isLocked}
+                    className="w-full disabled:opacity-60 disabled:cursor-not-allowed bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-slate-100 focus:outline-none"
                   />
                 </div>
 
-                <div className="flex items-center justify-between pt-2">
-                  <Button variant="secondary" onClick={handleSave} disabled={isSaving} className="w-full">
-                    <Save size={16} className="mr-2" />
-                    <span>{isSaving ? 'Saving Daily Report...' : 'Save & Verify Report'}</span>
-                  </Button>
-                </div>
+                {isLocked ? (
+                  <div className="space-y-2 pt-2">
+                    <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/50 rounded-xl text-[11px] text-emerald-800 dark:text-emerald-300">
+                      <strong>Verified and locked.</strong> This report was signed off by{' '}
+                      {savedRecord?.verified_by || 'a manager'}
+                      {savedRecord?.updated_at ? ` on ${new Date(savedRecord.updated_at).toLocaleString()}` : ''}.
+                      Its entries can no longer be changed.
+                    </div>
+                    {isAdmin && (
+                      <Button variant="secondary" onClick={() => setUnlockedRange(rangeKey)} className="w-full">
+                        <Save size={16} className="mr-2" />
+                        <span>Unlock to Correct</span>
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between pt-2">
+                    <Button variant="secondary" onClick={handleSave} disabled={isSaving} className="w-full">
+                      <Save size={16} className="mr-2" />
+                      <span>{isSaving ? 'Saving Daily Report...' : 'Save & Verify Report'}</span>
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
 

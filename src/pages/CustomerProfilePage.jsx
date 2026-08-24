@@ -4,6 +4,8 @@ import { useCustomers } from '../hooks/useCustomers';
 import { useDebts } from '../hooks/useDebts';
 import { useSales } from '../hooks/useSales';
 import { useCustomerPayments } from '../hooks/useCustomerPayments';
+import { useCustomerCheques } from '../hooks/useCustomerCheques';
+import { useNotifications } from '../hooks/useNotifications';
 import { useCustomerPrices } from '../hooks/useCustomerPrices';
 import { useInventory } from '../hooks/useInventory';
 import { useSettings } from '../hooks/useSettings';
@@ -17,25 +19,18 @@ import { CustomerFormModal } from '../components/CustomerFormModal';
 import { CustomerPriceModal } from '../components/CustomerPriceModal';
 import { generateBillPDF } from '../utils/pdfGenerator';
 import {
-  ArrowLeft, Edit2, Trash2, Table2, LineChart as LineChartIcon, FileDown, ExternalLink, DollarSign
+  ArrowLeft, Edit2, Trash2, Table2, LineChart as LineChartIcon, FileDown, ExternalLink, DollarSign, Send
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
+import { toLocalDateStr, isWithinLocalRange } from '../utils/date';
 
 const GRAPH_COLORS = { orders: '#ef4444', payments: '#22c55e' };
 const PAYMENT_METHOD_LABELS = { cash: 'Cash', card: 'Card', bank_transfer: 'Bank Transfer', cheque: 'Cheque', other: 'Other' };
 
 function money(n) {
   return `LKR ${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function isWithinRange(isoStr, dateFrom, dateTo) {
-  if (!isoStr) return false;
-  const d = isoStr.slice(0, 10);
-  if (dateFrom && d < dateFrom) return false;
-  if (dateTo && d > dateTo) return false;
-  return true;
 }
 
 export function CustomerProfilePage() {
@@ -46,7 +41,9 @@ export function CustomerProfilePage() {
   const { customers, isLoading: customersLoading, updateCustomer, deleteCustomer } = useCustomers();
   const { debts, isLoading: debtsLoading } = useDebts();
   const { sales, isLoading: salesLoading } = useSales();
-  const { payments, isLoading: paymentsLoading } = useCustomerPayments(customerId);
+  const { payments, isLoading: paymentsLoading, error: paymentsError } = useCustomerPayments(customerId);
+  const { cheques, isLoading: chequesLoading } = useCustomerCheques(customerId);
+  const { notifications, isLoading: notificationsLoading } = useNotifications({ customerId });
   const { customerPrices, setCustomPrice, clearCustomPrice } = useCustomerPrices();
   const { inventory } = useInventory();
   const { settings } = useSettings();
@@ -69,7 +66,7 @@ export function CustomerProfilePage() {
   const totalDebtSalesAmount = useMemo(() => customerSales.filter(s => s.payment_type === 'debt').reduce((sum, s) => sum + Number(s.total_amount || 0), 0), [customerSales]);
 
   // View / filter state
-  const [viewMode, setViewMode] = useState('sales'); // 'sales' | 'payments' | 'graph'
+  const [viewMode, setViewMode] = useState('sales'); // 'sales' | 'payments' | 'cheques' | 'notifications' | 'graph'
   const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'debt' | 'cash'
   const [granularity, setGranularity] = useState('daily'); // 'daily' | 'monthly' | 'yearly' — graph bucket size
   const [dateFrom, setDateFrom] = useState('');
@@ -83,7 +80,7 @@ export function CustomerProfilePage() {
 
   const filteredSales = useMemo(() => {
     return customerSales.filter(s =>
-      (typeFilter === 'all' || s.payment_type === typeFilter) && isWithinRange(s.sale_date, dateFrom, dateTo)
+      (typeFilter === 'all' || s.payment_type === typeFilter) && isWithinLocalRange(s.sale_date, dateFrom, dateTo)
     );
   }, [customerSales, typeFilter, dateFrom, dateTo]);
 
@@ -91,7 +88,7 @@ export function CustomerProfilePage() {
     // Settlements only ever exist against debt orders, so a "Cash Orders"
     // filter has no matches here — that's correct, not a bug.
     if (typeFilter === 'cash') return [];
-    return payments.filter(p => isWithinRange(p.settlement_date, dateFrom, dateTo));
+    return payments.filter(p => isWithinLocalRange(p.settlement_date, dateFrom, dateTo));
   }, [payments, typeFilter, dateFrom, dateTo]);
 
   const totalOrderAmount = filteredSales.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
@@ -102,7 +99,7 @@ export function CustomerProfilePage() {
   const graphData = useMemo(() => {
     let keyFn, labelFn;
     if (granularity === 'daily') {
-      keyFn = (d) => d.toISOString().slice(0, 10);
+      keyFn = (d) => toLocalDateStr(d);
       labelFn = (d) => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     } else if (granularity === 'monthly') {
       keyFn = (d) => `${d.getFullYear()}-${d.getMonth()}`;
@@ -268,20 +265,26 @@ export function CustomerProfilePage() {
         </div>
       </div>
 
-      {/* Lifetime Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
-          <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide block truncate">Total Sales</span>
-          <span className="text-sm font-bold font-mono text-slate-900 dark:text-slate-100 block mt-0.5 truncate">{money(totalSalesAmount)}</span>
-        </div>
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
-          <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide block truncate">Total Cash Sales</span>
-          <span className="text-sm font-bold font-mono text-emerald-600 dark:text-emerald-400 block mt-0.5 truncate">{money(totalCashSalesAmount)}</span>
-        </div>
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
-          <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wide block truncate">Total Debt Sales</span>
-          <span className="text-sm font-bold font-mono text-amber-600 dark:text-amber-400 block mt-0.5 truncate">{money(totalDebtSalesAmount)}</span>
-        </div>
+      {/* Lifetime Summary Cards. The sales-value totals are takings figures,
+          so a non-admin sees only what they need to service the account:
+          how much this customer still owes. */}
+      <div className={`grid gap-2.5 sm:gap-3 ${isAdmin ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-1'}`}>
+        {isAdmin && (
+          <>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
+            <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide block truncate">Total Sales</span>
+            <span className="text-sm font-bold font-mono text-slate-900 dark:text-slate-100 block mt-0.5 truncate">{money(totalSalesAmount)}</span>
+          </div>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
+            <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide block truncate">Total Cash Sales</span>
+            <span className="text-sm font-bold font-mono text-emerald-600 dark:text-emerald-400 block mt-0.5 truncate">{money(totalCashSalesAmount)}</span>
+          </div>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
+            <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wide block truncate">Total Debt Sales</span>
+            <span className="text-sm font-bold font-mono text-amber-600 dark:text-amber-400 block mt-0.5 truncate">{money(totalDebtSalesAmount)}</span>
+          </div>
+          </>
+        )}
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs">
           <span className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 uppercase tracking-wide block truncate">Remaining Debt</span>
           <span className="text-sm font-bold font-mono text-rose-600 dark:text-rose-400 block mt-0.5 truncate">{money(totalOutstandingDebt)}</span>
@@ -354,6 +357,24 @@ export function CustomerProfilePage() {
             <span>Payment History</span>
           </button>
           <button
+            onClick={() => setViewMode('cheques')}
+            className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
+              viewMode === 'cheques' ? 'bg-navy-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            <Table2 size={14} />
+            <span>Cheques ({cheques.length})</span>
+          </button>
+          <button
+            onClick={() => setViewMode('notifications')}
+            className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
+              viewMode === 'notifications' ? 'bg-navy-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            <Send size={14} />
+            <span>Notifications ({notifications.length})</span>
+          </button>
+          <button
             onClick={() => setViewMode('graph')}
             className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
               viewMode === 'graph' ? 'bg-navy-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -412,9 +433,11 @@ export function CustomerProfilePage() {
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <h3 className="text-sm font-bold font-heading text-slate-800 dark:text-slate-100">Sales History</h3>
-              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                Total Order Amount (Cash + Debt Orders): {money(totalOrderAmount)}
-              </span>
+              {isAdmin && (
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                  Total Order Amount (Cash + Debt Orders): {money(totalOrderAmount)}
+                </span>
+              )}
             </div>
             <Table
               enablePagination={false}
@@ -453,10 +476,17 @@ export function CustomerProfilePage() {
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <h3 className="text-sm font-bold font-heading text-slate-800 dark:text-slate-100">Payment History</h3>
-              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                Total Payments: {money(totalPayments)}
-              </span>
+              {isAdmin && (
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                  Total Payments: {money(totalPayments)}
+                </span>
+              )}
             </div>
+            {paymentsError && (
+              <p className="text-xs font-medium text-rose-600 dark:text-rose-400">
+                Couldn't load payment history: {paymentsError}
+              </p>
+            )}
             <Table
               enablePagination={false}
               headers={[
@@ -490,6 +520,99 @@ export function CustomerProfilePage() {
                       <ExternalLink size={15} />
                     </button>
                   </td>
+                </tr>
+              )}
+            />
+          </div>
+        )}
+
+        {viewMode === 'cheques' && (
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <h3 className="text-sm font-bold font-heading text-slate-800 dark:text-slate-100">Cheques Received</h3>
+              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                On hand: {money(cheques.filter(c => c.status === 'pending').reduce((sum, c) => sum + Number(c.amount || 0), 0))}
+              </span>
+            </div>
+            <Table
+              enablePagination={false}
+              headers={[
+                { key: 'cheque_no', label: 'Cheque No' },
+                { key: 'bank_name', label: 'Bank' },
+                { key: 'payer_name', label: 'Name on Cheque' },
+                { key: 'received_at', label: 'Received' },
+                { key: 'amount', label: 'Amount' },
+                { key: 'status', label: 'Status' }
+              ]}
+              data={cheques}
+              isLoading={chequesLoading}
+              emptyMessage="No cheques recorded against this customer."
+              renderRow={(cheque) => (
+                <tr key={cheque.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
+                  <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono text-navy-600 dark:text-navy-400">{cheque.cheque_no}</td>
+                  <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-slate-600 dark:text-slate-300">{cheque.bank_name}</td>
+                  <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-slate-600 dark:text-slate-300">{cheque.payer_name}</td>
+                  <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono text-slate-500">{new Date(cheque.received_at).toLocaleDateString()}</td>
+                  <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono font-semibold text-amber-600 dark:text-amber-400">{money(cheque.amount)}</td>
+                  <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${
+                      cheque.status === 'pending'
+                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                        : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                    }`}>
+                      {cheque.status === 'pending' ? 'In Hand' : 'Deposited'}
+                    </span>
+                  </td>
+                </tr>
+              )}
+            />
+          </div>
+        )}
+
+        {viewMode === 'notifications' && (
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5 space-y-3">
+            <h3 className="text-sm font-bold font-heading text-slate-800 dark:text-slate-100">Notifications Sent</h3>
+            <p className="text-[11px] text-slate-400">
+              Every invoice and settlement receipt dispatched to this customer, with the exact message they were sent.
+            </p>
+            <Table
+              enablePagination={false}
+              headers={[
+                { key: 'sent_at', label: 'Sent' },
+                { key: 'notification_type', label: 'Type' },
+                { key: 'channel', label: 'Channel' },
+                { key: 'reference_code', label: 'Reference' },
+                { key: 'recipient_phone', label: 'To' },
+                { key: 'amount', label: 'Amount' },
+                { key: 'sent_by', label: 'Sent By' }
+              ]}
+              data={notifications}
+              isLoading={notificationsLoading}
+              emptyMessage="No notifications have been sent to this customer yet."
+              renderRow={(note) => (
+                <tr key={note.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800 align-top">
+                  <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono text-slate-500 whitespace-nowrap">{new Date(note.sent_at).toLocaleString()}</td>
+                  <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300">
+                      {note.notification_type === 'sale_invoice' ? 'Invoice' : 'Receipt'}
+                    </span>
+                    <span className="block text-[10px] text-slate-400 mt-1 max-w-[260px] whitespace-pre-wrap line-clamp-3" title={note.message}>
+                      {note.message}
+                    </span>
+                  </td>
+                  <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${
+                      (note.channel || 'whatsapp') === 'sms'
+                        ? 'bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-300'
+                        : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                    }`}>
+                      {note.channel === 'sms' ? 'SMS' : 'WhatsApp'}
+                    </span>
+                  </td>
+                  <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono text-navy-600 dark:text-navy-400">{note.reference_code || '—'}</td>
+                  <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono text-slate-500">{note.recipient_phone || '—'}</td>
+                  <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono">{note.amount == null ? '—' : money(note.amount)}</td>
+                  <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-slate-600 dark:text-slate-300">{note.sent_by}</td>
                 </tr>
               )}
             />

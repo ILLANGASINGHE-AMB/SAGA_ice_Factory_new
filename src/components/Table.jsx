@@ -11,9 +11,16 @@ export function Table({
   sortDirection = "asc", // 'asc' | 'desc'
   onSort, // callback (key) => void
   renderRow, // function (item, index) => ReactNode
-  enablePagination = true,
+  // Tables scroll by default rather than paginate. Clicking Next → Next → Next
+  // to walk a ledger is slower than scrolling it, and it hides the shape of
+  // the data; the header stays pinned so the columns remain readable the whole
+  // way down. Pass enablePagination to opt a specific table back into pages.
+  enablePagination = false,
   defaultPageSize = 10,
   compact = false,
+  // Height at which the body starts scrolling inside the card. Pass null to
+  // let the table grow and scroll with the page instead.
+  maxHeight = '32rem',
   footerRow // optional <tr> of totals, rendered in a <tfoot> beneath the data rows
 }) {
   const [currentPage, setCurrentPage] = useState(1);
@@ -42,7 +49,10 @@ export function Table({
 
   return (
     <div className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 shadow-sm flex flex-col overflow-hidden backdrop-blur-md">
-      <div className="w-full overflow-x-auto touch-scroll">
+      <div
+        className={`w-full overflow-x-auto touch-scroll ${maxHeight && !enablePagination ? 'overflow-y-auto' : ''}`}
+        style={maxHeight && !enablePagination ? { maxHeight } : undefined}
+      >
         <table className="w-full border-collapse text-left text-xs sm:text-sm text-slate-500 dark:text-slate-400 min-w-full">
           <thead className="bg-slate-50 dark:bg-slate-900/90 text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10">
             <tr>

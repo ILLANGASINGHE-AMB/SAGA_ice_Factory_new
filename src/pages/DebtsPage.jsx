@@ -4,11 +4,14 @@ import { useSettings } from '../hooks/useSettings';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { Table } from '../components/Table';
+import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { Modal } from '../components/Modal';
-import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Input, Select, TextArea } from '../components/FormFields';
 import { generateSettlementReceiptPDF, generateDebtStatementPDF } from '../utils/pdfGenerator';
+import { buildSettlementNotification, notificationUrl, toWhatsAppNumber } from '../utils/notifications';
+import { SendNotificationDialog } from '../components/SendNotificationDialog';
+import { recordNotification } from '../hooks/useNotifications';
 import { DollarSign, RefreshCcw, FileDown, Users, History } from 'lucide-react';
 
 export function DebtsPage() {
@@ -103,7 +106,10 @@ export function DebtsPage() {
 
       toast.success(`Settlement recorded! Code: ${result.settlement_code}`);
       closeSettleModal();
-      setReceiptPreviewOpen(true);
+      // Notification first: getting the confirmation out to the customer is
+      // the time-critical step, so it is the first thing the operator is
+      // asked about. The receipt preview follows once that's answered.
+      setWhatsappPromptOpen(true);
     } catch (err) {
       toast.error(err.message || "Failed to settle debt");
     } finally {
@@ -121,35 +127,80 @@ export function DebtsPage() {
     if (receiptPdfUrl) URL.revokeObjectURL(receiptPdfUrl);
     setReceiptPreviewOpen(false);
     setReceiptPdfUrl(null);
-    setWhatsappPromptOpen(true); // Chain into the WhatsApp prompt
+    setSettlementReceiptRecord(null);
   };
 
-  // Send receipt notification via WhatsApp
-  const handleSendWhatsAppReceipt = () => {
-    if (!settlementReceiptRecord) return;
+  // Both answers to the notification prompt lead to the receipt preview —
+  // skipping the notification shouldn't cost the operator the receipt.
+  const dismissWhatsAppPrompt = () => {
+    setWhatsappPromptOpen(false);
+    setReceiptPreviewOpen(true);
+  };
+
+  // The settlement receipt notification, composed once so the WhatsApp text,
+  // the SMS text and the logged record can never drift apart.
+  const pendingReceiptNotification = useMemo(() => {
+    if (!settlementReceiptRecord) return null;
+
     const phone = settlementReceiptRecord.customer?.whatsapp_number || settlementReceiptRecord.customer?.contact_number;
-    const name = settlementReceiptRecord.customer?.name;
     const saleRef = settlementReceiptRecord.settlements?.length
       ? settlementReceiptRecord.settlements.map(s => s.sale_code).filter(Boolean).join(', ')
       : (settlementReceiptRecord.sale?.sale_code || 'N/A');
-    const amount = settlementReceiptRecord.amount_paid;
-    const remaining = settlementReceiptRecord.remaining_amount;
+    const amountPaid = Number(settlementReceiptRecord.amount_paid) || 0;
 
-    if (!phone) {
-      toast.error("This customer has no WhatsApp number on file — can't send a notification.");
-      setWhatsappPromptOpen(false);
-      setSettlementReceiptRecord(null);
+    // What this customer still owes across *all* their debts after the
+    // payment — the per-debt `remaining_amount` on the last settled row only
+    // describes that one sale, which under-reported the balance whenever a
+    // payment spanned several debts.
+    const remaining = (debts || [])
+      .filter(d => Number(d.customer_id) === Number(settlementReceiptRecord.customer_id) && d.status !== 'settled')
+      .reduce((sum, d) => sum + (Number(d.remaining_amount) || 0), 0);
+
+    return {
+      phone,
+      amountPaid,
+      remaining,
+      message: buildSettlementNotification({
+        customerName: settlementReceiptRecord.customer?.name,
+        settlementCode: settlementReceiptRecord.settlement_code,
+        saleRef,
+        currentAmount: amountPaid,
+        totalAmount: amountPaid + remaining,
+        paymentType: settlementReceiptRecord.payment_method,
+        remainingAmount: remaining
+      })
+    };
+  }, [settlementReceiptRecord, debts]);
+
+  // Dispatch the receipt over the chosen channel — WhatsApp, or the phone's
+  // own messaging app for a customer who doesn't use it.
+  const handleSendReceiptNotification = async (channel) => {
+    if (!settlementReceiptRecord || !pendingReceiptNotification) return;
+    const { phone, message, amountPaid, remaining } = pendingReceiptNotification;
+
+    if (!toWhatsAppNumber(phone)) {
+      toast.error("This customer has no phone number on file — can't send a notification.");
+      dismissWhatsAppPrompt();
       return;
     }
 
-    const mockPDFURL = `https://sagaciouscube.com/receipt/${settlementReceiptRecord.settlement_code}`;
-    const text = `Hello ${name}, your settlement receipt for ${saleRef} is ready. Amount Paid: LKR ${amount.toLocaleString()}. Remaining: LKR ${remaining.toLocaleString()}. View/Download: ${mockPDFURL}`;
+    window.open(notificationUrl(channel, phone, message), '_blank');
 
-    const waURL = `https://wa.me/94${phone.substring(1)}?text=${encodeURIComponent(text)}`;
-    window.open(waURL, '_blank');
+    await recordNotification({
+      channel,
+      notificationType: 'debt_settlement',
+      customerId: settlementReceiptRecord.customer_id,
+      customerName: settlementReceiptRecord.customer?.name,
+      recipientPhone: phone,
+      referenceCode: settlementReceiptRecord.settlement_code,
+      amount: amountPaid,
+      remainingAmount: remaining,
+      paymentType: settlementReceiptRecord.payment_method,
+      message,
+      sentBy: user?.fullName || 'Staff Operator'
+    });
 
-    setWhatsappPromptOpen(false);
-    setSettlementReceiptRecord(null);
+    dismissWhatsAppPrompt();
   };
 
   // Debt History: preview the debt statement — total debt amount, full paid
@@ -271,13 +322,89 @@ export function DebtsPage() {
     return Array.from(map.values()).sort((a, b) => b.total_debt - a.total_debt);
   }, [filteredDebts]);
 
-  // Latest settlement note recorded against a debt, for the History "Note" column
-  const getLatestNote = (debt) => {
-    const settlements = debt.debt_settlements || [];
-    if (!settlements.length) return null;
-    const latest = [...settlements].sort((a, b) => new Date(b.settlement_date) - new Date(a.settlement_date))[0];
-    return latest?.notes || null;
-  };
+  // Debt History as a true transaction ledger.
+  //
+  // It previously listed one row per *debt* showing that debt's running
+  // total/paid/remaining — so a customer who paid three times showed a single
+  // aggregate line and the individual payments were invisible. Each row here
+  // is one real event against a debt: the credit sale that opened it, then
+  // every settlement paid against it, each with the balance as it stood
+  // immediately after that event.
+  const debtHistoryRows = useMemo(() => {
+    const rows = [];
+
+    filteredDebts.forEach(debt => {
+      const total = Number(debt.total_amount) || 0;
+
+      rows.push({
+        id: `debt-${debt.id}`,
+        occurredAt: debt.created_at,
+        kind: 'charge',
+        customerName: debt.customer?.name || 'Unknown',
+        saleCode: debt.sale?.sale_code || '—',
+        reference: debt.sale?.sale_code || `DEBT-${debt.id}`,
+        amount: total,
+        balanceAfter: total,
+        status: debt.status,
+        note: null,
+        debt
+      });
+
+      // Replay settlements oldest-first so each row can carry the balance as
+      // it actually stood at that moment, rather than today's figure.
+      const settlements = [...(debt.debt_settlements || [])]
+        .sort((a, b) => new Date(a.settlement_date) - new Date(b.settlement_date));
+
+      let running = total;
+      settlements.forEach(setl => {
+        const paid = Number(setl.amount_paid) || 0;
+        running = Math.max(0, running - paid);
+        rows.push({
+          id: `settlement-${setl.id}`,
+          occurredAt: setl.settlement_date,
+          kind: 'payment',
+          customerName: debt.customer?.name || 'Unknown',
+          saleCode: debt.sale?.sale_code || '—',
+          reference: setl.payment_method ? `Payment (${setl.payment_method.replace('_', ' ')})` : 'Payment',
+          amount: paid,
+          balanceAfter: running,
+          status: running <= 0 ? 'settled' : 'partial',
+          note: setl.notes || null,
+          debt
+        });
+      });
+    });
+
+    return rows.sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt));
+  }, [filteredDebts]);
+
+  // Status bar across the rows currently in view — how much was charged,
+  // how much has come back in, and what's still standing.
+  const debtHistorySummary = useMemo(() => {
+    let charged = 0;
+    let collected = 0;
+    let charges = 0;
+    let payments = 0;
+
+    debtHistoryRows.forEach(row => {
+      if (row.kind === 'charge') {
+        charged += row.amount;
+        charges++;
+      } else {
+        collected += row.amount;
+        payments++;
+      }
+    });
+
+    return {
+      charged,
+      collected,
+      outstanding: Math.max(0, charged - collected),
+      charges,
+      payments,
+      collectedPct: charged > 0 ? Math.min(100, (collected / charged) * 100) : 0
+    };
+  }, [debtHistoryRows]);
 
   return (
     <div className="space-y-6">
@@ -490,48 +617,117 @@ export function DebtsPage() {
           )}
         />
       ) : (
-        <Table
-          compact
-          enablePagination={false}
-          headers={[
-            { key: 'customerName', label: 'Customer Name', sortable: true },
-            { key: 'saleCode', label: 'Sale Code', sortable: true },
-            { key: 'total_amount', label: 'Total Amount', sortable: true },
-            { key: 'paid_amount', label: 'Amount Paid', sortable: true },
-            { key: 'remaining_amount', label: 'Remaining Balance', sortable: true },
-            { key: 'created_at', label: 'Date Issued', sortable: true },
-            { key: 'note', label: 'Note', sortable: false },
-            { key: 'downloadPdf', label: 'Download PDF', sortable: false }
-          ]}
-          data={filteredDebts}
-          isLoading={isLoading}
-          emptyMessage="Clear ledger! No outstanding debts matched the parameters."
-          renderRow={(debt) => {
-            const note = getLatestNote(debt);
-            return (
-              <tr key={debt.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
-                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-semibold text-slate-900 dark:text-slate-100">{debt.customer?.name}</td>
-                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-medium text-navy-600 dark:text-navy-400">{debt.sale?.sale_code}</td>
-                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono text-slate-700 dark:text-slate-300">LKR {debt.total_amount.toLocaleString()}</td>
-                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono text-emerald-600 dark:text-emerald-400">LKR {debt.paid_amount.toLocaleString()}</td>
-                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-semibold text-rose-600 dark:text-rose-400">LKR {debt.remaining_amount.toLocaleString()}</td>
-                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 text-xs text-slate-400">{new Date(debt.created_at).toLocaleDateString()}</td>
-                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 text-xs text-slate-500 dark:text-slate-400 max-w-[160px] truncate" title={note || ''}>{note || '—'}</td>
+        <div className="space-y-3">
+
+          {/* Debt History status bar — what the rows currently in view add up
+              to: charged, collected, and still outstanding. */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <h3 className="text-sm font-bold font-heading text-slate-800 dark:text-slate-100">
+                Debt History
+              </h3>
+              <span className="text-[11px] font-semibold text-slate-400">
+                {debtHistoryRows.length.toLocaleString()} transactions ·{' '}
+                {debtHistorySummary.charges.toLocaleString()} credit {debtHistorySummary.charges === 1 ? 'sale' : 'sales'} ·{' '}
+                {debtHistorySummary.payments.toLocaleString()} {debtHistorySummary.payments === 1 ? 'payment' : 'payments'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 sm:gap-3 text-center">
+              <div className="rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 py-2">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Charged</span>
+                <span className="block text-xs sm:text-sm font-bold font-mono text-slate-900 dark:text-slate-100">
+                  LKR {debtHistorySummary.charged.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/50 py-2">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Collected</span>
+                <span className="block text-xs sm:text-sm font-bold font-mono text-emerald-700 dark:text-emerald-400">
+                  LKR {debtHistorySummary.collected.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="rounded-xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 py-2">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400">Outstanding</span>
+                <span className="block text-xs sm:text-sm font-bold font-mono text-rose-700 dark:text-rose-400">
+                  LKR {debtHistorySummary.outstanding.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <div className="h-2 w-full rounded-full bg-slate-150 dark:bg-slate-800 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                  style={{ width: `${debtHistorySummary.collectedPct}%` }}
+                />
+              </div>
+              <p className="text-[11px] font-semibold text-slate-500 mt-1.5">
+                {debtHistorySummary.collectedPct.toFixed(1)}% of the credit issued in this view has been collected.
+              </p>
+            </div>
+          </div>
+
+          <Table
+            compact
+            enablePagination={false}
+            headers={[
+              { key: 'occurredAt', label: 'Date & Time', sortable: false },
+              { key: 'customerName', label: 'Customer Name', sortable: false },
+              { key: 'saleCode', label: 'Sale Code', sortable: false },
+              { key: 'kind', label: 'Transaction', sortable: false },
+              { key: 'amount', label: 'Amount', sortable: false },
+              { key: 'balanceAfter', label: 'Balance After', sortable: false },
+              { key: 'status', label: 'Status', sortable: false },
+              { key: 'note', label: 'Note', sortable: false },
+              { key: 'downloadPdf', label: 'Statement', sortable: false }
+            ]}
+            data={debtHistoryRows}
+            isLoading={isLoading}
+            emptyMessage="No debt transactions matched the parameters."
+            renderRow={(row) => (
+              <tr key={row.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 text-xs text-slate-500 whitespace-nowrap">
+                  {new Date(row.occurredAt).toLocaleString()}
+                </td>
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-semibold text-slate-900 dark:text-slate-100">{row.customerName}</td>
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-medium text-navy-600 dark:text-navy-400">{row.saleCode}</td>
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3">
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${
+                    row.kind === 'charge'
+                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                      : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                  }`}>
+                    {row.kind === 'charge' ? 'Credit Sale' : 'Payment'}
+                  </span>
+                  <span className="block text-[10px] text-slate-400 mt-0.5">{row.reference}</span>
+                </td>
+                <td className={`px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-semibold ${
+                  row.kind === 'charge' ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'
+                }`}>
+                  {row.kind === 'charge' ? '+' : '−'}LKR {row.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </td>
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono text-slate-700 dark:text-slate-300">
+                  LKR {row.balanceAfter.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </td>
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3"><Badge type={row.status} /></td>
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 text-xs text-slate-500 dark:text-slate-400 max-w-[160px] truncate" title={row.note || ''}>
+                  {row.note || '—'}
+                </td>
                 <td className="px-2.5 sm:px-4 py-2.5 sm:py-3">
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => handleViewBill(debt)}
+                    onClick={() => handleViewBill(row.debt)}
                     className="flex items-center space-x-1"
                   >
                     <FileDown size={13} />
-                    <span>Download PDF</span>
+                    <span>PDF</span>
                   </Button>
                 </td>
               </tr>
-            );
-          }}
-        />
+            )}
+          />
+        </div>
       )}
 
       {/* --- Settle Debt Modal Dialog --- */}
@@ -675,19 +871,16 @@ export function DebtsPage() {
         </div>
       </Modal>
 
-      {/* --- WhatsApp Confirmation Receipt Prompt --- */}
-      <ConfirmDialog
+      {/* --- Settlement Receipt Notification Prompt --- */}
+      <SendNotificationDialog
         isOpen={whatsappPromptOpen}
-        onClose={() => {
-          setWhatsappPromptOpen(false);
-          setSettlementReceiptRecord(null);
-        }}
-        onConfirm={handleSendWhatsAppReceipt}
-        title="Send Receipt to WhatsApp?"
-        message={`Settlement saved successfully. Would you like to launch WhatsApp to dispatch the receipt statement to: ${settlementReceiptRecord?.customer?.name}?`}
-        confirmLabel="Send Notification"
-        cancelLabel="Skip Notification"
-        variant="primary"
+        onClose={dismissWhatsAppPrompt}
+        onSend={handleSendReceiptNotification}
+        title="Send Settlement Receipt"
+        intro={`Settlement ${settlementReceiptRecord?.settlement_code || ''} saved. Send the receipt to ${settlementReceiptRecord?.customer?.name || 'the customer'}?`}
+        customerName={settlementReceiptRecord?.customer?.name}
+        phone={pendingReceiptNotification?.phone}
+        message={pendingReceiptNotification?.message || ''}
       />
 
     </div>

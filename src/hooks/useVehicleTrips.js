@@ -14,9 +14,10 @@ export function useVehicleTrips(vehicleId) {
     }
     const { data, error } = await supabase
       .from('vehicle_trips')
-      .select('*')
+      .select('*, employee:employees(id, employee_code, name)')
       .eq('vehicle_id', vehicleId)
-      .order('trip_date', { ascending: false });
+      .order('trip_date', { ascending: false })
+      .order('id', { ascending: false });
 
     if (error) {
       console.error("Failed to fetch trip history:", error);
@@ -51,12 +52,15 @@ export function useVehicleTrips(vehicleId) {
     };
   }, [vehicleId, fetchTrips]);
 
-  const addTrip = async (vehicleIdArg, { trip_date, start_odometer, end_odometer, description = '' }, createdBy = 'Operator') => {
+  const addTrip = async (vehicleIdArg, { trip_date, employee_id, start_odometer, end_odometer, description = '' }, createdBy = 'Operator') => {
     const start = Number(start_odometer);
     const end = Number(end_odometer);
 
     if (!trip_date) {
       throw new Error("Trip date is required");
+    }
+    if (!employee_id) {
+      throw new Error("A driver must be assigned to the trip");
     }
     if (isNaN(start) || start < 0) {
       throw new Error("Start Odometer must be a valid non-negative number");
@@ -72,6 +76,7 @@ export function useVehicleTrips(vehicleId) {
       .from('vehicle_trips')
       .insert({
         vehicle_id: vehicleIdArg,
+        employee_id: Number(employee_id),
         trip_date,
         start_odometer: start,
         end_odometer: end,

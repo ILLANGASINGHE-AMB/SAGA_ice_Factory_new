@@ -13,6 +13,17 @@ function formatDateDisplay(value) {
   return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+// Postgres `time` columns come back as 'HH:MM:SS' (sometimes with a fractional
+// part), but <input type="time"> only round-trips 'HH:MM' reliably — a value it
+// can't parse renders as an empty field, and saving that row then wiped the
+// stored time. Normalising on the way in is what makes time recording stick.
+function toTimeInputValue(value) {
+  if (!value) return '';
+  const match = String(value).match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return '';
+  return `${match[1].padStart(2, '0')}:${match[2]}`;
+}
+
 function formatTimeDisplay(value) {
   if (!value) return '—';
   const [h, m] = value.split(':');
@@ -32,7 +43,7 @@ const cellBase = 'px-3 sm:px-4 py-2.5 whitespace-nowrap';
 const stickyCellBase = `${cellBase} sticky bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/40 transition-colors z-[1]`;
 const inputBase = 'w-full px-2 py-1.5 text-xs bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-navy-500 focus:border-navy-500';
 
-export function EmployeeAttendanceGrid({ employees, rows, isLoading, addAttendance, updateAttendance, deleteAttendance }) {
+export function EmployeeAttendanceGrid({ employees, rows, isLoading, addAttendance, updateAttendance, deleteAttendance, canDelete = false }) {
   const toast = useToast();
   const [localRows, setLocalRows] = useState([]);
   const [editingIds, setEditingIds] = useState(new Set());
@@ -47,7 +58,12 @@ export function EmployeeAttendanceGrid({ employees, rows, isLoading, addAttendan
   // realtime refresh from elsewhere.
   useEffect(() => {
     if (editingIds.size > 0) return;
-    setLocalRows(rows.map(r => ({ ...r, _isNew: false })));
+    setLocalRows(rows.map(r => ({
+      ...r,
+      start_time: toTimeInputValue(r.start_time),
+      end_time: toTimeInputValue(r.end_time),
+      _isNew: false
+    })));
   }, [rows, editingIds.size]);
 
   const handleAddRow = () => {
@@ -118,6 +134,9 @@ export function EmployeeAttendanceGrid({ employees, rows, isLoading, addAttendan
         if (!row.attendance_date) {
           throw new Error("Date is required for every row");
         }
+        if (row.start_time && row.end_time && row.end_time < row.start_time) {
+          throw new Error("End Time cannot be earlier than Start Time");
+        }
       }
 
       for (const row of editedRows) {
@@ -136,7 +155,14 @@ export function EmployeeAttendanceGrid({ employees, rows, isLoading, addAttendan
       }
 
       setEditingIds(new Set());
-      toast.success("Changes saved successfully");
+      toast.success(`Saved ${editedRows.length} attendance ${editedRows.length === 1 ? 'record' : 'records'}`);
+
+      const hiddenByFilter = editedRows.filter(
+        row => !rows.some(r => r.attendance_date === row.attendance_date)
+      );
+      if (hiddenByFilter.length > 0) {
+        toast.info("Saved — some rows fall outside the current date filter. Clear the filter to see them.");
+      }
     } catch (err) {
       toast.error(err.message || "Failed to save changes");
     } finally {
@@ -162,10 +188,10 @@ export function EmployeeAttendanceGrid({ employees, rows, isLoading, addAttendan
                 Date
               </th>
               <th className={`${cellBase} sticky top-0 z-[2] bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800`}>
-                Start Time
+                Start Time <span className="normal-case font-normal text-slate-400">(24h)</span>
               </th>
               <th className={`${cellBase} sticky top-0 z-[2] bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800`}>
-                End Time
+                End Time <span className="normal-case font-normal text-slate-400">(24h)</span>
               </th>
               <th className={`${cellBase} sticky top-0 z-[2] bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800`}>
                 Description (optional)
@@ -261,7 +287,7 @@ export function EmployeeAttendanceGrid({ employees, rows, isLoading, addAttendan
                       ) : (row.description || '—')}
                     </td>
                     <td className={`${cellBase} text-right`}>
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center justify-end gap-1">
                         {!isEditing && (
                           <button
                             onClick={() => handleEditRow(row.id)}
@@ -271,13 +297,15 @@ export function EmployeeAttendanceGrid({ employees, rows, isLoading, addAttendan
                             <Pencil size={14} />
                           </button>
                         )}
-                        <button
-                          onClick={() => handleDeleteRow(row)}
-                          className="p-1.5 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition cursor-pointer"
-                          title="Delete row"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        {(canDelete || row._isNew) && (
+                          <button
+                            onClick={() => handleDeleteRow(row)}
+                            className="p-1.5 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition cursor-pointer"
+                            title={row._isNew ? "Discard row" : "Delete row"}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

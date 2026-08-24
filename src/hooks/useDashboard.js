@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { toLocalDateStr } from '../utils/date';
 
 const defaultDashboardData = {
   stats: {
@@ -19,7 +20,16 @@ const defaultDashboardData = {
   },
   charts: {
     monthly: [],
+    stockTrend: [],
     pie: [{ name: 'Cash Sales', value: 1 }, { name: 'Debt Sales', value: 0 }]
+  },
+  totals: {
+    monthlyCubesProduction: 0,
+    monthlyCubesResell: 0,
+    monthlyCubesTotal: 0,
+    salesDistributionTotal: 0,
+    trendProductionTotal: 0,
+    trendPurchaseTotal: 0
   },
   tables: {
     recentSales: [],
@@ -40,13 +50,19 @@ export function useDashboard() {
         debtsList,
         settlementsList,
         customersList,
-        inventoryList
+        inventoryList,
+        stockTxnList
       ] = await Promise.all([
         supabase.from('sales').select('*, sale_items(*)').then(res => res.data || []).catch(() => []),
         supabase.from('debts').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('debt_settlements').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('customers').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('inventory').select('*').then(res => res.data || []).catch(() => [])
+        supabase.from('inventory').select('*').then(res => res.data || []).catch(() => []),
+        supabase
+          .from('inventory_transactions')
+          .select('quantity_change, transaction_type, created_at, inventory(type)')
+          .then(res => res.data || [])
+          .catch(() => [])
       ]);
 
       const startOfToday = new Date();
@@ -144,9 +160,44 @@ export function useDashboard() {
           date: dateStr,
           Revenue: dayRev,
           Production: mfcQty,
-          Resell: rscQty
+          Resell: rscQty,
+          // "Total" makes the combined Production + Resell cube count readable
+          // straight off the chart instead of having to add two bars by eye.
+          Total: mfcQty + rscQty
         });
       }
+
+      // Production vs Purchase trend over the same 30-day window. Stock ADDED
+      // to Production (MFC) is what the factory made; stock added to Resell
+      // (RSC) is what it bought in. Sale deductions and manual removals are
+      // not intake, so only 'add' transactions count.
+      const stockTrendMap = new Map();
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        stockTrendMap.set(toLocalDateStr(d), {
+          date: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+          Production: 0,
+          Purchases: 0
+        });
+      }
+
+      stockTxnList.forEach(txn => {
+        if (txn.transaction_type !== 'add') return;
+        const bucket = stockTrendMap.get(toLocalDateStr(txn.created_at));
+        if (!bucket) return;
+        const qty = Number(txn.quantity_change) || 0;
+        if (qty <= 0) return;
+        if (txn.inventory?.type === 'manufactured') bucket.Production += qty;
+        else if (txn.inventory?.type === 'resell') bucket.Purchases += qty;
+      });
+
+      const stockTrend = Array.from(stockTrendMap.values());
+      const trendProductionTotal = stockTrend.reduce((sum, b) => sum + b.Production, 0);
+      const trendPurchaseTotal = stockTrend.reduce((sum, b) => sum + b.Purchases, 0);
+
+      const monthlyCubesProduction = monthlyData.reduce((sum, d) => sum + d.Production, 0);
+      const monthlyCubesResell = monthlyData.reduce((sum, d) => sum + d.Resell, 0);
 
       // Sales Distribution (Monthly): cash vs debt sales for the current
       // calendar month only, not all-time.
@@ -223,7 +274,18 @@ export function useDashboard() {
         },
         charts: {
           monthly: monthlyData,
+          stockTrend,
           pie: pieData
+        },
+        totals: {
+          monthlyCubesProduction,
+          monthlyCubesResell,
+          monthlyCubesTotal: monthlyCubesProduction + monthlyCubesResell,
+          // The pie's `|| 1` placeholder must never leak into the displayed
+          // total, so sum the real figures rather than the chart data.
+          salesDistributionTotal: cashTotal + debtTotal,
+          trendProductionTotal,
+          trendPurchaseTotal
         },
         tables: {
           recentSales,
@@ -249,6 +311,7 @@ export function useDashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'debt_settlements' }, () => fetchDashboardData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => fetchDashboardData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => fetchDashboardData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_transactions' }, () => fetchDashboardData())
       .subscribe();
 
     return () => {

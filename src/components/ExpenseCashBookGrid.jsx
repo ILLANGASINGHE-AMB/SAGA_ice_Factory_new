@@ -44,7 +44,10 @@ export function ExpenseCashBookGrid({
   saveLedgerRow,
   deleteLedgerRow,
   reorderCategories,
-  reorderExpenseItems
+  reorderExpenseItems,
+  onDeleteCategory,
+  onDeleteExpenseItem,
+  canManageColumns = false
 }) {
   const toast = useToast();
   const [localRows, setLocalRows] = useState([]);
@@ -222,6 +225,18 @@ export function ExpenseCashBookGrid({
                   <span className="inline-flex items-center gap-1 justify-center">
                     <GripVertical size={11} className="opacity-50" />
                     {cat.name}
+                    {canManageColumns && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onDeleteCategory?.(cat); }}
+                        onDragStart={(e) => e.preventDefault()}
+                        className="ml-0.5 p-0.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition cursor-pointer"
+                        title={`Delete category "${cat.name}" and all of its expenses`}
+                        aria-label={`Delete category ${cat.name}`}
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    )}
                   </span>
                 </th>
               ))}
@@ -246,6 +261,18 @@ export function ExpenseCashBookGrid({
                     <span className="inline-flex items-center gap-1">
                       <GripVertical size={10} className="opacity-40" />
                       {item.name}
+                      {canManageColumns && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onDeleteExpenseItem?.(item); }}
+                          onDragStart={(e) => e.preventDefault()}
+                          className="ml-0.5 p-0.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition cursor-pointer"
+                          title={`Delete expense "${item.name}"`}
+                          aria-label={`Delete expense ${item.name}`}
+                        >
+                          <Trash2 size={10} />
+                        </button>
+                      )}
                     </span>
                   </th>
                 ))

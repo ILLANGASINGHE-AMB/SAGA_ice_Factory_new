@@ -29,6 +29,7 @@ import {
   ChevronRight,
   Route,
   StickyNote,
+  Send,
   History,
   Trash2,
   UserCircle
@@ -177,6 +178,7 @@ export function AppShell({ children }) {
     { name: 'Expenses', path: '/expenses', icon: <Receipt size={20} />, adminOnly: false },
     { name: 'Cash & Bank Details', path: '/cash-bank', icon: <Landmark size={20} />, adminOnly: false },
     { name: 'Notes & Messages', path: '/notes', icon: <StickyNote size={20} />, adminOnly: false },
+    { name: 'Notifications', path: '/notifications', icon: <Send size={20} />, adminOnly: false },
     { name: 'Reports', path: '/reports', icon: <FileBarChart size={20} />, adminOnly: true }
   ];
 

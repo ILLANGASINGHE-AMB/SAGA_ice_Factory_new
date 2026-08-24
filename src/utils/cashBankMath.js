@@ -12,8 +12,22 @@ export function computeCashBankBalances({
   cashReceives = [],
   bankDeposits = [],
   chequeRecords = [],
-  bankWithdrawals = []
+  bankWithdrawals = [],
+  // "Initial Collection": what each store of value already held when the
+  // factory started using the system. Balances here are otherwise derived
+  // purely from recorded transactions, so without these every balance starts
+  // at zero regardless of what was actually in the till, the bank, or the
+  // cheque drawer on day one.
+  openingBalances = []
 }) {
+  const opening = (scope) => {
+    const row = openingBalances.find(o => o.scope === scope);
+    return Number(row?.amount) || 0;
+  };
+  const openingCash = opening('cash');
+  const openingBank = opening('bank');
+  const openingCheques = opening('cheques');
+
   const cashSalesTotal = cashSalesRows.reduce((sum, s) => sum + (Number(s.total_amount) || 0), 0);
   const debtSettlementsTotal = settlementRows.reduce((sum, s) => sum + (Number(s.amount_paid) || 0), 0);
   const cashReceivesTotal = cashReceives.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
@@ -41,9 +55,9 @@ export function computeCashBankBalances({
     .filter(d => d.cash_method === 'cheques' && !linkedChequeDepositIds.has(d.id))
     .reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
 
-  const handChequesTotal = Math.max(0, chequesPendingTotal - unlinkedChequeDepositsTotal);
-  const cashBalance = Math.max(0, cashSalesTotal + debtSettlementsTotal + cashReceivesTotal - cashDepositedTotal);
-  const bankBalance = bankDepositsTotal - bankWithdrawalsTotal;
+  const handChequesTotal = Math.max(0, openingCheques + chequesPendingTotal - unlinkedChequeDepositsTotal);
+  const cashBalance = Math.max(0, openingCash + cashSalesTotal + debtSettlementsTotal + cashReceivesTotal - cashDepositedTotal);
+  const bankBalance = openingBank + bankDepositsTotal - bankWithdrawalsTotal;
 
   return {
     cashSalesTotal,
@@ -57,6 +71,9 @@ export function computeCashBankBalances({
     unlinkedChequeDepositsTotal,
     handChequesTotal,
     cashBalance,
-    bankBalance
+    bankBalance,
+    openingCash,
+    openingBank,
+    openingCheques
   };
 }

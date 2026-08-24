@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useEmployees } from '../hooks/useEmployees';
 import { useEmployeeAttendance } from '../hooks/useEmployeeAttendance';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { Table } from '../components/Table';
 import { Button } from '../components/Button';
@@ -23,6 +24,7 @@ function isWithinRange(dateStr, dateFrom, dateTo) {
 export function EmployeesPage() {
   const { employees, isLoading: employeesLoading, addEmployee, updateEmployee, deleteEmployee } = useEmployees();
   const { attendance, isLoading: attendanceLoading, addAttendance, updateAttendance, deleteAttendance } = useEmployeeAttendance();
+  const { isAdmin } = useAuth();
   const toast = useToast();
 
   const [viewMode, setViewMode] = useState('manage'); // 'manage' | 'table'
@@ -217,6 +219,7 @@ export function EmployeesPage() {
           addAttendance={addAttendance}
           updateAttendance={updateAttendance}
           deleteAttendance={deleteAttendance}
+          canDelete={isAdmin}
         />
       ) : (
         <Table
@@ -253,13 +256,22 @@ export function EmployeesPage() {
                   >
                     <Pencil size={14} />
                   </button>
-                  <button
-                    onClick={() => setDeleteTarget(employee)}
-                    className="p-1.5 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition cursor-pointer"
-                    title="Delete Employee"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  {isAdmin ? (
+                    <button
+                      onClick={() => setDeleteTarget(employee)}
+                      className="p-1.5 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition cursor-pointer"
+                      title="Delete Employee"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  ) : (
+                    <span
+                      className="p-1.5 rounded-lg text-slate-300 dark:text-slate-700 cursor-not-allowed"
+                      title="Admin privilege required to delete employee records"
+                    >
+                      <Trash2 size={14} />
+                    </span>
+                  )}
                 </div>
               </td>
             </tr>

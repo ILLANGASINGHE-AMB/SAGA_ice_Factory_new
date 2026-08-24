@@ -101,6 +101,59 @@ export function useExpenses() {
     return inserted;
   };
 
+  // Deleting a category takes its expense columns with it (FK cascade) and,
+  // through them, every amount recorded against those columns. That's a lot of
+  // history to lose by accident, so the caller is told exactly how much is at
+  // stake first — see `categoryDeletionImpact` / `expenseDeletionImpact` below,
+  // which the confirm dialog quotes back to the user.
+  const categoryDeletionImpact = (categoryId) => {
+    const itemIds = items.filter(i => Number(i.category_id) === Number(categoryId)).map(i => i.id);
+    const affected = amounts.filter(a => itemIds.includes(Number(a.expense_item_id)));
+    return {
+      itemCount: itemIds.length,
+      amountCount: affected.length,
+      amountTotal: affected.reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
+    };
+  };
+
+  const expenseDeletionImpact = (itemId) => {
+    const affected = amounts.filter(a => Number(a.expense_item_id) === Number(itemId));
+    return {
+      amountCount: affected.length,
+      amountTotal: affected.reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
+    };
+  };
+
+  const deleteCategory = async (categoryId) => {
+    const category = categories.find(c => Number(c.id) === Number(categoryId));
+    if (!category) throw new Error("Category not found");
+
+    const { performedBy, performedByRole } = currentActor();
+    const { error } = await supabase.rpc('soft_delete_row', {
+      p_table: 'expense_categories',
+      p_id: categoryId,
+      p_deleted_by: performedBy,
+      p_deleted_by_role: performedByRole
+    });
+    if (error) throw new Error(error.message || "Failed to delete category");
+    logActivity({ action: 'delete', entityType: 'expense_category', entityId: categoryId, entityLabel: category.category_code, description: `Deleted expense category ${category.name}` });
+  };
+
+  const deleteExpenseItem = async (itemId) => {
+    const item = items.find(i => Number(i.id) === Number(itemId));
+    if (!item) throw new Error("Expense not found");
+
+    const { performedBy, performedByRole } = currentActor();
+    const { error } = await supabase.rpc('soft_delete_row', {
+      p_table: 'expense_items',
+      p_id: itemId,
+      p_deleted_by: performedBy,
+      p_deleted_by_role: performedByRole
+    });
+    if (error) throw new Error(error.message || "Failed to delete expense");
+    logActivity({ action: 'delete', entityType: 'expense_item', entityId: itemId, entityLabel: item.expense_code, description: `Deleted expense ${item.name}` });
+  };
+
   // Column reordering swaps the `position` of the two categories/items being
   // dragged rather than reindexing the whole list — cheap (2 updates) and
   // avoids racing a full reorder against a concurrent add from another tab.
@@ -293,6 +346,10 @@ export function useExpenses() {
     isLoading,
     addCategory,
     addExpenseItem,
+    deleteCategory,
+    deleteExpenseItem,
+    categoryDeletionImpact,
+    expenseDeletionImpact,
     reorderCategories,
     reorderExpenseItems,
     saveLedgerRow,
