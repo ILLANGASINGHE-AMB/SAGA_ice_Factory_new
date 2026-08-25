@@ -1,6 +1,6 @@
 # Changes — 25 August 2026
 
-Eleven pieces of work:
+Twelve pieces of work:
 
 1. **Dashboard "Settle Debts" quick action** — register a debt payment straight
    from the dashboard without first hunting the customer down in the ledger.
@@ -31,6 +31,9 @@ Eleven pieces of work:
     sidebar next to an oversized preview.
 11. **Cube Movement Trend graph now plots running stock balance, never a
     negative delta** — a sale reads as "100 → 90", not "-10".
+12. **Customer Profile filters actually filter now** — Daily/Monthly/Yearly did
+    nothing outside Graph View, and Cheques/Notifications ignored every
+    filter shown above them.
 
 **Status:** production build passes (`npm run build`, ✓ built). ESLint reports
 the same problems as before the changes (`React` unused in both pages,
@@ -40,7 +43,7 @@ the same problems as before the changes (`React` unused in both pages,
 neither the settlement path nor the new ledger inserts were exercised at
 runtime.
 
-**32 files changed · 4 new migrations**
+**33 files changed · 4 new migrations**
 
 ---
 
@@ -971,6 +974,61 @@ now actually satisfies "Support dark/light dashboard themes."
 
 ---
 
+# Part 12 — Customer Profile: filters that didn't filter
+
+**No migration.** `src/pages/CustomerProfilePage.jsx` only.
+
+## Two separate bugs under one report
+
+**1. Daily/Monthly/Yearly did nothing outside Graph View.** These buttons set
+`granularity`, which only ever controlled the Graph tab's bucket size — it was
+never read by `filteredSales`/`filteredPayments`, so clicking them on Sales
+History, Payment History, Cheques, or Notifications highlighted a button and
+changed nothing else on screen. Fixed with `applyPeriod()`, the same
+date-range-preset pattern already used on Employees/Transport: clicking
+"Monthly" now sets `dateFrom`/`dateTo` to this month (in addition to still
+setting `granularity` for the graph), so it actually narrows every tab.
+
+Once a preset can genuinely restrict what's showing, there needs to be a way
+back out — added a **Clear Filters** link (shown once anything is filtered)
+that resets type, dates and granularity, matching the same control that
+already exists on Employees.
+
+**2. Cheques and Notifications ignored every filter above them.** Both tabs
+rendered the raw, unfiltered `cheques`/`notifications` arrays — the All/Debt
+Orders/Cash Orders buttons, the Daily/Monthly/Yearly buttons, and the date
+range all sat above these tabs doing precisely nothing, which is the core of
+"not filtering correctly."
+
+- **Cheques** — new `filteredCheques` applies the date range (`received_at`).
+  The Cash/Debt Orders buttons are **hidden** on this tab rather than wired
+  to a guess: `cheque_records.settlement_id` is nullable, so a cheque isn't
+  reliably tied to any order — some are logged straight through Cash & Bank
+  with no debt link at all. Forcing a Cash/Debt split onto data that doesn't
+  carry that distinction would just be a different way of not filtering
+  correctly.
+- **Notifications** — new `filteredNotifications` applies the date range
+  (`sent_at`) *and* the type filter, which — unlike cheques — really is
+  derivable here: a `debt_settlement` notification is always debt-related
+  (same fact the existing Payments filter already relies on), and a
+  `sale_invoice` notification's `reference_code` is that sale's own
+  `sale_code`, so its cash/debt status is looked up from `customerSales`
+  rather than guessed.
+
+## Files
+
+- `applyPeriod()` / `clearFilters()` — new handlers, state unchanged
+  (`typeFilter`, `granularity`, `dateFrom`, `dateTo`).
+- `filteredCheques`, `filteredNotifications`, `saleByCode` — new memos.
+- The Daily/Monthly/Yearly buttons call `applyPeriod(opt)` instead of
+  `setGranularity(opt)` directly.
+- The Cash/Debt Orders button row is wrapped in `{viewMode !== 'cheques' && (…)}`.
+- `<Table data={…}>` on both tabs points at the new filtered memos; their
+  empty-state copy now says "for the selected filters" instead of implying
+  the customer simply has none.
+
+---
+
 ## What was deliberately *not* changed
 
 - **No new settlement logic.** `handlePickCustomer` hands off to the existing
@@ -1045,3 +1103,11 @@ now actually satisfies "Support dark/light dashboard themes."
   end of each bucket satisfy the same principle — "plot the balance, not the
   delta" — while staying legible and scalable, and produce identical output
   to the spec's example for a daily view.
+- **Cash/Debt Orders is not force-fitted onto Cheques (Part 12).** There is
+  no reliable field to sort a cheque by; the buttons are hidden for that tab
+  rather than wired to an incorrect rule. Say the word if a real cash/debt
+  distinction for cheques should be added to the schema — right now it
+  doesn't exist to filter by.
+- **The Graph View's type filter behavior is unchanged** — "Cash Orders"
+  still zeroes the Payments line (settlements only exist against debt
+  orders), which was already correct, not part of this bug.

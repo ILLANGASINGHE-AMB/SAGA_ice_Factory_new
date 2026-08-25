@@ -78,6 +78,35 @@ export function CustomerProfilePage() {
   const [priceModalOpen, setPriceModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // Daily/Monthly/Yearly used to only resize the Graph View's buckets — the
+  // buttons highlighted but changed nothing in Sales History, Payment
+  // History, Cheques or Notifications, which made them look broken on every
+  // tab but the graph. They now also apply the matching date-range preset
+  // (same pattern as Employees/Transport's period buttons), so picking
+  // "Monthly" actually narrows every tab to this month, not just the chart.
+  const applyPeriod = (period) => {
+    setGranularity(period);
+    const today = new Date();
+    if (period === 'daily') {
+      const d = toLocalDateStr(today);
+      setDateFrom(d);
+      setDateTo(d);
+    } else if (period === 'monthly') {
+      setDateFrom(toLocalDateStr(new Date(today.getFullYear(), today.getMonth(), 1)));
+      setDateTo(toLocalDateStr(today));
+    } else {
+      setDateFrom(toLocalDateStr(new Date(today.getFullYear(), 0, 1)));
+      setDateTo(toLocalDateStr(today));
+    }
+  };
+
+  const clearFilters = () => {
+    setTypeFilter('all');
+    setGranularity('daily');
+    setDateFrom('');
+    setDateTo('');
+  };
+
   const filteredSales = useMemo(() => {
     return customerSales.filter(s =>
       (typeFilter === 'all' || s.payment_type === typeFilter) && isWithinLocalRange(s.sale_date, dateFrom, dateTo)
@@ -90,6 +119,40 @@ export function CustomerProfilePage() {
     if (typeFilter === 'cash') return [];
     return payments.filter(p => isWithinLocalRange(p.settlement_date, dateFrom, dateTo));
   }, [payments, typeFilter, dateFrom, dateTo]);
+
+  // Cheques aren't tagged cash/debt — a cheque can be received against a debt
+  // settlement OR logged independently via Cash & Bank with no link to any
+  // order at all (cheque_records.settlement_id is nullable), so there's no
+  // reliable signal to sort them into "Cash Orders" / "Debt Orders" by. Only
+  // the date range applies here; the type filter buttons are hidden for this
+  // tab below rather than guessing at a rule the data doesn't support.
+  const filteredCheques = useMemo(() => {
+    return cheques.filter(c => isWithinLocalRange(c.received_at, dateFrom, dateTo));
+  }, [cheques, dateFrom, dateTo]);
+
+  // Unlike cheques, a notification CAN be reliably tied to cash/debt: a
+  // 'debt_settlement' receipt is always debt-related (same fact the Payments
+  // filter above relies on), and a 'sale_invoice' notification's reference
+  // code is that sale's own sale_code, so its payment_type is looked up
+  // directly rather than guessed.
+  const saleByCode = useMemo(() => {
+    const map = new Map();
+    customerSales.forEach(s => map.set(s.sale_code, s));
+    return map;
+  }, [customerSales]);
+
+  const filteredNotifications = useMemo(() => {
+    return notifications.filter(n => {
+      if (!isWithinLocalRange(n.sent_at, dateFrom, dateTo)) return false;
+      if (typeFilter === 'all') return true;
+      if (n.notification_type === 'debt_settlement') return typeFilter === 'debt';
+      const sale = saleByCode.get(n.reference_code);
+      // No matching sale on record (e.g. a since-deleted order) — don't hide
+      // it behind a filter it can't be verified against either way.
+      if (!sale) return true;
+      return sale.payment_type === typeFilter;
+    });
+  }, [notifications, dateFrom, dateTo, typeFilter, saleByCode]);
 
   const totalOrderAmount = filteredSales.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
   const totalPayments = filteredPayments.reduce((sum, p) => sum + Number(p.amount_paid || 0), 0);
@@ -385,26 +448,33 @@ export function CustomerProfilePage() {
           </button>
         </div>
 
-        {/* Filter Options */}
+        {/* Filter Options — Cash/Debt Orders is hidden on the Cheques tab:
+            a cheque isn't reliably one or the other (see filteredCheques),
+            so showing a filter that can't actually narrow anything there
+            would be exactly the "looks broken" problem this fixes. */}
         <div className="flex flex-wrap items-center gap-2">
-          {['all', 'debt', 'cash'].map(opt => (
-            <button
-              key={opt}
-              onClick={() => setTypeFilter(opt)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border ${
-                typeFilter === opt
-                  ? 'bg-navy-600 text-white border-navy-600 shadow-xs'
-                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-              }`}
-            >
-              {opt === 'all' ? 'All' : opt === 'debt' ? 'Debt Orders' : 'Cash Orders'}
-            </button>
-          ))}
-          <span className="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-0.5" />
+          {viewMode !== 'cheques' && (
+            <>
+              {['all', 'debt', 'cash'].map(opt => (
+                <button
+                  key={opt}
+                  onClick={() => setTypeFilter(opt)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border ${
+                    typeFilter === opt
+                      ? 'bg-navy-600 text-white border-navy-600 shadow-xs'
+                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  {opt === 'all' ? 'All' : opt === 'debt' ? 'Debt Orders' : 'Cash Orders'}
+                </button>
+              ))}
+              <span className="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-0.5" />
+            </>
+          )}
           {['daily', 'monthly', 'yearly'].map(opt => (
             <button
               key={opt}
-              onClick={() => setGranularity(opt)}
+              onClick={() => applyPeriod(opt)}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border ${
                 granularity === opt
                   ? 'bg-navy-600 text-white border-navy-600 shadow-xs'
@@ -427,6 +497,14 @@ export function CustomerProfilePage() {
             onChange={(e) => setDateTo(e.target.value)}
             className="px-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none"
           />
+          {(typeFilter !== 'all' || dateFrom || dateTo) && (
+            <button
+              onClick={clearFilters}
+              className="px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-navy-600 dark:hover:text-navy-400 transition"
+            >
+              Clear Filters
+            </button>
+          )}
         </div>
 
         {viewMode === 'sales' && (
@@ -544,9 +622,9 @@ export function CustomerProfilePage() {
                 { key: 'amount', label: 'Amount' },
                 { key: 'status', label: 'Status' }
               ]}
-              data={cheques}
+              data={filteredCheques}
               isLoading={chequesLoading}
-              emptyMessage="No cheques recorded against this customer."
+              emptyMessage="No cheques recorded for the selected filters."
               renderRow={(cheque) => (
                 <tr key={cheque.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
                   <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono text-navy-600 dark:text-navy-400">{cheque.cheque_no}</td>
@@ -586,9 +664,9 @@ export function CustomerProfilePage() {
                 { key: 'amount', label: 'Amount' },
                 { key: 'sent_by', label: 'Sent By' }
               ]}
-              data={notifications}
+              data={filteredNotifications}
               isLoading={notificationsLoading}
-              emptyMessage="No notifications have been sent to this customer yet."
+              emptyMessage="No notifications found for the selected filters."
               renderRow={(note) => (
                 <tr key={note.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800 align-top">
                   <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono text-slate-500 whitespace-nowrap">{new Date(note.sent_at).toLocaleString()}</td>
