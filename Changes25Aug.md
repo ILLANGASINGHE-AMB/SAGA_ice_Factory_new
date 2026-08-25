@@ -1,6 +1,6 @@
 # Changes — 25 August 2026
 
-Eight pieces of work:
+Nine pieces of work:
 
 1. **Dashboard "Settle Debts" quick action** — register a debt payment straight
    from the dashboard without first hunting the customer down in the ledger.
@@ -24,6 +24,8 @@ Eight pieces of work:
    in the database, not just the UI), Start KM locked to staff and auto-fetched
    from the vehicle's last ended trip, End KM must be strictly greater than
    Start KM.
+9. **Daily Manager Report window is now fixed at 8AM-to-8AM** — the admin
+   picks one date; the four independent date/time inputs are gone.
 
 **Status:** production build passes (`npm run build`, ✓ built). ESLint reports
 the same problems as before the changes (`React` unused in both pages,
@@ -33,7 +35,7 @@ the same problems as before the changes (`React` unused in both pages,
 neither the settlement path nor the new ledger inserts were exercised at
 runtime.
 
-**28 files changed · 4 new migrations**
+**30 files changed · 4 new migrations**
 
 ---
 
@@ -724,6 +726,97 @@ Debts/Sales pattern, so "who started this trip" is accurate in the audit trail.
 
 ---
 
+# Part 9 — Daily Manager Report: fixed 8AM–8AM window
+
+**No migration.** UI/hook only — no schema change.
+
+## Before
+
+The report header had **four independent inputs**: From Date, To Date, From
+Time, To Time. Nothing stopped an admin picking an arbitrary window (three
+days, 2 PM to 11 AM, etc.), which doesn't match a "daily" report and made two
+reports for what should be the same business day hard to compare.
+
+## Now
+
+One date input. The report always covers **8:00 AM the previous calendar day
+through 8:00 AM the selected day** — the business day that ends the morning of
+the date picked. A caption under the picker states the resolved window
+outright (*"8:00 AM 24-08-2026 → 8:00 AM 25-08-2026"*) so the fixed rule is
+never a mystery.
+
+## `src/hooks/useDailyReport.js` — the window moved into the hook itself
+
+Signature changed from `useDailyReport(fromDateStr, toDateStr, fromTime, toTime)`
+to **`useDailyReport(selectedDateStr)`**. Internally:
+
+```js
+const targetToStr = selectedDateStr || todayStr();
+const targetFromStr = previousLocalDateStr(targetToStr);
+const fromTime = '08:00';
+const toTime = '08:00';
+```
+
+The 8AM-to-8AM rule now lives in exactly one place, as a hook invariant, not a
+convention the caller has to know and pass in correctly. There is only one
+caller (`DailyManagerReportView.jsx`), so this was safe to bake in directly
+rather than leaving the hook generic.
+
+### `report_date` now keys off the selected day, not the start day
+
+Previously `report_date` (the Supabase upsert key, the `localStorage` key, and
+the saved-report lookup) was `targetFromStr` — meaningless before now since
+`fromDate === toDate` in the normal case. With the window always spanning two
+calendar days, keying off the **start** day would save "25 Aug's report" under
+the row dated "24 Aug" — confusing for anyone reading the table directly, and
+mismatched against what the admin actually selected. All three now key off
+`targetToStr` (the selected day) instead, so a report picked for "25 Aug" is
+saved, found again, and logged as the 25 Aug report.
+
+**This changes the primary key of already-saved reports.** A report saved
+under the old scheme is keyed by what was then `fromDate` (typically the same
+calendar day, since the old default was a single day) — so for a report that
+was always used as a single-day report, the key doesn't change and existing
+data is found exactly as before. Only a report previously saved with a
+genuinely different From/To range would resolve to a different lookup date
+now; there is no way to migrate those without knowing which end of the old
+range the admin meant as "the" date, so they are not migrated.
+
+## `src/utils/date.js` — new `previousLocalDateStr()`
+
+```js
+export function previousLocalDateStr(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return toLocalDateStr(new Date(y, m - 1, d - 1));
+}
+```
+
+Built on the local-time `Date` constructor (not `new Date(dateStr)`, which
+parses as UTC midnight and can land on the wrong local day) so it can't drift,
+and correctly rolls back across month and year boundaries — verified directly
+(`2026-08-25` → `2026-08-24`, `2026-03-01` → `2026-02-28`, `2026-01-01` →
+`2025-12-31`).
+
+## `src/components/DailyManagerReportView.jsx`
+
+- Four inputs (`fromDate`/`toDate`/`fromTime`/`toTime` state + the two picker
+  rows, including the `Clock` icon) collapsed to one `selectedDate` state and
+  one `<input type="date">`, capped at `max={todayStr()}` — can't report a day
+  that hasn't happened yet.
+- `fromDate`/`toDate` are still derived locally (`previousLocalDateStr(selectedDate)`
+  / `selectedDate`) purely for the ~10 existing empty-state captions and the
+  save/export toasts — `useDailyReport` remains the actual source of truth for
+  the query window.
+- The verified/lock `rangeKey` is now just `selectedDate` (was
+  `` `${fromDate}|${toDate}` ``) — same behavior, since the pair was always
+  derived from one selection anyway.
+- PDF filename simplified to `Daily_Report_{selectedDate}.pdf` (was
+  `Daily_Report_{fromDate}_to_{toDate}.pdf`); the PDF's own header date label
+  (`reportDateFrom`/`reportDateTo` in `pdfGenerator.js`) is untouched and
+  correctly shows the two-day span.
+
+---
+
 ## What was deliberately *not* changed
 
 - **No new settlement logic.** `handlePickCustomer` hands off to the existing
@@ -774,3 +867,12 @@ Debts/Sales pattern, so "who started this trip" is accurate in the audit trail.
 - **Existing trips are not retroactively validated** against the new "must be
   strictly greater" rule — a historical trip that happens to have End KM equal
   to Start KM is left as recorded; the constraint only blocks new writes.
+- **A report previously saved with a genuinely different custom From/To range
+  is not migrated** to the new keying (Part 9) — there's no reliable way to
+  infer which date the admin meant as "the" report date from an arbitrary old
+  range, so those old rows are simply not found under the new single-date
+  picker rather than guessed at.
+- **`ReportsPage.jsx`'s own From/To date filters (the analytical Weekly /
+  Monthly / Yearly / Custom reports) are untouched by Part 9** — those are a
+  separate report with a genuinely open-ended range, unlike the Daily Manager
+  Report's fixed business-day window.

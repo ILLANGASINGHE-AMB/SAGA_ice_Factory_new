@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useDailyReport } from '../hooks/useDailyReport';
 import { useSettings } from '../hooks/useSettings';
 import { useAuth } from '../context/AuthContext';
-import { todayStr } from '../utils/date';
+import { todayStr, previousLocalDateStr } from '../utils/date';
 import { useToast } from '../components/Toast';
 import { Button } from '../components/Button';
 import { generateDailyManagerReportPDF } from '../utils/pdfGenerator';
@@ -18,16 +18,22 @@ import {
   Receipt,
   Users,
   Truck,
-  Clock,
   StickyNote
 } from 'lucide-react';
 
 export function DailyManagerReportView() {
-  const [fromDate, setFromDate] = useState(todayStr);
-  const [toDate, setToDate] = useState(todayStr);
-  const [fromTime, setFromTime] = useState('00:00');
-  const [toTime, setToTime] = useState('23:59');
-  const { loading, reportData, manualInputs, isVerified, savedRecord, saveDailyReport } = useDailyReport(fromDate, toDate, fromTime, toTime);
+  // The report always covers a fixed business-day window — 8AM the previous
+  // calendar day through 8AM the selected day. The admin only picks which
+  // day the report is FOR; useDailyReport owns the 8AM-to-8AM rule itself so
+  // it can never be configured to anything else from here.
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const { loading, reportData, manualInputs, isVerified, savedRecord, saveDailyReport } = useDailyReport(selectedDate);
+
+  // Derived only for the display strings below (empty-state captions, the
+  // saved/downloaded-PDF toasts) — useDailyReport is the actual source of
+  // truth for the query window itself.
+  const fromDate = previousLocalDateStr(selectedDate);
+  const toDate = selectedDate;
   const { settings } = useSettings();
   const { isAdmin, user } = useAuth();
   const toast = useToast();
@@ -44,9 +50,9 @@ export function DailyManagerReportView() {
   // Once a day's report carries a verifying manager's name it is a signed
   // declaration, so its manager entries lock. An admin can reopen it to make a
   // correction — everyone else sees a read-only record.
-  // The unlock is scoped to the exact range it was granted for, so moving to
-  // another day re-locks automatically rather than leaving it editable.
-  const rangeKey = `${fromDate}|${toDate}`;
+  // The unlock is scoped to the exact day it was granted for, so picking
+  // another date re-locks automatically rather than leaving it editable.
+  const rangeKey = selectedDate;
   const [unlockedRange, setUnlockedRange] = useState(null);
   const isLocked = isVerified && unlockedRange !== rangeKey;
 
@@ -55,7 +61,7 @@ export function DailyManagerReportView() {
       setOtherDetails(manualInputs.otherDetails || '');
       setVerifiedBy(manualInputs.verifiedBy || user?.fullName || '');
     }
-  }, [manualInputs, fromDate, toDate, user?.fullName]);
+  }, [manualInputs, selectedDate, user?.fullName]);
 
   // Handle Save
   const handleSave = async () => {
@@ -70,7 +76,7 @@ export function DailyManagerReportView() {
         otherDetails,
         verifiedBy
       });
-      toast.success(`Daily Report for ${fromDate} saved successfully!`);
+      toast.success(`Daily Report for ${selectedDate} saved successfully!`);
     } catch (err) {
       toast.error(err.message || "Failed to save Daily Report");
     } finally {
@@ -82,15 +88,18 @@ export function DailyManagerReportView() {
   const handleDownloadPDF = () => {
     try {
       const doc = generateDailyManagerReportPDF(reportData, settings);
-      doc.save(`Daily_Report_${fromDate}_to_${toDate}.pdf`);
-      toast.info(`Downloaded Daily Report PDF for ${fromDate} to ${toDate}`);
+      doc.save(`Daily_Report_${selectedDate}.pdf`);
+      toast.info(`Downloaded Daily Report PDF for ${selectedDate}`);
     } catch (err) {
       console.error(err);
       toast.error("Failed to generate PDF");
     }
   };
 
-  const dateRangeLabel = fromDate === toDate ? fromDate : `${fromDate} to ${toDate}`;
+  // Used only in the report body's empty-state captions ("No X recorded for
+  // …") — states the actual 8AM-to-8AM window being shown, not just the
+  // single date the admin picked.
+  const dateRangeLabel = `${fromDate} 08:00 → ${toDate} 08:00`;
 
   return (
     <div className="space-y-6">
@@ -109,40 +118,23 @@ export function DailyManagerReportView() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center space-x-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
-            <Calendar size={16} className="text-slate-500" />
-            <input
-              type="date"
-              value={fromDate}
-              max={toDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none"
-            />
-            <span className="text-xs text-slate-400">to</span>
-            <input
-              type="date"
-              value={toDate}
-              min={fromDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none"
-            />
-          </div>
-
-          <div className="flex items-center space-x-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
-            <Clock size={16} className="text-slate-500" />
-            <input
-              type="time"
-              value={fromTime}
-              onChange={(e) => setFromTime(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none"
-            />
-            <span className="text-xs text-slate-400">to</span>
-            <input
-              type="time"
-              value={toTime}
-              onChange={(e) => setToTime(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none"
-            />
+          {/* Only the day the report is FOR is a choice — the window itself
+              (8AM the previous day to 8AM this day) is fixed, so there is
+              nothing else to pick here. */}
+          <div className="flex flex-col">
+            <div className="flex items-center space-x-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
+              <Calendar size={16} className="text-slate-500" />
+              <input
+                type="date"
+                value={selectedDate}
+                max={todayStr()}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none"
+              />
+            </div>
+            <span className="text-[10px] text-slate-400 mt-1 px-1">
+              8:00 AM {fromDate} → 8:00 AM {toDate}
+            </span>
           </div>
 
           <Button

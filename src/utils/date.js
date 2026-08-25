@@ -48,6 +48,17 @@ export function thisYearStr() {
   return String(new Date().getFullYear());
 }
 
+/**
+ * The calendar day before a local `YYYY-MM-DD` string, as `YYYY-MM-DD`.
+ * Built from the local-time Date constructor (not `new Date(dateStr)`, which
+ * parses as UTC midnight) so it can't drift a day off in either direction,
+ * and correctly rolls back across month/year boundaries.
+ */
+export function previousLocalDateStr(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return toLocalDateStr(new Date(y, m - 1, d - 1));
+}
+
 /** Now as local `YYYY-MM-DDTHH:mm`, the format a `datetime-local` input wants. */
 export function nowLocalDatetimeStr() {
   const d = new Date();

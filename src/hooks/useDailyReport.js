@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { todayStr } from '../utils/date';
+import { todayStr, previousLocalDateStr } from '../utils/date';
 import { computeCashBankBalances } from '../utils/cashBankMath';
 import { logActivity } from '../lib/activityLog';
 
@@ -12,7 +12,12 @@ const PAYMENT_METHOD_LABELS = {
   other: 'Other'
 };
 
-export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
+// The Daily Manager Report always covers one fixed business-day window: 8AM
+// the previous calendar day through 8AM the selected day. The caller picks
+// only which day the report is FOR — there is no other window to configure,
+// so the window itself is a constant here rather than parameters a caller
+// could get wrong or drift out of sync with another one.
+export function useDailyReport(selectedDateStr) {
   const [loading, setLoading] = useState(true);
   const [savedRecord, setSavedRecord] = useState(null);
 
@@ -48,8 +53,13 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
     verifiedBy: ''
   });
 
-  const targetFromStr = fromDateStr || todayStr();
-  const targetToStr = toDateStr || targetFromStr;
+  // targetToStr is the day the report is labeled/saved under — the date the
+  // admin actually picks. targetFromStr is always the calendar day before
+  // it; the two are never independently selectable.
+  const targetToStr = selectedDateStr || todayStr();
+  const targetFromStr = previousLocalDateStr(targetToStr);
+  const fromTime = '08:00';
+  const toTime = '08:00';
 
   // Fetch all relevant data for the range with bulletproof per-table error catching
   const fetchData = useCallback(async () => {
@@ -94,7 +104,7 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
         supabase.from('bank_deposits').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('cheque_records').select('*').then(res => res.data || []).catch(() => []),
         supabase.from('bank_withdrawals').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('daily_manager_reports').select('*').eq('report_date', targetFromStr).maybeSingle().then(res => res.data || null).catch(() => null)
+        supabase.from('daily_manager_reports').select('*').eq('report_date', targetToStr).maybeSingle().then(res => res.data || null).catch(() => null)
       ]);
 
       setSales(salesRes);
@@ -123,7 +133,7 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
         setInvTransactions(invTxnRes);
       }
 
-      const localKey = `saga_daily_report_${targetFromStr}`;
+      const localKey = `saga_daily_report_${targetToStr}`;
       const localData = localStorage.getItem(localKey);
       let localParsed = {};
       if (localData) {
@@ -157,7 +167,7 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
     } finally {
       setLoading(false);
     }
-  }, [targetFromStr]);
+  }, [targetToStr]);
 
   useEffect(() => {
     fetchData();
@@ -483,7 +493,7 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
       .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
     return {
-      reportDate: targetFromStr,
+      reportDate: targetToStr,
       reportDateFrom: targetFromStr,
       reportDateTo: targetToStr,
       reportTimeFrom: fromTime || '00:00',
@@ -549,10 +559,10 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
     setManualInputs(payload);
 
     // Save to LocalStorage immediately
-    localStorage.setItem(`saga_daily_report_${targetFromStr}`, JSON.stringify(payload));
+    localStorage.setItem(`saga_daily_report_${targetToStr}`, JSON.stringify(payload));
 
     const dbPayload = {
-      report_date: targetFromStr,
+      report_date: targetToStr,
       free_issue: Number(payload.freeIssue) || 0,
       damaged_cubes: Number(payload.damagedCubes) || 0,
       other_receipts: Number(payload.otherReceipts) || 0,
@@ -573,7 +583,7 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
       } else if (data) {
         setSavedRecord(data);
       }
-      logActivity({ action: 'update', entityType: 'daily_manager_report', entityId: targetFromStr, description: `Saved daily manager report for ${targetFromStr}`, performedBy: payload.verifiedBy });
+      logActivity({ action: 'update', entityType: 'daily_manager_report', entityId: targetToStr, description: `Saved daily manager report for ${targetToStr}`, performedBy: payload.verifiedBy });
     } catch (err) {
       console.warn("Supabase upsert daily report error, stored locally:", err);
     }
