@@ -427,6 +427,7 @@ export function useDailyReport(selectedDateStr) {
         name: cust?.name || 'Customer',
         // An auto-applied row isn't a payment method the customer chose — it
         // is this system offsetting a cash order against their old debt.
+        isAutoApplied: Boolean(setl.is_auto_applied),
         method: setl.is_auto_applied
           ? 'Applied from Cash Order'
           : (PAYMENT_METHOD_LABELS[setl.payment_method] || 'Cash'),
@@ -436,7 +437,19 @@ export function useDailyReport(selectedDateStr) {
         outstandingAmount: matchingDebt ? Number(matchingDebt.remaining_amount) : 0
       };
     });
-    const totalCreditCollectedAmount = creditCollectionList.reduce((sum, item) => sum + item.amountReceived, 0);
+    // The list stays complete — an auto-applied row explains a debt reduction
+    // the manager would otherwise see no reason for, and it is already
+    // labelled "Applied from Cash Order" above. The TOTAL, though, is money
+    // collected, and must exclude those: that cash arrived as the sale and is
+    // already counted in cashSalesAmount. Summing the whole list made this
+    // figure disagree with "Credit Amount Received" on the same page, which
+    // has always filtered them out. Same defect as FIN-11 / FIN-12.
+    const totalCreditCollectedAmount = creditCollectionList
+      .filter(item => !item.isAutoApplied)
+      .reduce((sum, item) => sum + item.amountReceived, 0);
+    const totalCreditOffsetAmount = creditCollectionList
+      .filter(item => item.isAutoApplied)
+      .reduce((sum, item) => sum + item.amountReceived, 0);
 
     // 5. Expense Details — sourced from the Cash Book grid schema
     // (expense_ledger_rows x expense_amounts), which replaced the old flat
@@ -591,6 +604,9 @@ export function useDailyReport(selectedDateStr) {
       totalCreditGivenAmount,
       creditCollectionList,
       totalCreditCollectedAmount,
+      // The debt genuinely written down by cash orders in this window. Real,
+      // but not collected — reported alongside rather than folded in.
+      totalCreditOffsetAmount,
       expenseList,
       totalExpensesAmount,
       // Income and expenses used to sit side by side as two independent

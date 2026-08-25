@@ -395,63 +395,23 @@ export function SettingsPage() {
   const handleClearAllData = async () => {
     setClearLoading(true);
     try {
-      // Delete records from every operational table, children before parents
-      // so FK constraints (e.g. transport_trips.employee_id on delete restrict)
-      // never block a step. Master/config tables (settings, profiles,
-      // code_counters, expense_categories, expense_items, inventory rows) are
-      // preserved; inventory quantities are reset to 0 instead of deleted.
-      const tablesInOrder = [
-        'debt_settlements',
-        'debts',
-        'sale_items',
-        'sales',
-        'customer_cube_prices',
-        'customers',
-        'transport_trips',
-        'vehicle_trips',
-        'vehicles',
-        'employee_attendance',
-        'employees',
-        'expense_amounts',
-        'expense_ledger_rows',
-        'daily_manager_reports',
-        'cheque_records',
-        'bank_deposits',
-        'cash_receives',
-        'bank_withdrawals',
-        'notes',
-        'activity_log',
-        'inventory_transactions',
-      ];
+      // One SECURITY DEFINER RPC rather than a loop of client-side deletes.
+      // The loop could not do the job: `.delete()` on a table with no DELETE
+      // policy (code_counters, trash) removes zero rows and reports no error,
+      // so SAGA code sequences quietly survived every wipe, and a failure
+      // partway through left the database half-cleared. clear_all_data() runs
+      // the whole thing in one transaction and preserves login accounts only.
+      const { error } = await supabase.rpc('clear_all_data');
+      if (error) throw new Error(error.message);
 
-      for (const table of tablesInOrder) {
-        const { error } = await supabase.from(table).delete().neq('id', -1);
-        if (error) throw new Error(`${table}: ${error.message}`);
-      }
-
-      // `trash` has no delete policy of its own (writes only happen through
-      // the purge_trash_item/restore_trash_item RPCs), so a plain
-      // .delete() here would silently remove zero rows under RLS.
-      const { error: trashError } = await supabase.rpc('purge_all_trash');
-      if (trashError) throw new Error(`trash: ${trashError.message}`);
-
-      // Inventory rows themselves (MFC/RSC/BNC) are kept: Sales/New Order's
-      // RPCs (place_pooled_order_transaction etc.) look them up by
-      // `type` and expect exactly one row to exist per cube type, so
-      // deleting them would break order placement until someone manually
-      // recreated the catalog. A full wipe instead zeroes stock and clears
-      // the price list back to "not configured" (null, matching the
-      // fresh-install seed's BNC row) — same end state (zero data) without
-      // bricking Sales.
-      const { error: invError } = await supabase
-        .from('inventory')
-        .update({ quantity: 0, price_per_cube: null, updated_at: new Date().toISOString() })
-        .neq('id', -1);
-      if (invError) throw new Error(`inventory: ${invError.message}`);
-
-      // Clear local storage fallbacks
+      // Local mirrors of now-deleted server data, plus the settings cached
+      // out of the `settings` row the RPC just reset. UI-only preferences
+      // (theme, text size, sidebar) are per-device chrome, not factory data,
+      // and are deliberately left alone.
       localStorage.removeItem('saga_operating_expenses');
       localStorage.removeItem('saga_inventory_transactions');
+      localStorage.removeItem('saga_gemini_api_key');
+      localStorage.removeItem('saga_ai_enabled');
 
       toast.success("All factory records and data cleared successfully!");
       // Logged after the wipe (activity_log itself was just cleared above),
@@ -1200,7 +1160,7 @@ export function SettingsPage() {
         onClose={() => setClearConfirmOpen(false)}
         onConfirm={handleClearAllData}
         title="CRITICAL WARNING: Wipe All Factory Database Records?"
-        message="ARE YOU ABSOLUTELY SURE? This will permanently DELETE all customers, sales orders, debts, vehicles & trips, employees & attendance, transport trips, expense ledgers, cash & bank records, notes, and the activity log/trash history. Inventory stock will drop to 0 and all cube prices will be cleared (unset) along with the stock movement history — the system returns to a blank, default state. Factory settings, login accounts, and item/expense category setup will be preserved. This action CANNOT be undone!"
+        message="ARE YOU ABSOLUTELY SURE? This erases EVERYTHING except your login accounts. Permanently DELETED: all customers, sales orders, debts & settlements, vehicles, drivers & trips, employees & attendance, the entire expense ledger including its categories and items, cash & bank records, cheques, opening balances, daily manager reports, WhatsApp notification history, notes, and the activity log/trash history. SAGA code numbering restarts from 1. Inventory stock drops to 0 with all cube prices unset, and the company profile, logo and AI key reset to defaults — the system returns to a blank, fresh-install state. Only user login accounts survive. This action CANNOT be undone!"
         confirmLabel="YES, PERMANENTLY CLEAR ALL DATA"
         isLoading={clearLoading}
       />

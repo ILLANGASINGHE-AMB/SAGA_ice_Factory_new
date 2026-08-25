@@ -1473,6 +1473,29 @@ returns table (check_name text, entity_id text, detail text) as $$
 
   union all
 
+  -- FIN-04: a settlement taken as a cheque or a bank transfer never touches
+  -- the till, so the ONLY thing holding that money is its cheque_records /
+  -- bank_deposits row. The code this replaces wrote that row in a separate
+  -- transaction that could fail into a toast, leaving the debt marked paid
+  -- with the funds recorded in no store of value at all.
+  select 'settlement_without_ledger_row'::text,
+         coalesce(ds.settlement_code, ds.id::text),
+         format('%s settlement of %s has no %s row',
+                ds.payment_method, ds.amount_paid,
+                case when ds.payment_method = 'cheque' then 'cheque_records' else 'bank_deposits' end)
+    from public.debt_settlements ds
+   where not ds.is_auto_applied
+     and ds.payment_method in ('cheque', 'bank_transfer')
+     -- Either kind of settlement produces exactly one ledger row, in one
+     -- table or the other, so "neither table has it" is the whole test.
+     and not exists (
+       select 1 from public.cheque_records c where c.settlement_id = ds.id
+       union all
+       select 1 from public.bank_deposits b where b.settlement_id = ds.id
+     )
+
+  union all
+
   -- FIN-16: a deposited cheque must point at a bank deposit that still
   -- exists, or its amount is counted in neither store of value.
   select 'deposited_cheque_without_deposit'::text,

@@ -851,7 +851,13 @@ export function generateDailyManagerReportPDF(reportData, settings) {
     bodyStyles: { fontSize: 7.5, textColor: BODY },
     columnStyles: { 0: { width: 10, halign: 'center' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' } },
     margin: { left: 14, right: 14 },
-    foot: [['', '', '', '', 'TOTAL:', `LKR ${reportData.totalCreditCollectedAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, '']],
+    foot: [
+      ['', '', '', '', 'COLLECTED:', `LKR ${reportData.totalCreditCollectedAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, ''],
+      // Kept out of the collected total: this is debt written down by a cash
+      // order, and that cash is already counted under Cash Sales.
+      ['', '', '', '', 'OFFSET BY CASH ORDERS (NOT COLLECTED):',
+        `LKR ${Number(reportData.totalCreditOffsetAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, '']
+    ],
     footStyles: { fillColor: CARD_BG, textColor: INK, fontStyle: 'bold', fontSize: 7.5 }
   });
 

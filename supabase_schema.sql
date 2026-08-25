@@ -3088,6 +3088,29 @@ returns table (check_name text, entity_id text, detail text) as $$
 
   union all
 
+  -- FIN-04: a settlement taken as a cheque or a bank transfer never touches
+  -- the till, so the ONLY thing holding that money is its cheque_records /
+  -- bank_deposits row. The code this replaces wrote that row in a separate
+  -- transaction that could fail into a toast, leaving the debt marked paid
+  -- with the funds recorded in no store of value at all.
+  select 'settlement_without_ledger_row'::text,
+         coalesce(ds.settlement_code, ds.id::text),
+         format('%s settlement of %s has no %s row',
+                ds.payment_method, ds.amount_paid,
+                case when ds.payment_method = 'cheque' then 'cheque_records' else 'bank_deposits' end)
+    from public.debt_settlements ds
+   where not ds.is_auto_applied
+     and ds.payment_method in ('cheque', 'bank_transfer')
+     -- Either kind of settlement produces exactly one ledger row, in one
+     -- table or the other, so "neither table has it" is the whole test.
+     and not exists (
+       select 1 from public.cheque_records c where c.settlement_id = ds.id
+       union all
+       select 1 from public.bank_deposits b where b.settlement_id = ds.id
+     )
+
+  union all
+
   -- FIN-16: a deposited cheque must point at a bank deposit that still
   -- exists, or its amount is counted in neither store of value.
   select 'deposited_cheque_without_deposit'::text,
@@ -3100,3 +3123,102 @@ returns table (check_name text, entity_id text, detail text) as $$
 $$ language sql stable security definer set search_path = public;
 
 grant execute on function public.ledger_consistency_report() to authenticated;
+
+-- ==========================================================================
+-- Settings → Clear Database
+-- ==========================================================================
+-- Wipes every operational and configuration table in one transaction.
+-- Login information is the only thing that survives: `auth.users` and the
+-- `profiles` rows carrying each account's role, name and username.
+--
+-- `inventory` and `settings` are reset in place rather than deleted, because
+-- deleting their rows would brick the app rather than blank it — the
+-- order-placement RPCs look inventory up by `type` and expect exactly one row
+-- per cube type, and useSettings() expects a single settings row. Resetting
+-- them to the seed defaults reaches the identical zero-data end state.
+--
+-- Server-side and SECURITY DEFINER, not a loop of client `.delete()` calls:
+-- a client delete on a table with no DELETE policy (`code_counters`, `trash`)
+-- removes zero rows and reports no error, and a loop that fails partway
+-- leaves the database half-wiped.
+
+create or replace function public.clear_all_data()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'Only admins can clear the database';
+  end if;
+
+  -- Children before parents so the `on delete restrict` FKs
+  -- (transport_trips.employee_id, transport_trips.driver_id) never block a
+  -- step. Every statement carries `where true`: this runs as the function
+  -- owner, which has pg-safeupdate enabled and rejects an unqualified
+  -- DELETE/UPDATE.
+
+  -- Sales, debts and customers
+  delete from public.debt_settlements where true;
+  delete from public.debts where true;
+  delete from public.sale_items where true;
+  delete from public.sales where true;
+  delete from public.customer_cube_prices where true;
+  delete from public.notification_log where true;
+  delete from public.customers where true;
+
+  -- Transport and staff
+  delete from public.transport_trips where true;
+  delete from public.vehicle_trips where true;
+  delete from public.vehicles where true;
+  delete from public.drivers where true;
+  delete from public.employee_attendance where true;
+  delete from public.employees where true;
+
+  -- Expenses, including the chart of accounts itself
+  delete from public.expense_amounts where true;
+  delete from public.expense_ledger_rows where true;
+  delete from public.expense_items where true;
+  delete from public.expense_categories where true;
+
+  -- Cash, bank and reporting
+  delete from public.daily_manager_reports where true;
+  delete from public.cheque_records where true;
+  delete from public.bank_deposits where true;
+  delete from public.cash_receives where true;
+  delete from public.bank_withdrawals where true;
+  delete from public.opening_balances where true;
+
+  -- Notes, audit trails and recycle bin
+  delete from public.notes where true;
+  delete from public.activity_log where true;
+  delete from public.inventory_transactions where true;
+  delete from public.trash where true;
+
+  -- SAGA code sequences restart from 1. next_code() upserts its counter row,
+  -- so deleting these is safe — the rows come back on first use.
+  delete from public.code_counters where true;
+
+  -- Structural rows reset in place (see header).
+  update public.inventory
+     set quantity = 0,
+         price_per_cube = null,
+         updated_at = timezone('utc'::text, now())
+   where true;
+
+  update public.settings
+     set company_name = 'Sagacious Ice Factory',
+         company_address = '',
+         company_phone = '',
+         company_email = '',
+         logo_url = null,
+         favicon_url = null,
+         gemini_api_key = '',
+         ai_enabled = true,
+         updated_at = timezone('utc'::text, now())
+   where true;
+end;
+$$;
+
+grant execute on function public.clear_all_data() to authenticated;

@@ -418,9 +418,20 @@ export function DailyManagerReportView() {
                   <Receipt size={18} className="text-sky-500" />
                   <span>04. DEBT SETTLE DETAILS</span>
                 </div>
-                <span className="text-xs font-bold text-sky-600">
-                  Collected: LKR {reportData.totalCreditCollectedAmount.toLocaleString()}
-                </span>
+                <div className="text-right">
+                  <span className="text-xs font-bold text-sky-600 block">
+                    Collected: LKR {reportData.totalCreditCollectedAmount.toLocaleString()}
+                  </span>
+                  {/* Shown separately, never added to "Collected": a cash order
+                      paying down the same customer's older debt is a real debt
+                      reduction, but that cash arrived as the sale and is
+                      already counted in Cash Sales. */}
+                  {reportData.totalCreditOffsetAmount > 0 && (
+                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                      Offset by cash orders: LKR {reportData.totalCreditOffsetAmount.toLocaleString()} (not collected)
+                    </span>
+                  )}
+                </div>
               </div>
 
               {reportData.creditCollectionList.length === 0 ? (
