@@ -1,6 +1,6 @@
 # Changes — 25 August 2026
 
-Five pieces of work:
+Six pieces of work:
 
 1. **Dashboard "Settle Debts" quick action** — register a debt payment straight
    from the dashboard without first hunting the customer down in the ledger.
@@ -15,6 +15,8 @@ Five pieces of work:
 5. **Auto-applied settlements no longer double-count as income** — a
    long-standing bug that inflated Cash Balance, Total Income and Settlements
    Collected on every cash order placed against an existing debt.
+6. **Daily Report "Other Receipts" is now derived from Cash & Bank** instead of
+   being typed in.
 
 **Status:** production build passes (`npm run build`, ✓ built). ESLint reports
 the same problems as before the changes (`React` unused in both pages,
@@ -24,7 +26,7 @@ the same problems as before the changes (`React` unused in both pages,
 neither the settlement path nor the new ledger inserts were exercised at
 runtime.
 
-**21 files changed · 3 new migrations**
+**22 files changed · 3 new migrations**
 
 ---
 
@@ -549,6 +551,42 @@ diverge, they are now separated:
 auto-applied offset, plus a 250 cash collection, a 300 transfer and a 150
 cheque): Cash Balance 1,250, Bank 300, Hand Cheques 150 — 1,700 total, exactly
 the money that changed hands. It was 1,650 in cash alone before the fix.
+
+---
+
+# Part 6 — Daily Report: Other Receipts derived from Cash & Bank
+
+**No migration.** UI/derivation only.
+
+Section 02's **Other Receipts** was a manager-typed number. Cash & Bank
+**Section 01 (Other Cash Receives)** already records exactly this money, under
+its two buttons — **Received by Head Office** and **Other Receives** — so the
+report now sums that ledger for the selected range instead of asking anyone to
+retype it. The two can no longer drift apart.
+
+- `src/hooks/useDailyReport.js` — `otherReceipts` is the total of
+  `cash_receives` rows whose `received_at` falls in range. Also exposes
+  `headOfficeReceipts` and `otherCashReceipts` separately.
+- `src/components/DailyManagerReportView.jsx` — the input became a read-only
+  tile showing the total, with a **Head Office · Other** breakdown beneath it
+  so the figure traces straight back to the two buttons that produced it.
+  Saving persists the derived value, so a signed-off report keeps its number.
+
+The daily report PDF is unchanged — it already printed
+`incomeDetails.otherReceipts`, which is simply a trustworthy number now.
+
+### Section 01 and 02 are now fully derived
+
+With this, every manager-typed figure in the first two sections is gone:
+
+| Field | Was | Now |
+|---|---|---|
+| Free Issue | typed | Free Cubes on the order (Part 4) |
+| Damaged | typed | Damaged Cubes inventory line (Part 4) |
+| Other Receipts | typed | Cash & Bank Section 01 (Part 6) |
+
+Only the free-text incident note and the verifying manager's sign-off remain
+manual.
 
 ---
 

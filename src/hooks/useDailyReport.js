@@ -334,7 +334,20 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
     // just not a collection. Reported separately rather than folded into income.
     const debtOffsetByCashOrders = autoAppliedSettlements.reduce((sum, setl) => sum + (Number(setl.amount_paid) || 0), 0);
 
-    const otherReceipts = Number(manualInputs.otherReceipts) || 0;
+    // Other Receipts used to be a manager-typed number. Cash & Bank Section 01
+    // (Other Cash Receives) already records exactly this money — both
+    // "Received by Head Office" and "Other Receives" — so it is derived from
+    // that ledger instead of being entered by hand, and can no longer drift
+    // from what was actually recorded.
+    const rangeCashReceives = cashReceives.filter(r => isInRange(r.received_at));
+    const headOfficeReceipts = rangeCashReceives
+      .filter(r => r.receive_type === 'head_office')
+      .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+    const otherCashReceipts = rangeCashReceives
+      .filter(r => r.receive_type !== 'head_office')
+      .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+    const otherReceipts = headOfficeReceipts + otherCashReceipts;
+
     const totalIncome = cashSalesAmount + creditAmountReceived + otherReceipts;
 
     // 3. Details of Credit Given Today
@@ -499,6 +512,10 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
         creditAmountReceived,
         debtOffsetByCashOrders,
         otherReceipts,
+        // Broken out so the report can show where the receipts came from,
+        // matching the two buttons on Cash & Bank Section 01.
+        headOfficeReceipts,
+        otherCashReceipts,
         totalIncome
       },
       creditGivenList,

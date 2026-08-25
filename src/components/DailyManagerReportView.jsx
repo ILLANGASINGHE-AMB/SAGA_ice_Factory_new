@@ -32,11 +32,11 @@ export function DailyManagerReportView() {
   const { isAdmin, user } = useAuth();
   const toast = useToast();
 
-  // Local form state synced with manualInputs. Free Issue and Damaged Cubes
-  // used to be typed in here; both are now real system data (a Free Cubes
-  // quantity on the order, and the Damaged Cubes inventory line), so Section
-  // 01 is fully read-only and only Section 02's Other Receipts is editable.
-  const [otherReceipts, setOtherReceipts] = useState(0);
+  // Local form state synced with manualInputs. Free Issue, Damaged Cubes and
+  // Other Receipts were all typed in here once; each is now real system data
+  // (a Free Cubes quantity on the order, the Damaged Cubes inventory line, and
+  // Cash & Bank Section 01 respectively), so Sections 01 and 02 are fully
+  // derived. Only the free-text incident note and the sign-off remain manual.
   const [otherDetails, setOtherDetails] = useState('');
   const [verifiedBy, setVerifiedBy] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -52,7 +52,6 @@ export function DailyManagerReportView() {
 
   useEffect(() => {
     if (manualInputs) {
-      setOtherReceipts(manualInputs.otherReceipts || 0);
       setOtherDetails(manualInputs.otherDetails || '');
       setVerifiedBy(manualInputs.verifiedBy || user?.fullName || '');
     }
@@ -67,7 +66,7 @@ export function DailyManagerReportView() {
         // numbers it was signed off on, even though they are no longer typed.
         freeIssue: Number(reportData?.stockDetails?.freeIssue) || 0,
         damagedCubes: Number(reportData?.stockDetails?.damagedCubes) || 0,
-        otherReceipts: Number(otherReceipts) || 0,
+        otherReceipts: Number(reportData?.incomeDetails?.otherReceipts) || 0,
         otherDetails,
         verifiedBy
       });
@@ -310,15 +309,17 @@ export function DailyManagerReportView() {
                   </div>
                 )}
 
-                <div className="p-2 bg-amber-50/50 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-900/50">
-                  <label className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold uppercase block truncate">Other Receipts</label>
-                  <input
-                    type="number"
-                    value={otherReceipts}
-                    onChange={(e) => setOtherReceipts(e.target.value)}
-                    disabled={isLocked}
-                    className="w-full mt-0.5 disabled:opacity-60 disabled:cursor-not-allowed bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
-                  />
+                <div className="p-2.5 bg-amber-50/50 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-900/50" title="From Cash & Bank Section 01 — Received by Head Office + Other Receives">
+                  <span className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold uppercase block truncate">Other Receipts</span>
+                  <p className="font-bold text-xs sm:text-sm text-amber-600 dark:text-amber-400 mt-0.5 truncate">
+                    LKR {reportData.incomeDetails.otherReceipts.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </p>
+                  {/* Where it came from, matching the two buttons on Cash &
+                      Bank Section 01, so the figure can be traced back. */}
+                  <span className="text-[9px] text-amber-600/80 dark:text-amber-400/80 block truncate">
+                    Head Office {reportData.incomeDetails.headOfficeReceipts.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    {' · '}Other {reportData.incomeDetails.otherCashReceipts.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
                 </div>
 
                 <div className="p-2.5 bg-emerald-500 text-white rounded-xl shadow-xs">
