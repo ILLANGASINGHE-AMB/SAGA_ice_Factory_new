@@ -37,6 +37,64 @@ const YEAR_OPTIONS = (() => {
   return [current + 1, current, current - 1, current - 2].map(String);
 })();
 
+// The four Cube Movement Trend series, in the order they're drawn. Single
+// source of truth linking an inventory `type` to the label used as its
+// chart dataKey and legend/tooltip name.
+const TREND_SERIES = [
+  { type: 'manufactured', key: 'Production' },
+  { type: 'resell', key: 'Resell' },
+  { type: 'waste', key: 'Brine' },
+  { type: 'damaged', key: 'Damaged' }
+];
+
+// inventory_transactions.transaction_type -> the plain-language "Reason" the
+// trend graph's tooltip shows for a movement.
+const TXN_REASON_LABELS = {
+  add: 'Stock Added',
+  sale_deduction: 'Sale',
+  manual_removal: 'Manual Removal',
+  adjustment: 'Adjustment',
+  free_issue: 'Free Issue'
+};
+
+// Cube Movement Trend tooltip — for each series at the hovered point, shows
+// the actual stock balance plus that point's movement and reason, e.g.
+// "90 cubes · Movement: -10 · Sale". Custom (rather than recharts' default
+// key/value list) so it can read the per-series movement/reason recharts
+// doesn't know about, and so it follows the app's light/dark theme instead
+// of a fixed dark tooltip.
+function CubeTrendTooltip({ active, payload, label }) {
+  if (!active || !payload || !payload.length) return null;
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg px-3 py-2.5 text-[11px] space-y-2 min-w-[190px]">
+      <p className="font-bold text-slate-800 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800 pb-1.5">
+        {label}
+      </p>
+      {payload.map(entry => {
+        const key = entry.dataKey;
+        const movement = entry.payload?.[`${key}_movement`] ?? 0;
+        const reason = entry.payload?.[`${key}_reason`] || 'No movement';
+        return (
+          <div key={key}>
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-1.5 font-semibold" style={{ color: entry.color }}>
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
+                {key}
+              </span>
+              <span className="font-mono font-bold text-slate-800 dark:text-slate-100">
+                {Number(entry.value).toLocaleString()} cubes
+              </span>
+            </div>
+            <p className="text-slate-400 pl-3.5">
+              Movement: {movement > 0 ? `+${movement}` : movement} · {reason}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function InventoryPage() {
   const { inventory, transactions, isLoading, addStock, removeStock, updatePrice } = useInventory();
   const { user, isAdmin } = useAuth();
@@ -201,40 +259,120 @@ export function InventoryPage() {
     return [CUBE_TYPE_LABELS[historyCubeType]];
   }, [historyCubeType]);
 
-  // Graph View: net cube movement per cube type, bucketed across the time axis
-  // implied by the selected filter (hours for a day, days for a month, months for a year).
+  // The first instant of the selected day/month/year — where the trend line
+  // starts from. Local-calendar constructor (not string parsing), same
+  // reasoning as the rest of this app's date handling.
+  const trendPeriodStart = useMemo(() => {
+    if (historyFilterType === 'daily') {
+      const [y, m, d] = historyDate.split('-').map(Number);
+      return new Date(y, m - 1, d, 0, 0, 0, 0);
+    }
+    if (historyFilterType === 'monthly') {
+      const [y, m] = historyMonth.split('-').map(Number);
+      return new Date(y, m - 1, 1, 0, 0, 0, 0);
+    }
+    return new Date(Number(historyYear), 0, 1, 0, 0, 0, 0);
+  }, [historyFilterType, historyDate, historyMonth, historyYear]);
+
+  // Live balance right now, per type — the anchor everything else winds back from.
+  const liveQtyByType = useMemo(() => {
+    const map = {};
+    (inventory || []).forEach(item => { map[item.type] = Number(item.quantity) || 0; });
+    return map;
+  }, [inventory]);
+
+  // The actual stock balance at trendPeriodStart: live balance minus every
+  // movement recorded from that instant up to now. Needs the FULL transaction
+  // history, not just the selected period's — any activity between the
+  // period's end and today also has to be unwound to land on the right
+  // starting number.
+  const trendOpeningBalances = useMemo(() => {
+    const result = {};
+    TREND_SERIES.forEach(({ type }) => {
+      const liveQty = liveQtyByType[type] || 0;
+      const laterDelta = (transactions || [])
+        .filter(t => t.inventory?.type === type && new Date(t.created_at) >= trendPeriodStart)
+        .reduce((sum, t) => sum + (Number(t.quantity_change) || 0), 0);
+      result[type] = Math.max(0, liveQty - laterDelta);
+    });
+    return result;
+  }, [transactions, liveQtyByType, trendPeriodStart]);
+
+  // Graph View: the RUNNING STOCK BALANCE per cube type at the end of each
+  // point on the time axis (hours for a day, days for a month, months for a
+  // year) — not the net movement within that bucket. A sale that draws stock
+  // down still shows as "100 -> 90", never as "-10": each point is the actual
+  // quantity on hand at that moment, so the line can never plot a negative
+  // value the way summing deltas per bucket could.
   const graphData = useMemo(() => {
     let buckets;
     if (historyFilterType === 'daily') {
-      buckets = Array.from({ length: 24 }, (_, h) => ({
-        label: `${h.toString().padStart(2, '0')}:00`, Production: 0, Resell: 0, Brine: 0, Damaged: 0
-      }));
+      buckets = Array.from({ length: 24 }, (_, h) => ({ label: `${h.toString().padStart(2, '0')}:00` }));
     } else if (historyFilterType === 'monthly') {
       const [y, m] = historyMonth.split('-').map(Number);
       const daysInMonth = new Date(y, m, 0).getDate();
-      buckets = Array.from({ length: daysInMonth }, (_, d) => ({
-        label: `${d + 1}`, Production: 0, Resell: 0, Brine: 0, Damaged: 0
-      }));
+      buckets = Array.from({ length: daysInMonth }, (_, d) => ({ label: `${d + 1}` }));
     } else {
       buckets = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-        .map(label => ({ label, Production: 0, Resell: 0, Brine: 0, Damaged: 0 }));
+        .map(label => ({ label }));
     }
 
-    dateFilteredTransactions.forEach(txn => {
+    TREND_SERIES.forEach(({ key }) => {
+      buckets.forEach(b => {
+        b[key] = null; // filled in by the forward-fill pass below
+        b[`${key}_movement`] = 0;
+        b[`${key}_reason`] = null;
+      });
+    });
+
+    // Apply every transaction in the period to a running per-type balance, in
+    // chronological order (the query returns newest-first) — reconstructing
+    // a running total out of order would produce a meaningless line.
+    const running = { ...trendOpeningBalances };
+    const sorted = [...dateFilteredTransactions].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+    sorted.forEach(txn => {
+      const series = TREND_SERIES.find(s => s.type === txn.inventory?.type);
+      if (!series) return;
       const txnDate = new Date(txn.created_at);
       const idx = historyFilterType === 'daily' ? txnDate.getHours()
         : historyFilterType === 'monthly' ? txnDate.getDate() - 1
         : txnDate.getMonth();
-
       const bucket = buckets[idx];
-      const seriesKey = CUBE_TYPE_LABELS[txn.inventory?.type];
-      if (!bucket || !seriesKey) return;
-      if (!graphSeries.includes(seriesKey)) return;
-      bucket[seriesKey] += Number(txn.quantity_change) || 0;
+      if (!bucket) return;
+
+      const change = Number(txn.quantity_change) || 0;
+      // Floored at 0 as a display safety net — real stock never goes
+      // negative (the add/deduct RPCs refuse a deduction that would), so
+      // this only ever protects against showing a negative line, never
+      // changes a correct number.
+      running[series.type] = Math.max(0, running[series.type] + change);
+
+      bucket[series.key] = running[series.type];
+      bucket[`${series.key}_movement`] += change;
+      const reasonLabel = TXN_REASON_LABELS[txn.transaction_type] || 'Adjustment';
+      bucket[`${series.key}_reason`] = bucket[`${series.key}_reason`] && !bucket[`${series.key}_reason`].includes(reasonLabel)
+        ? `${bucket[`${series.key}_reason`]}, ${reasonLabel}`
+        : (bucket[`${series.key}_reason`] || reasonLabel);
+    });
+
+    // Forward-fill: a bucket nothing touched carries the balance forward from
+    // the previous one, so the line stays flat where nothing happened instead
+    // of dropping back to zero.
+    TREND_SERIES.forEach(({ type, key }) => {
+      let last = trendOpeningBalances[type];
+      buckets.forEach(b => {
+        if (b[key] === null) {
+          b[key] = last;
+          b[`${key}_reason`] = 'No movement';
+        } else {
+          last = b[key];
+        }
+      });
     });
 
     return buckets;
-  }, [dateFilteredTransactions, historyFilterType, historyMonth, graphSeries]);
+  }, [dateFilteredTransactions, historyFilterType, historyMonth, trendOpeningBalances]);
 
   if (isLoading) {
     return (
@@ -609,6 +747,10 @@ export function InventoryPage() {
               {historyFilterType} view · {historyCubeType === 'all' ? 'All cube types' : CUBE_TYPE_LABELS[historyCubeType]}
             </span>
           </div>
+          <p className="text-[11px] text-slate-400 dark:text-slate-500 mb-3">
+            Running stock balance over time, not the size of each transaction — a sale reads as
+            the quantity dropping (e.g. 100 → 90), never as "-10".
+          </p>
           <div className="h-64 sm:h-80">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={graphData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
@@ -619,23 +761,23 @@ export function InventoryPage() {
                   stroke="#94a3b8"
                   fontSize={9}
                   tickLine={false}
+                  allowDecimals={false}
+                  domain={[0, 'auto']}
                   label={{ value: 'Cubes', angle: -90, position: 'insideLeft', fontSize: 10, fill: '#94a3b8' }}
                 />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)', fontSize: '11px' }}
-                />
+                <Tooltip content={<CubeTrendTooltip />} cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 3' }} />
                 <Legend wrapperStyle={{ fontSize: '11px' }} />
                 {graphSeries.includes('Production') && (
-                  <Line type="monotone" dataKey="Production" stroke={GRAPH_COLORS.manufactured} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+                  <Line type="monotone" dataKey="Production" stroke={GRAPH_COLORS.manufactured} strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                 )}
                 {graphSeries.includes('Resell') && (
-                  <Line type="monotone" dataKey="Resell" stroke={GRAPH_COLORS.resell} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+                  <Line type="monotone" dataKey="Resell" stroke={GRAPH_COLORS.resell} strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                 )}
                 {graphSeries.includes('Damaged') && (
-                  <Line type="monotone" dataKey="Damaged" stroke={GRAPH_COLORS.damaged} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+                  <Line type="monotone" dataKey="Damaged" stroke={GRAPH_COLORS.damaged} strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                 )}
                 {graphSeries.includes('Brine') && (
-                  <Line type="monotone" dataKey="Brine" stroke={GRAPH_COLORS.waste} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+                  <Line type="monotone" dataKey="Brine" stroke={GRAPH_COLORS.waste} strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                 )}
               </LineChart>
             </ResponsiveContainer>

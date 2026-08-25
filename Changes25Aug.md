@@ -1,6 +1,6 @@
 # Changes — 25 August 2026
 
-Ten pieces of work:
+Eleven pieces of work:
 
 1. **Dashboard "Settle Debts" quick action** — register a debt payment straight
    from the dashboard without first hunting the customer down in the ledger.
@@ -29,6 +29,8 @@ Ten pieces of work:
 10. **Reports page decluttered** — two full-width sections top to bottom
     (Compile Report, then Previewed Report) in place of a lopsided narrow
     sidebar next to an oversized preview.
+11. **Cube Movement Trend graph now plots running stock balance, never a
+    negative delta** — a sale reads as "100 → 90", not "-10".
 
 **Status:** production build passes (`npm run build`, ✓ built). ESLint reports
 the same problems as before the changes (`React` unused in both pages,
@@ -38,7 +40,7 @@ the same problems as before the changes (`React` unused in both pages,
 neither the settlement path nor the new ledger inserts were exercised at
 runtime.
 
-**31 files changed · 4 new migrations**
+**32 files changed · 4 new migrations**
 
 ---
 
@@ -871,6 +873,104 @@ dead weight.
 
 ---
 
+# Part 11 — Cube Movement Trend: running stock balance, never negative
+
+**No migration, no new data.** Rebuilt entirely from `useInventory()`'s
+existing `inventory` (live balances) and `transactions` (audit log) —
+`src/pages/InventoryPage.jsx` only.
+
+## The bug
+
+The graph summed each bucket's `quantity_change` values directly — the **net
+movement within that hour/day/month**, not the stock level. A 10-cube sale in
+an otherwise-quiet hour plotted as `-10`; an hour with no activity plotted as
+a hard `0`, even though real stock was never zero. The line told you how much
+moved, not what was actually on the shelf — the opposite of what an inventory
+trend graph is for, and exactly the defect the spec calls out:
+
+> Do NOT plot: `Production = -10`. Instead plot: `Production: 100 → 90`.
+
+## The fix: reconstruct the running balance, don't sum deltas
+
+For each of the four series (Production / Resell / Brine / Damaged), every
+point on the axis now holds the **actual quantity on hand at the end of that
+bucket** — worked out the same way `previousDayBalance` already is in the
+Daily Manager Report (Part 4/6): wind the *live* balance backwards by every
+transaction from the period's start up to now, then walk forward through the
+period's own transactions in chronological order, applying each one to a
+running total.
+
+```
+openingBalance[type] = liveQty[type] − Σ(quantity_change for txns ≥ periodStart)
+```
+
+Then, for each transaction in the period (sorted ascending — the query
+returns newest-first, and reconstructing a running total out of order
+produces nonsense):
+
+```
+running[type] = max(0, running[type] + quantity_change)
+bucket[seriesKey] = running[type]
+```
+
+A bucket nothing touched **forward-fills** from the previous one, so the line
+stays flat where nothing happened instead of dropping to zero — this is what
+makes "13:00, no transaction" correctly read as "still 100", not "0".
+
+### Verified against the spec's own worked example
+
+Simulated the exact scenario in the spec — opening 100/50/10/5 at the start of
+the day, a 2:00 PM sale of 10 Production and 10 Resell plus 10 Brine added —
+and the reconstructed points came out exactly `100→90`, `50→40`, `10→20`,
+`5→5`, with every hour between flat and **zero negative values anywhere**.
+Also checked two same-hour transactions of the same type aggregate into one
+point with the correct net movement and both reasons listed.
+
+## `Math.max(0, …)` — belt and braces
+
+Real stock can't go negative (the add/deduct RPCs refuse a deduction that
+would), so a correct reconstruction never needs this. It's a display floor
+purely so the chart itself can never render a negative line even if the
+underlying data were ever slightly inconsistent — "never minus values" as a
+UI guarantee, not just an assumption about the data. `<YAxis domain={[0, 'auto']}>`
+backs this up at the axis level too.
+
+## Tooltip: stock, movement, and reason together
+
+A custom `CubeTrendTooltip` (recharts' default is a bare key/value list)
+replaces the old fixed-dark tooltip. For each series at the hovered point it
+shows the stock level, that point's net movement, and why it moved:
+
+```
+Production
+90 cubes
+Movement: -10 · Sale
+```
+
+`transaction_type` → reason mapping: `add` → *Stock Added*, `sale_deduction`
+→ *Sale*, `manual_removal` → *Manual Removal*, `adjustment` → *Adjustment*,
+`free_issue` → *Free Issue*. A bucket with no movement for that series reads
+*"No movement"*; a bucket with several distinct reasons lists all of them
+(e.g. *"Sale, Stock Added"*).
+
+## Also fixed while in this code: the tooltip never followed the theme
+
+The old tooltip used a hardcoded `contentStyle={{ backgroundColor: '#0f172a', … }}`
+— always dark, regardless of the app's light/dark setting. The new
+`CubeTrendTooltip` is a themed component (`bg-white dark:bg-slate-900`), so it
+now actually satisfies "Support dark/light dashboard themes."
+
+## Other spec items covered
+
+- **Data points shown**: `dot={false}` → `dot={{ r: 3 }}` on every line.
+- **Legend, multi-series, smooth lines**: already present, unchanged.
+- **Future data structure**: not hardcoded to two timestamps — buckets are
+  generic per the existing Daily/Monthly/Yearly filter, and the algorithm
+  works identically regardless of how many transactions fall in a bucket, from
+  zero to many.
+
+---
+
 ## What was deliberately *not* changed
 
 - **No new settlement logic.** `handlePickCustomer` hands off to the existing
@@ -934,3 +1034,14 @@ dead weight.
   `handleDownloadPDF`, every table, every summary figure, every parameter
   input's value/onChange — all identical to before. Only the surrounding
   containers moved.
+- **The Production History table and the Total Added/Deducted scorecard above
+  it are untouched by Part 11.** Those already showed real per-transaction
+  deltas in context (with prev/new stock columns), which is correct there —
+  only the Graph View's aggregation was wrong.
+- **The event-per-transaction design from the spec's worked example wasn't
+  used literally** (a graph with one point per real transaction timestamp).
+  For a month or year view with many transactions that would be too dense to
+  read. Fixed hour/day/month buckets holding the cumulative balance as of the
+  end of each bucket satisfy the same principle — "plot the balance, not the
+  delta" — while staying legible and scalable, and produce identical output
+  to the spec's example for a daily view.
