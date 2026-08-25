@@ -31,6 +31,22 @@ export function Modal({
   const titleId = useId();
   const panelRef = useRef(null);
 
+  // Callers pass an inline arrow almost universally (`onClose={() => setOpen(false)}`),
+  // so `onClose` has a fresh identity on every parent render. While it sat in
+  // the dependency array of the effect below, every keystroke in a modal form
+  // tore that effect down and set it back up: the cleanup handed focus back to
+  // `previouslyFocused`, and the setup then focused the panel's first focusable
+  // element — the header's close button. Typing a single character threw focus
+  // out of the field, which is why typing appeared to stop dead with the close
+  // button selected.
+  //
+  // The effect has to key on `isOpen` alone. Escape still needs the *current*
+  // callback though, so it is reached through a ref rather than captured.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   useEffect(() => {
     if (!isOpen) return undefined;
 
@@ -43,7 +59,7 @@ export function Modal({
 
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -76,6 +92,11 @@ export function Modal({
 
     const focusTimer = window.setTimeout(() => {
       if (!panelRef.current) return;
+      // Never yank focus off something the user is already working in. The
+      // dependency fix above is what stops this running mid-edit, but a modal
+      // that renders its own content asynchronously could still land here
+      // after the user has started typing.
+      if (panelRef.current.contains(document.activeElement)) return;
       const focusable = panelRef.current.querySelectorAll(FOCUSABLE);
       (focusable[0] || panelRef.current).focus?.();
     }, 0);
@@ -88,7 +109,8 @@ export function Modal({
       window.removeEventListener('keydown', handleKeyDown);
       if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus?.();
     };
-  }, [isOpen, onClose]);
+    // `onClose` is deliberately absent — see the ref above.
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
