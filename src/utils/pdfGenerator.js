@@ -880,7 +880,13 @@ export function generateDailyManagerReportPDF(reportData, settings) {
     bodyStyles: { fontSize: 7.5, textColor: BODY },
     columnStyles: { 0: { width: 10, halign: 'center' }, 5: { halign: 'right' } },
     margin: { left: 14, right: 14 },
-    foot: [['', '', '', '', 'TOTAL:', reportData.totalExpensesAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })]],
+    foot: [
+      ['', '', '', '', 'TOTAL:', reportData.totalExpensesAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })],
+      // Income and expenses were printed as two independent figures with
+      // nothing on the page netting them against each other.
+      ['', '', '', '', 'NET POSITION (INCOME - EXPENSES):',
+        Number(reportData.netPosition || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })]
+    ],
     footStyles: { fillColor: CARD_BG, textColor: INK, fontStyle: 'bold', fontSize: 7.5 }
   });
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useDebts } from '../hooks/useDebts';
 import { useSettings } from '../hooks/useSettings';
@@ -184,9 +184,6 @@ export function DebtsPage() {
       setSettlementReceiptRecord(result);
 
       toast.success(`Settlement recorded! Code: ${result.settlement_code}`);
-      // The debt is settled either way, but the operator has to know if the
-      // money never made it into the Cash & Bank ledger.
-      if (result.ledgerWarning) toast.error(result.ledgerWarning);
       closeSettleModal();
       setWhatsappPromptOpen(true);
     } catch (err) {
@@ -213,10 +210,13 @@ export function DebtsPage() {
     const amountPaid = Number(settlementReceiptRecord.amount_paid) || 0;
 
     // What this customer still owes across *all* their debts after the
-    // payment — the per-debt `remaining_amount` on the last settled row only
-    // describes that one sale, which under-reported the balance whenever a
-    // payment spanned several debts.
-    const remaining = (debts || [])
+    // payment, as reported by the settlement transaction itself. Deriving it
+    // from the local `debts` array instead meant quoting the customer their
+    // OLD balance whenever the operator tapped Send inside the 350ms realtime
+    // debounce — the payment they had just made appeared not to have
+    // registered. The local sum stays only as a fallback for a receipt record
+    // that predates this field.
+    const remaining = settlementReceiptRecord.customerRemainingTotal ?? (debts || [])
       .filter(d => Number(d.customer_id) === Number(settlementReceiptRecord.customer_id) && d.status !== 'settled')
       .reduce((sum, d) => sum + (Number(d.remaining_amount) || 0), 0);
 
@@ -301,6 +301,10 @@ export function DebtsPage() {
     debts.forEach(d => {
       if (d.status === 'settled') return;
       count++;
+      // created_at is the date the debt was incurred and is never rewritten
+      // by the cash-to-old-debt offset any more (that reset a 6-month-old
+      // debt into the "0-30 days" bucket). Last activity lives in
+      // last_activity_at and deliberately does not affect aging.
       const debtDate = new Date(d.created_at);
       const diffDays = Math.floor((now - debtDate) / (1000 * 60 * 60 * 24));
 

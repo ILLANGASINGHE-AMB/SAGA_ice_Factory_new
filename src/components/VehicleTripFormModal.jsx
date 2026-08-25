@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Modal } from './Modal';
 import { Button } from './Button';
 import { Input, Select, TextArea } from './FormFields';
@@ -12,19 +12,18 @@ const buildEmptyValues = () => ({
   description: ''
 });
 
+// The caller remounts this with a `key` when it opens, so Start Odometer is
+// pre-filled at mount rather than patched in by an effect after a first render
+// showing the previous vehicle's reading.
 export function VehicleTripFormModal({ isOpen, onClose, onSubmit, employees = [], defaultStartOdometer = '' }) {
-  const [values, setValues] = useState(buildEmptyValues);
+  // Pre-fill Start Odometer with where the vehicle was last left, so the
+  // operator only has to enter the reading at the end of the trip.
+  const [values, setValues] = useState(() => ({
+    ...buildEmptyValues(),
+    start_odometer: String(defaultStartOdometer ?? '')
+  }));
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      // Pre-fill Start Odometer with where the vehicle was last left, so the
-      // operator only has to enter the reading at the end of the trip.
-      setValues({ ...buildEmptyValues(), start_odometer: String(defaultStartOdometer ?? '') });
-      setError('');
-    }
-  }, [isOpen, defaultStartOdometer]);
 
   const handleChange = (field) => (e) => {
     setValues(prev => ({ ...prev, [field]: e.target.value }));

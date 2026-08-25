@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSettings } from '../hooks/useSettings';
 import { useCustomers } from '../hooks/useCustomers';
 import { useUserManagement } from '../hooks/useUserManagement';
@@ -17,8 +17,7 @@ import {
   Building2,
   Upload,
   Palette,
-  ShieldAlert,
-  Download,
+    Download,
   FolderSync,
   Trash2,
   AlertOctagon,
@@ -26,9 +25,7 @@ import {
   Key,
   Eye,
   EyeOff,
-  Sparkles,
-  CheckCircle2,
-  Plus,
+      Plus,
   Edit2,
   X,
   Users
@@ -144,6 +141,11 @@ export function SettingsPage() {
   // Pre-fill form fields when settings load
   useEffect(() => {
     if (settings) {
+      // This effect's job is to subscribe to an external system (Supabase:
+      // an initial fetch plus a realtime channel) and push what it reports
+      // back into React state — the case the rule explicitly allows for. It
+      // is not derived state being patched in after a render.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCompanyName(settings.company_name || '');
       setAddress(settings.company_address || '');
       setPhone(settings.company_phone || '');
@@ -434,7 +436,7 @@ export function SettingsPage() {
       if (trashError) throw new Error(`trash: ${trashError.message}`);
 
       // Inventory rows themselves (MFC/RSC/BNC) are kept: Sales/New Order's
-      // RPCs (place_multi_item_order_transaction etc.) look them up by
+      // RPCs (place_pooled_order_transaction etc.) look them up by
       // `type` and expect exactly one row to exist per cube type, so
       // deleting them would break order placement until someone manually
       // recreated the catalog. A full wipe instead zeroes stock and clears

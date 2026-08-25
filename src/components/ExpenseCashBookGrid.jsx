@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Save, Pencil, Trash2, GripVertical, Inbox } from 'lucide-react';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useToast } from './Toast';
@@ -58,10 +58,16 @@ export function ExpenseCashBookGrid({
 
   useEffect(() => {
     if (editingIds.size > 0) return;
+    // This effect's job is to subscribe to an external system (Supabase:
+    // an initial fetch plus a realtime channel) and push what it reports
+    // back into React state — the case the rule explicitly allows for. It
+    // is not derived state being patched in after a render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLocalRows(gridRows.map(r => ({
       id: r.id,
       entry_date: r.entry_date,
       description: r.description,
+      payment_source: r.payment_source || 'cash',
       amounts: Object.fromEntries(r.amounts.entries()),
       _isNew: false
     })));
@@ -71,7 +77,7 @@ export function ExpenseCashBookGrid({
 
   const handleAddRow = () => {
     const id = nextTempId();
-    const draft = { id, entry_date: todayInput(), description: '', amounts: {}, _isNew: true };
+    const draft = { id, entry_date: todayInput(), description: '', payment_source: 'cash', amounts: {}, _isNew: true };
     setLocalRows(prev => [draft, ...prev]);
     setEditingIds(prev => new Set(prev).add(id));
   };
@@ -117,25 +123,63 @@ export function ExpenseCashBookGrid({
   const handleSaveChanges = async () => {
     if (editingIds.size === 0) return;
     setIsSaving(true);
-    try {
-      const editedRows = localRows.filter(r => editingIds.has(r.id));
-      for (const row of editedRows) {
-        if (!row.entry_date) throw new Error("Date is required for every row");
-      }
-      for (const row of editedRows) {
-        await saveLedgerRow({
+
+    const editedRows = localRows.filter(r => editingIds.has(r.id));
+    const missingDate = editedRows.find(r => !r.entry_date);
+    if (missingDate) {
+      toast.error("Date is required for every row");
+      setIsSaving(false);
+      return;
+    }
+
+    // Rows are saved independently and each result is applied immediately.
+    // Previously one failure aborted the whole loop and cleared nothing, so
+    // the already-saved rows kept their `temp-` ids and the next Save
+    // re-inserted them as new — one duplicate ledger row per retry.
+    const savedIds = [];
+    const idRemap = new Map();
+    const failures = [];
+
+    for (const row of editedRows) {
+      try {
+        const realId = await saveLedgerRow({
           id: row.id,
           entry_date: row.entry_date,
           description: row.description,
+          payment_source: row.payment_source || 'cash',
           amounts: row.amounts
         });
+        savedIds.push(row.id);
+        if (realId && realId !== row.id) idRemap.set(row.id, realId);
+      } catch (err) {
+        // saveLedgerRow attaches the real row id when the ledger row landed
+        // but a cell didn't, so the retry updates that row rather than
+        // creating a second one.
+        if (err.rowId && err.rowId !== row.id) idRemap.set(row.id, err.rowId);
+        failures.push(`${row.description || row.entry_date}: ${err.message || 'save failed'}`);
       }
-      setEditingIds(new Set());
+    }
+
+    if (idRemap.size > 0) {
+      setLocalRows(prev => prev.map(r => (idRemap.has(r.id) ? { ...r, id: idRemap.get(r.id), _isNew: false } : r)));
+    }
+
+    setEditingIds(prev => {
+      const next = new Set(prev);
+      for (const savedId of savedIds) next.delete(savedId);
+      // A row that half-saved keeps editing, but under its real id.
+      for (const [tempId, realId] of idRemap.entries()) {
+        if (next.delete(tempId) && !savedIds.includes(tempId)) next.add(realId);
+      }
+      return next;
+    });
+
+    setIsSaving(false);
+
+    if (failures.length === 0) {
       toast.success("Changes saved successfully");
-    } catch (err) {
-      toast.error(err.message || "Failed to save changes");
-    } finally {
-      setIsSaving(false);
+    } else {
+      toast.error(`${failures.length} row(s) failed to save — ${failures.join('; ')}`);
     }
   };
 
@@ -313,16 +357,35 @@ export function ExpenseCashBookGrid({
                     </td>
                     <td className={`${stickyCellBase} left-28 border-r border-slate-100 dark:border-slate-800 whitespace-normal`}>
                       {isEditing ? (
-                        <input
-                          type="text"
-                          className={inputBase}
-                          placeholder="Description"
-                          value={row.description || ''}
-                          onChange={(e) => handleFieldChange(row.id, 'description', e.target.value)}
-                        />
+                        <div className="space-y-1.5">
+                          <input
+                            type="text"
+                            className={inputBase}
+                            placeholder="Description"
+                            value={row.description || ''}
+                            onChange={(e) => handleFieldChange(row.id, 'description', e.target.value)}
+                          />
+                          {/* Which store of value this money left. Expenses
+                              now reduce Cash Balance or Bank Balance
+                              accordingly — before this they reduced neither. */}
+                          <select
+                            className={inputBase}
+                            value={row.payment_source || 'cash'}
+                            onChange={(e) => handleFieldChange(row.id, 'payment_source', e.target.value)}
+                            title="Paid from"
+                          >
+                            <option value="cash">Paid from Cash</option>
+                            <option value="bank">Paid from Bank</option>
+                          </select>
+                        </div>
                       ) : (
                         <div className="flex items-center justify-between gap-1.5">
-                          <span className="font-medium text-slate-800 dark:text-slate-200 truncate">{row.description || '—'}</span>
+                          <span className="font-medium text-slate-800 dark:text-slate-200 truncate">
+                            {row.description || '—'}
+                            <span className="ml-1.5 text-[10px] uppercase font-semibold text-slate-400">
+                              {row.payment_source === 'bank' ? 'Bank' : 'Cash'}
+                            </span>
+                          </span>
                           <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                             <button
                               onClick={() => handleEditRow(row.id)}

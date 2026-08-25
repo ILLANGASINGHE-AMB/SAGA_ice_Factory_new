@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useSettings } from '../hooks/useSettings';
 import { useToast } from '../components/Toast';
@@ -72,31 +72,49 @@ export function ReportsPage() {
   const [settlements, setSettlements] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [dataLoading, setDataLoading] = useState(true);
+  // Reports are compiled from these four tables; a failed load used to fall
+  // back to [] silently, so a report could be generated and downloaded from
+  // partial data with nothing on screen saying so.
+  const [dataError, setDataError] = useState(null);
 
   const fetchAllData = async () => {
+    const failures = [];
+    const q = (label, builder) => builder
+      .then(r => {
+        if (r.error) { failures.push(`${label}: ${r.error.message}`); return []; }
+        return r.data || [];
+      })
+      .catch(err => { failures.push(`${label}: ${err?.message || err}`); return []; });
+
     try {
       setDataLoading(true);
       const [salesRes, debtsRes, settlementsRes, customersRes] = await Promise.all([
-        supabase.from('sales').select('*, sale_items(*)').then(r => r.data || []).catch(() => []),
-        supabase.from('debts').select('*').then(r => r.data || []).catch(() => []),
-        supabase.from('debt_settlements').select('*').then(r => r.data || []).catch(() => []),
-        supabase.from('customers').select('*').then(r => r.data || []).catch(() => [])
+        q('Sales', supabase.from('sales').select('*, sale_items(*)')),
+        q('Debts', supabase.from('debts').select('*')),
+        q('Debt settlements', supabase.from('debt_settlements').select('*')),
+        q('Customers', supabase.from('customers').select('*'))
       ]);
 
       setSales(salesRes);
       setDebts(debtsRes);
       setSettlements(settlementsRes);
       setCustomers(customersRes);
+      setDataError(failures.length ? failures.join('; ') : null);
     } catch (err) {
       console.error("Failed to fetch reports data:", err);
+      setDataError(err?.message || "Failed to load report data");
     } finally {
       setDataLoading(false);
     }
-
   };
 
 
   useEffect(() => {
+    // This effect's job is to subscribe to an external system (Supabase:
+    // an initial fetch plus a realtime channel) and push what it reports
+    // back into React state — the case the rule explicitly allows for. It
+    // is not derived state being patched in after a render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchAllData();
 
     const channel = supabase
@@ -527,6 +545,17 @@ export function ReportsPage() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
+
+      {dataError && (
+        <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 rounded-2xl p-4 text-xs">
+          <strong>Some report data could not be loaded.</strong> Any report compiled now would be
+          incomplete. {dataError}
+        </div>
+      )}
+
+      {dataLoading && !dataError && (
+        <div className="text-xs text-slate-400 animate-pulse px-1">Loading report data…</div>
+      )}
 
       {/* 1. Compile Report */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5 space-y-4">

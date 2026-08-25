@@ -7,45 +7,53 @@ export function useInventory() {
   const [inventory, setInventory] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const fetchInventory = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error: fetchErr } = await supabase
         .from('inventory')
         .select('*')
         .order('id', { ascending: true });
-      if (error) throw error;
+      if (fetchErr) throw fetchErr;
       setInventory(data || []);
+      setError(null);
     } catch (err) {
       console.error("Failed to fetch inventory:", err);
+      setError(err.message || "Failed to load inventory");
     } finally {
       setIsLoading(false);
     }
   };
 
+  // No localStorage mirror. It was read back whenever the query failed OR
+  // returned an empty array, so a genuinely empty table rendered stale cached
+  // history instead of nothing — and the cache was the whole transactions
+  // table, growing forever inside a ~5MB store. A failed load now says so.
   const fetchTransactions = useCallback(async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error: fetchErr } = await supabase
         .from('inventory_transactions')
         .select('*, inventory(*)')
         .order('created_at', { ascending: false });
 
-      if (!error && data) {
-        setTransactions(data);
-        localStorage.setItem('saga_inventory_transactions', JSON.stringify(data));
-      } else {
-        const saved = localStorage.getItem('saga_inventory_transactions');
-        setTransactions(saved ? JSON.parse(saved) : []);
-      }
+      if (fetchErr) throw fetchErr;
+      setTransactions(data || []);
+      setError(null);
     } catch (err) {
-      const saved = localStorage.getItem('saga_inventory_transactions');
-      setTransactions(saved ? JSON.parse(saved) : []);
+      console.error("Failed to fetch inventory transactions:", err);
+      setError(err.message || "Failed to load inventory history");
     }
   }, []);
 
   useEffect(() => {
     const refetchInventory = coalesceRefetch(fetchInventory);
     const refetchTransactions = coalesceRefetch(fetchTransactions);
+    // This effect's job is to subscribe to an external system (Supabase:
+    // an initial fetch plus a realtime channel) and push what it reports
+    // back into React state — the case the rule explicitly allows for. It
+    // is not derived state being patched in after a render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchInventory();
     fetchTransactions();
 
@@ -130,9 +138,7 @@ export function useInventory() {
         console.warn("Txn log insert fallback:", e);
       }
 
-      const updatedTxns = [{ ...txnRecord, id: Date.now(), inventory: item }, ...transactions];
-      setTransactions(updatedTxns);
-      localStorage.setItem('saga_inventory_transactions', JSON.stringify(updatedTxns));
+      setTransactions(prev => [{ ...txnRecord, id: Date.now(), inventory: item }, ...prev]);
     } else {
       fetchTransactions();
     }
@@ -199,9 +205,7 @@ export function useInventory() {
         console.warn("Txn log insert fallback:", e);
       }
 
-      const updatedTxns = [{ ...txnRecord, id: Date.now(), inventory: item }, ...transactions];
-      setTransactions(updatedTxns);
-      localStorage.setItem('saga_inventory_transactions', JSON.stringify(updatedTxns));
+      setTransactions(prev => [{ ...txnRecord, id: Date.now(), inventory: item }, ...prev]);
     } else {
       fetchTransactions();
     }
@@ -220,7 +224,14 @@ export function useInventory() {
     });
 
     if (rpcErr) {
-      // Fallback if RPC not created yet
+      // Same guard as addStock/removeStock: only fall back when the RPC is
+      // genuinely missing (42883 = undefined_function). Falling through on ANY
+      // error — an RLS denial, a constraint violation, a timeout — skipped the
+      // validation the RPC exists to enforce, exactly when it mattered most.
+      if (rpcErr.code !== '42883') {
+        throw new Error(rpcErr.message);
+      }
+
       const { error: updateErr } = await supabase
         .from('inventory')
         .update({
@@ -238,6 +249,7 @@ export function useInventory() {
     inventory,
     transactions,
     isLoading,
+    error,
     addStock,
     removeStock,
     updatePrice,

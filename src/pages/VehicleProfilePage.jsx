@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useVehicles } from '../hooks/useVehicles';
 import { useVehicleTrips } from '../hooks/useVehicleTrips';
@@ -341,6 +341,7 @@ export function VehicleProfilePage() {
 
       {/* Add Trip Modal */}
       <VehicleTripFormModal
+        key={addTripOpen ? `add-trip-${lastOdometer}` : 'add-trip-closed'}
         isOpen={addTripOpen}
         onClose={() => setAddTripOpen(false)}
         onSubmit={handleAddTrip}

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useVehicles } from '../hooks/useVehicles';
 import { useEmployees } from '../hooks/useEmployees';
 import { useTransportTrips } from '../hooks/useTransportTrips';
@@ -254,8 +254,8 @@ export function TransportPage() {
     toast.success("Trip started successfully");
   };
 
-  const handleEndTrip = async (id, data, startOdometer) => {
-    await endTrip(id, data, startOdometer);
+  const handleEndTrip = async (id, data, startOdometer, startDatetime) => {
+    await endTrip(id, data, startOdometer, startDatetime);
     toast.success("Trip ended successfully");
   };
 
@@ -536,6 +536,7 @@ export function TransportPage() {
 
       {/* New Trip Modal */}
       <TransportTripFormModal
+        key={newTripOpen ? 'new-trip-open' : 'new-trip-closed'}
         isOpen={newTripOpen}
         onClose={() => setNewTripOpen(false)}
         vehicles={vehicles}
@@ -547,6 +548,7 @@ export function TransportPage() {
 
       {/* End Trip Modal */}
       <EndTripModal
+        key={endTripTarget?.id ?? 'end-trip'}
         isOpen={!!endTripTarget}
         onClose={() => setEndTripTarget(null)}
         trip={endTripTarget}

@@ -1,11 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useInventory } from '../hooks/useInventory';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { Modal } from '../components/Modal';
-import { Input, Select } from '../components/FormFields';
+import { Input } from '../components/FormFields';
 import { Plus, Minus, Edit, AlertTriangle, Table2, LineChart as LineChartIcon } from 'lucide-react';
 import { toLocalDateStr, toLocalMonthStr, todayStr, thisMonthStr, thisYearStr } from '../utils/date';
 import {

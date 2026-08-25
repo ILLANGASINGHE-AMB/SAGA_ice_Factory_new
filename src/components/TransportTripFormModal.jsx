@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Modal } from './Modal';
 import { Button } from './Button';
 import { Input, Select, TextArea } from './FormFields';
@@ -16,17 +16,12 @@ const emptyValues = {
   description: ''
 };
 
+// The caller remounts this with a `key` when it opens, so the form starts
+// clean at mount instead of an effect resetting it a render later.
 export function TransportTripFormModal({ isOpen, onClose, vehicles, employees, trips, onSubmit, isAdmin = false }) {
-  const [values, setValues] = useState(emptyValues);
+  const [values, setValues] = useState(() => ({ ...emptyValues, start_datetime: toLocalDateTimeInput(new Date()) }));
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      setValues({ ...emptyValues, start_datetime: toLocalDateTimeInput(new Date()) });
-      setError('');
-    }
-  }, [isOpen]);
 
   // A vehicle already mid-trip can't be started again — offered in the list
   // but disabled, so the operator sees why rather than the option silently
@@ -54,23 +49,30 @@ export function TransportTripFormModal({ isOpen, onClose, vehicles, employees, t
     ...employees.map(e => ({ value: String(e.id), label: e.name }))
   ], [employees]);
 
-  // Suggest Start KM: last completed trip's end odometer for this vehicle, else the vehicle's initial odometer.
-  useEffect(() => {
-    if (!values.vehicle_id) return;
-    const vehicleId = Number(values.vehicle_id);
+  // Suggest Start KM: last completed trip's end odometer for this vehicle,
+  // else the vehicle's initial odometer. Computed when the operator picks the
+  // vehicle rather than in an effect watching the field — the effect version
+  // rendered once with the previous vehicle's reading before correcting it.
+  const suggestedStartOdometer = (vehicleIdValue) => {
+    const vehicleId = Number(vehicleIdValue);
     const vehicle = vehicles.find(v => Number(v.id) === vehicleId);
-    if (!vehicle) return;
+    if (!vehicle) return '';
 
     const lastCompleted = trips
       .filter(t => Number(t.vehicle_id) === vehicleId && t.status === 'completed' && t.end_odometer != null)
       .sort((a, b) => new Date(b.end_datetime) - new Date(a.end_datetime))[0];
 
     const suggested = lastCompleted ? lastCompleted.end_odometer : vehicle.initial_odometer;
-    setValues(prev => ({ ...prev, start_odometer: String(suggested ?? '') }));
-  }, [values.vehicle_id, vehicles, trips]);
+    return String(suggested ?? '');
+  };
 
   const handleChange = (field) => (e) => {
-    setValues(prev => ({ ...prev, [field]: e.target.value }));
+    const value = e.target.value;
+    setValues(prev => (
+      field === 'vehicle_id'
+        ? { ...prev, vehicle_id: value, start_odometer: suggestedStartOdometer(value) }
+        : { ...prev, [field]: value }
+    ));
   };
 
   const handleSubmit = async (e) => {

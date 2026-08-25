@@ -19,6 +19,11 @@ export function useNotes() {
 
   useEffect(() => {
     const refetchNotes = coalesceRefetch(fetchNotes);
+    // This effect's job is to subscribe to an external system (Supabase:
+    // an initial fetch plus a realtime channel) and push what it reports
+    // back into React state — the case the rule explicitly allows for. It
+    // is not derived state being patched in after a render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchNotes();
 
     const channel = supabase

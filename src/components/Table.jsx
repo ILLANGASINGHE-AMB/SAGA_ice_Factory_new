@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { ChevronUp, ChevronDown, Inbox, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Skeleton } from './Skeleton';
 

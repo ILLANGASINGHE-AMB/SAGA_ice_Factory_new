@@ -1,23 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Modal } from './Modal';
 import { Button } from './Button';
 import { Input, TextArea } from './FormFields';
 import { useAuth } from '../context/AuthContext';
 
+// The caller remounts this with a `key` when it opens, so the form starts
+// clean instead of an effect wiping it after the first render had already
+// painted the previous note's text.
 export function NoteFormModal({ isOpen, onClose, addNote, onSaved }) {
   const { user } = useAuth();
   const [noteText, setNoteText] = useState('');
-  const [now, setNow] = useState(new Date());
+  const [now] = useState(() => new Date());
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      setNoteText('');
-      setNow(new Date());
-      setError('');
-    }
-  }, [isOpen]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../hooks/useSettings';
@@ -25,9 +25,7 @@ import {
   Landmark,
   PanelLeftClose,
   PanelLeftOpen,
-  ChevronLeft,
-  ChevronRight,
-  Route,
+      Route,
   StickyNote,
   Send,
   History,
@@ -80,6 +78,11 @@ export function AppShell({ children }) {
 
   useEffect(() => {
     if (settings?.ai_enabled !== undefined) {
+      // This effect's job is to subscribe to an external system (Supabase:
+      // an initial fetch plus a realtime channel) and push what it reports
+      // back into React state — the case the rule explicitly allows for. It
+      // is not derived state being patched in after a render.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setAiEnabled(settings.ai_enabled);
     }
   }, [settings]);

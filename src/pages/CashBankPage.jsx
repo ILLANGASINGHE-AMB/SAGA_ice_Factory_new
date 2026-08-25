@@ -351,7 +351,7 @@ export function CashBankPage() {
               label="01. Cash Balance"
               icon={<Wallet className="w-4 h-4 sm:w-5 sm:h-5" />}
               value={cb.cashBalance}
-              subtitle="Cash in hand — cash orders, cash settlements & receives"
+              subtitle={`Cash in hand — cash orders, settlements & receives, less LKR ${Number(cb.cashExpensesTotal || 0).toLocaleString()} of expenses paid from cash`}
               tone="emerald"
             />
             {isAdmin && (
@@ -359,7 +359,7 @@ export function CashBankPage() {
               label="02. Bank Balance"
               icon={<Landmark className="w-4 h-4 sm:w-5 sm:h-5 text-navy-600 dark:text-sky-400" />}
               value={cb.bankBalance}
-              subtitle={`Deposits (incl. transfer settlements) less withdrawals · ${cb.bankDeposits.length} deposit${cb.bankDeposits.length !== 1 ? 's' : ''}`}
+              subtitle={`Deposits (incl. transfer settlements) less withdrawals and LKR ${Number(cb.bankExpensesTotal || 0).toLocaleString()} of bank-paid expenses · ${cb.bankDeposits.length} deposit${cb.bankDeposits.length !== 1 ? 's' : ''}`}
             />
             )}
             <StatCard

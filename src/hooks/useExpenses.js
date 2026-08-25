@@ -41,6 +41,11 @@ export function useExpenses() {
 
   useEffect(() => {
     const refetchAll = coalesceRefetch(fetchAll);
+    // This effect's job is to subscribe to an external system (Supabase:
+    // an initial fetch plus a realtime channel) and push what it reports
+    // back into React state — the case the rule explicitly allows for. It
+    // is not derived state being patched in after a render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchAll();
 
     const channel = supabase
@@ -185,10 +190,18 @@ export function useExpenses() {
     if (e1 || e2) throw new Error("Failed to reorder expenses");
   };
 
-  // Saves one Cash Book row: upserts the Date/Description row, then upserts
-  // every changed cell amount for it. `amounts` is { [expense_item_id]: value }.
-  const saveLedgerRow = async ({ id, entry_date, description, amounts: rowAmounts, created_by = 'Admin' }) => {
+  // Saves one Cash Book row: the Date/Description/payment-source row, then
+  // every cell amount for it. `amounts` is { [expense_item_id]: value }.
+  //
+  // The cells go in as ONE array upsert rather than a sequential loop. The
+  // loop threw on the first cell failure, after the ledger row had already
+  // been inserted — leaving a half-saved row whose id the caller never saw, so
+  // the retry took the "new row" branch again and inserted a SECOND ledger
+  // row, each carrying whichever cells happened to land. Every retry added
+  // another duplicate, and the grand total counted them all.
+  const saveLedgerRow = async ({ id, entry_date, description, payment_source = 'cash', amounts: rowAmounts, created_by = 'Admin' }) => {
     if (!entry_date) throw new Error("Date is required");
+    if (!['cash', 'bank'].includes(payment_source)) throw new Error("Paid From must be Cash or Bank");
 
     let rowId = id;
     const isNew = !id || String(id).startsWith('temp-');
@@ -196,7 +209,7 @@ export function useExpenses() {
     if (isNew) {
       const { data: inserted, error: insertErr } = await supabase
         .from('expense_ledger_rows')
-        .insert([{ entry_date, description: description || '', created_by }])
+        .insert([{ entry_date, description: description || '', payment_source, created_by }])
         .select('*')
         .single();
       if (insertErr) throw new Error(insertErr.message || "Failed to save row");
@@ -204,20 +217,31 @@ export function useExpenses() {
     } else {
       const { error: updateErr } = await supabase
         .from('expense_ledger_rows')
-        .update({ entry_date, description: description || '' })
+        .update({ entry_date, description: description || '', payment_source })
         .eq('id', id);
       if (updateErr) throw new Error(updateErr.message || "Failed to save row");
     }
 
-    for (const [expenseItemId, rawAmount] of Object.entries(rowAmounts || {})) {
+    const cells = Object.entries(rowAmounts || {}).map(([expenseItemId, rawAmount]) => {
       const amount = parseFloat(rawAmount);
+      return {
+        ledger_row_id: rowId,
+        expense_item_id: Number(expenseItemId),
+        amount: isNaN(amount) ? 0 : amount
+      };
+    });
+
+    if (cells.length > 0) {
       const { error: amtErr } = await supabase
         .from('expense_amounts')
-        .upsert(
-          { ledger_row_id: rowId, expense_item_id: Number(expenseItemId), amount: isNaN(amount) ? 0 : amount },
-          { onConflict: 'ledger_row_id,expense_item_id' }
-        );
-      if (amtErr) throw new Error(amtErr.message || "Failed to save amount");
+        .upsert(cells, { onConflict: 'ledger_row_id,expense_item_id' });
+      // The row id is returned even on a cell failure so the caller can adopt
+      // it and a retry updates that row instead of creating another.
+      if (amtErr) {
+        const err = new Error(amtErr.message || "Failed to save amount");
+        err.rowId = rowId;
+        throw err;
+      }
     }
 
     logActivity({ action: isNew ? 'create' : 'update', entityType: 'expense_ledger_row', entityId: rowId, description: `${isNew ? 'Added' : 'Updated'} expense ledger row for ${entry_date}`, performedBy: created_by });

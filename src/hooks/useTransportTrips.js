@@ -6,6 +6,7 @@ import { logActivity, currentActor } from '../lib/activityLog';
 export function useTransportTrips() {
   const [trips, setTrips] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const fetchTrips = async () => {
     try {
@@ -15,8 +16,10 @@ export function useTransportTrips() {
         .order('start_datetime', { ascending: false });
       if (error) throw error;
       setTrips(data || []);
+      setError(null);
     } catch (err) {
       console.error("Failed to fetch trips:", err);
+      setError(err.message || "Failed to load transport trips");
     } finally {
       setIsLoading(false);
     }
@@ -24,6 +27,11 @@ export function useTransportTrips() {
 
   useEffect(() => {
     const refetchTrips = coalesceRefetch(fetchTrips);
+    // This effect's job is to subscribe to an external system (Supabase:
+    // an initial fetch plus a realtime channel) and push what it reports
+    // back into React state — the case the rule explicitly allows for. It
+    // is not derived state being patched in after a render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchTrips();
 
     const channel = supabase
@@ -93,7 +101,7 @@ export function useTransportTrips() {
     return data;
   };
 
-  const endTrip = async (id, { end_odometer, end_datetime, description = '' }, startOdometer) => {
+  const endTrip = async (id, { end_odometer, end_datetime, description = '' }, startOdometer, startDatetime) => {
     const end = Number(end_odometer);
 
     if (!end_datetime) throw new Error("End Date and Time is required");
@@ -103,8 +111,17 @@ export function useTransportTrips() {
     if (startOdometer !== undefined && end <= Number(startOdometer)) {
       throw new Error("Final KM must be greater than the Start KM");
     }
+    // The odometer was already checked; the timestamp never was, so a mistyped
+    // date produced a trip with negative duration. A CHECK constraint enforces
+    // the same rule in the database.
+    if (startDatetime && new Date(end_datetime) <= new Date(startDatetime)) {
+      throw new Error("End Date and Time must be after the Start Date and Time");
+    }
 
-    const { error } = await supabase
+    // `.eq('status','ongoing')` plus a row count is what actually stops two
+    // operators ending the same trip: without it both "succeeded" and the
+    // second silently overwrote the first's odometer reading and end time.
+    const { data, error } = await supabase
       .from('transport_trips')
       .update({
         end_odometer: end,
@@ -112,9 +129,14 @@ export function useTransportTrips() {
         end_description: description.trim(),
         status: 'completed'
       })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('status', 'ongoing')
+      .select('id');
 
     if (error) throw new Error(error.message);
+    if (!data || data.length !== 1) {
+      throw new Error("This trip is no longer in progress — it may have already been ended by someone else.");
+    }
     logActivity({ action: 'update', entityType: 'transport_trip', entityId: id, description: `Completed a transport trip` });
   };
 
@@ -132,6 +154,7 @@ export function useTransportTrips() {
   return {
     trips,
     isLoading,
+    error,
     startTrip,
     endTrip,
     deleteTrip

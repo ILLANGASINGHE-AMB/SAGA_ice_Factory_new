@@ -1,4 +1,9 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+/* eslint-disable react-refresh/only-export-components --
+   Colocating a context provider with its consumer hook is the idiomatic
+   shape for this pattern, and splitting them would only buy finer Fast
+   Refresh granularity in dev. Disabled deliberately so `npx eslint .`
+   can be a passing gate in CI rather than a wall of known noise. */
+import { createContext, useContext, useState, useCallback } from 'react';
 import { X, CheckCircle, AlertCircle, Info } from 'lucide-react';
 
 const ToastContext = createContext(null);

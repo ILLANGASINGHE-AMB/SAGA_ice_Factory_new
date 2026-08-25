@@ -12,7 +12,7 @@ export async function fetchFullSystemContext() {
       { data: sales },
       { data: debts },
       { data: settlements },
-      { data: operatingExpenses },
+      { data: expenseAmounts },
       { data: settingsData }
     ] = await Promise.all([
       supabase.from('inventory').select('*').order('id', { ascending: true }),
@@ -20,7 +20,16 @@ export async function fetchFullSystemContext() {
       supabase.from('sales').select('*').order('sale_date', { ascending: false }).limit(50),
       supabase.from('debts').select('*').order('created_at', { ascending: false }),
       supabase.from('debt_settlements').select('*').order('settlement_date', { ascending: false }).limit(50),
-      supabase.from('operating_expenses').select('*').order('expense_date', { ascending: false }).limit(50),
+      // operating_expenses was dropped by the August expenses redesign
+      // (20260821140000). The error was swallowed by the destructuring above,
+      // so "Operating Ledger Expenses" was always LKR 0 and SAGA AI reported
+      // with full confidence that the factory has no expenses.
+      supabase
+        .from('expense_amounts')
+        .select('amount, expense_item:expense_items(name, expense_code, category:expense_categories(name)), ledger_row:expense_ledger_rows(entry_date, description, payment_source)')
+        .gt('amount', 0)
+        .order('id', { ascending: false })
+        .limit(200),
       supabase.from('settings').select('*').limit(1)
     ]);
 
@@ -32,8 +41,16 @@ export async function fetchFullSystemContext() {
     const totalOutstandingDebt = debtsList.reduce((acc, d) => acc + (Number(d.remaining_amount) || 0), 0);
     const totalCollectedDebt = debtsList.reduce((acc, d) => acc + (Number(d.paid_amount) || 0), 0);
     
-    const expensesList = operatingExpenses || [];
-    const totalExpenses = expensesList.reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
+    const expensesList = (expenseAmounts || []).map(a => ({
+      expense_code: a.expense_item?.expense_code || null,
+      expense_name: a.expense_item?.name || null,
+      category: a.expense_item?.category?.name || 'Uncategorized',
+      entry_date: a.ledger_row?.entry_date || null,
+      description: a.ledger_row?.description || '',
+      paid_from: a.ledger_row?.payment_source || 'cash',
+      amount: Number(a.amount) || 0
+    }));
+    const totalExpenses = expensesList.reduce((acc, e) => acc + e.amount, 0);
 
     const settingsObj = (settingsData && settingsData.length > 0) ? settingsData[0] : {};
 
@@ -131,15 +148,6 @@ export async function getAvailableGeminiModel(cleanKey) {
   }
   return null;
 }
-
-const FALLBACK_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
-  'gemini-3.6-flash',
-  'gemini-3-flash',
-  'gemini-1.5-flash',
-  'gemini-2.0-flash-lite'
-];
 
 /**
  * Test Gemini API Key validity securely via Supabase Edge Function proxy

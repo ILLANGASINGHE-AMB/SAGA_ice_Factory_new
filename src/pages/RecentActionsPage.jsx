@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useActivityLog } from '../hooks/useActivityLog';
 import { Table } from '../components/Table';
 

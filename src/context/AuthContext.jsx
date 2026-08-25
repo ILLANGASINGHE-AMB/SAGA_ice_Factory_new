@@ -1,4 +1,9 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+/* eslint-disable react-refresh/only-export-components --
+   Colocating a context provider with its consumer hook is the idiomatic
+   shape for this pattern, and splitting them would only buy finer Fast
+   Refresh granularity in dev. Disabled deliberately so `npx eslint .`
+   can be a passing gate in CI rather than a wall of known noise. */
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
@@ -31,7 +36,11 @@ export function AuthProvider({ children }) {
     setUser(u);
   };
 
-  const fetchUserProfile = async (authUser) => {
+  // useCallback so the auth subscription effect below can list it as a
+  // dependency honestly instead of silencing the lint rule: without it the
+  // function is a new identity every render and the effect would resubscribe
+  // to Supabase auth on each one.
+  const fetchUserProfile = useCallback(async (authUser) => {
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -58,7 +67,7 @@ export function AuthProvider({ children }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   // Clear session on app mount / browser refresh
   useEffect(() => {
@@ -79,7 +88,7 @@ export function AuthProvider({ children }) {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [fetchUserProfile]);
 
   const login = async (email, password) => {
     let formattedEmail = email.toLowerCase().trim();

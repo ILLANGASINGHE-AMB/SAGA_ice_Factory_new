@@ -7,18 +7,25 @@ import { logActivity, currentActor } from '../lib/activityLog';
 export function useSales() {
   const [sales, setSales] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  // A failed fetch used to leave the previous (or empty) array in place, so
+  // the page rendered a plausible-looking but silently incomplete list. The
+  // error is surfaced instead so "no sales" and "could not load" are
+  // distinguishable.
+  const [error, setError] = useState(null);
 
   const fetchSales = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error: fetchErr } = await supabase
         .from('sales')
         .select('*, customer:customers(*), sale_items(*)')
         .order('sale_date', { ascending: false });
 
-      if (error) throw error;
+      if (fetchErr) throw fetchErr;
       setSales(data || []);
+      setError(null);
     } catch (err) {
       console.error("Failed to fetch sales:", err);
+      setError(err.message || "Failed to load sales");
     } finally {
       setIsLoading(false);
     }
@@ -26,6 +33,11 @@ export function useSales() {
 
   useEffect(() => {
     const refetchSales = coalesceRefetch(fetchSales);
+    // This effect's job is to subscribe to an external system (Supabase:
+    // an initial fetch plus a realtime channel) and push what it reports
+    // back into React state — the case the rule explicitly allows for. It
+    // is not derived state being patched in after a render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchSales();
 
     const channelSales = supabase
@@ -114,7 +126,7 @@ export function useSales() {
       .from('settings')
       .select('*')
       .limit(1)
-      .single();
+      .maybeSingle();
 
     let bill_pdf_url = null;
 
@@ -162,30 +174,39 @@ export function useSales() {
     };
   };
 
+  // Edit Bill. The operator corrects the same two numbers they entered at the
+  // till — billed quantity and free quantity — plus the rate and the payment
+  // terms; the server re-allocates across Production/Resell exactly as a new
+  // order does. There is deliberately no cube-type parameter any more: a
+  // pooled order that spanned both pools has sales.cube_type = NULL, and the
+  // old signature rejected those outright ("Invalid cube type selected"),
+  // making every large order permanently uneditable.
   const updateSale = async ({
     id,
-    cube_type,
     quantity,
+    free_quantity = 0,
     price_per_cube,
     payment_type,
     edited_by
   }) => {
     if (!id) throw new Error("Sale id is required");
-    if (!cube_type || (cube_type !== 'manufactured' && cube_type !== 'resell')) {
-      throw new Error("Invalid cube type selected");
-    }
-    if (!quantity || quantity <= 0 || !Number.isInteger(Number(quantity))) {
-      throw new Error("Quantity must be a positive integer");
-    }
+
+    const paid = Number(quantity) || 0;
+    const free = Number(free_quantity) || 0;
+
+    if (!Number.isInteger(paid) || paid < 0) throw new Error("Cube quantity must be a whole number");
+    if (!Number.isInteger(free) || free < 0) throw new Error("Free cube quantity must be a whole number");
+    if (paid + free === 0) throw new Error("Enter a cube quantity or a free cube quantity");
+    if (paid > 0 && !(Number(price_per_cube) > 0)) throw new Error("Price per cube must be a valid positive number");
     if (!payment_type || (payment_type !== 'cash' && payment_type !== 'debt')) {
       throw new Error("Invalid payment type selected");
     }
 
     const { data, error } = await supabase.rpc('edit_sale_transaction', {
       p_sale_id: id,
-      p_cube_type: cube_type,
-      p_quantity: quantity,
-      p_price_per_cube: price_per_cube || null,
+      p_quantity: paid,
+      p_price_per_cube: Number(price_per_cube) || null,
+      p_free_quantity: free,
       p_payment_type: payment_type,
       p_edited_by: edited_by
     });
@@ -194,18 +215,20 @@ export function useSales() {
 
     // Regenerate & re-upload the bill PDF so /bill/:code and WhatsApp links
     // reflect the corrected figures instead of the stale pre-edit invoice.
+    // sale_items is selected too — the PDF renders the line items, and the
+    // edit has just rewritten them.
     try {
       const { data: fullSale } = await supabase
         .from('sales')
-        .select('*, customer:customers(*)')
+        .select('*, customer:customers(*), sale_items(*)')
         .eq('id', id)
-        .single();
+        .maybeSingle();
 
       const { data: settings } = await supabase
         .from('settings')
         .select('*')
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (fullSale) {
         const pdfBlob = generateBillPDFBlob(fullSale, settings || {});
@@ -234,65 +257,41 @@ export function useSales() {
     return data;
   };
 
+  // What deleting this sale will undo, so the operator can be shown which of
+  // the customer's other debts are about to become unpaid again before they
+  // confirm. Read-only.
+  const saleDeletionImpact = async (saleId) => {
+    const { data, error } = await supabase.rpc('sale_deletion_impact', { p_sale_id: saleId });
+    if (error) throw new Error(error.message || "Could not read the sale's deletion impact");
+    return data || { auto_applied_settlements: [], auto_applied_total: 0 };
+  };
+
+  // One RPC, one transaction. The previous version restored stock with an
+  // unlocked read-then-write (two concurrent deletes lost one another's
+  // update), logged no inventory_transactions row, ran the restore BEFORE the
+  // delete, and — worst — left the auto-applied debt reductions this sale had
+  // funded standing: the revenue vanished while the write-off it paid for
+  // stayed, quietly understating receivables with no trace.
   const deleteSale = async (saleId, restoreStock = true) => {
-    // 1. Fetch the sale's line items to know what to restore if requested.
-    //    Restoring per-item (rather than the legacy sale.cube_type/quantity,
-    //    which are null for a mixed-item sale) correctly handles both
-    //    single- and multi-item sales.
-    const { data: items, error: getErr } = await supabase
-      .from('sale_items')
-      .select('cube_type, quantity')
-      .eq('sale_id', saleId);
-
-    if (getErr) throw new Error("Sale record not found");
-
-    if (restoreStock && items && items.length > 0) {
-      // Sum quantities per cube type first, so two rows of the same type
-      // only need one inventory update.
-      const restoreByType = items.reduce((acc, item) => {
-        acc[item.cube_type] = (acc[item.cube_type] || 0) + item.quantity;
-        return acc;
-      }, {});
-
-      for (const [cubeType, qty] of Object.entries(restoreByType)) {
-        const { data: inventoryItem } = await supabase
-          .from('inventory')
-          .select('*')
-          .eq('type', cubeType)
-          .single();
-
-        if (inventoryItem) {
-          const { error: updateInvErr } = await supabase
-            .from('inventory')
-            .update({
-              quantity: inventoryItem.quantity + qty,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', inventoryItem.id);
-
-          if (updateInvErr) throw new Error(updateInvErr.message);
-        }
-      }
-    }
-
-    // 2. Delete sale (sale_items and debts cascade via FK, both captured in
-    //    the trash snapshot so a restore brings them back too)
     const { performedBy, performedByRole } = currentActor();
-    const { error: deleteErr } = await supabase.rpc('soft_delete_row', {
-      p_table: 'sales',
-      p_id: saleId,
+    const { data, error } = await supabase.rpc('delete_sale_transaction', {
+      p_sale_id: saleId,
+      p_restore_stock: restoreStock,
       p_deleted_by: performedBy,
       p_deleted_by_role: performedByRole
     });
 
-    if (deleteErr) throw new Error(deleteErr.message);
+    if (error) throw new Error(error.message || "Failed to delete sale");
+    return data;
   };
 
   return {
     sales,
     isLoading,
+    error,
     placeOrder,
     updateSale,
+    saleDeletionImpact,
     deleteSale
   };
 }

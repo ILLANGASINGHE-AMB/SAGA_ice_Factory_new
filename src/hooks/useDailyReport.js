@@ -41,6 +41,11 @@ export function useDailyReport(selectedDateStr) {
   const [bankDeposits, setBankDeposits] = useState([]);
   const [chequeRecords, setChequeRecords] = useState([]);
   const [bankWithdrawals, setBankWithdrawals] = useState([]);
+  const [openingBalances, setOpeningBalances] = useState([]);
+  // A report built from partial data is worse than no report — a manager signs
+  // this document. Any source that fails to load is recorded here and the view
+  // refuses to render rather than quietly omitting whatever didn't arrive.
+  const [loadError, setLoadError] = useState(null);
 
   // Manual Input State — only Free Issue and Damaged Cubes are
   // manager-editable in Section 01; Section 06 (Cash/Bank/Cheques) is fully
@@ -62,8 +67,26 @@ export function useDailyReport(selectedDateStr) {
   const fromTime = '08:00';
   const toTime = '08:00';
 
-  // Fetch all relevant data for the range with bulletproof per-table error catching
+  // Fetch every source the report needs. Each query reports its own failure
+  // instead of collapsing to [] — nineteen independent `.catch(() => [])`
+  // calls meant any subset could fail and the report still rendered, complete
+  // and plausible, silently missing whatever hadn't loaded.
   const fetchData = useCallback(async () => {
+    const failures = [];
+    const q = (label, builder, fallback = []) =>
+      builder
+        .then(res => {
+          if (res.error) {
+            failures.push(`${label}: ${res.error.message}`);
+            return fallback;
+          }
+          return res.data ?? fallback;
+        })
+        .catch(err => {
+          failures.push(`${label}: ${err?.message || err}`);
+          return fallback;
+        });
+
     try {
       setLoading(true);
       const [
@@ -85,27 +108,32 @@ export function useDailyReport(selectedDateStr) {
         bankDepositsRes,
         chequeRecordsRes,
         bankWithdrawalsRes,
+        openingBalancesRes,
         savedReportRes
       ] = await Promise.all([
-        supabase.from('sales').select('*, customer:customers(*)').then(res => res.data || []).catch(() => []),
-        supabase.from('debts').select('*, customer:customers(*), sale:sales(*)').then(res => res.data || []).catch(() => []),
-        supabase.from('debt_settlements').select('*, customer:customers(*)').then(res => res.data || []).catch(() => []),
-        supabase.from('customers').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('inventory').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('inventory_transactions').select('*, inventory(*)').then(res => res.data || []).catch(() => []),
-        supabase.from('employees').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('employee_attendance').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('transport_trips').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('notes').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('expense_categories').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('expense_items').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('expense_ledger_rows').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('expense_amounts').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('cash_receives').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('bank_deposits').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('cheque_records').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('bank_withdrawals').select('*').then(res => res.data || []).catch(() => []),
-        supabase.from('daily_manager_reports').select('*').eq('report_date', targetToStr).maybeSingle().then(res => res.data || null).catch(() => null)
+        q('Sales', supabase.from('sales').select('*, customer:customers(*)')),
+        q('Debts', supabase.from('debts').select('*, customer:customers(*), sale:sales(*)')),
+        q('Debt settlements', supabase.from('debt_settlements').select('*, customer:customers(*)')),
+        q('Customers', supabase.from('customers').select('*')),
+        q('Inventory', supabase.from('inventory').select('*')),
+        q('Inventory transactions', supabase.from('inventory_transactions').select('*, inventory(*)')),
+        q('Employees', supabase.from('employees').select('*')),
+        q('Attendance', supabase.from('employee_attendance').select('*')),
+        q('Transport trips', supabase.from('transport_trips').select('*')),
+        q('Notes', supabase.from('notes').select('*')),
+        q('Expense categories', supabase.from('expense_categories').select('*')),
+        q('Expense items', supabase.from('expense_items').select('*')),
+        q('Expense ledger', supabase.from('expense_ledger_rows').select('*')),
+        q('Expense amounts', supabase.from('expense_amounts').select('*')),
+        q('Cash receives', supabase.from('cash_receives').select('*')),
+        q('Bank deposits', supabase.from('bank_deposits').select('*')),
+        q('Cheque records', supabase.from('cheque_records').select('*')),
+        q('Bank withdrawals', supabase.from('bank_withdrawals').select('*')),
+        // FIN-06: without these the report's Cash / Bank / Hand Cheques
+        // balances were each understated by exactly the opening amount, and
+        // disagreed with the Cash & Bank page reading the same shared math.
+        q('Opening balances', supabase.from('opening_balances').select('*')),
+        q('Saved report', supabase.from('daily_manager_reports').select('*').eq('report_date', targetToStr).maybeSingle(), null)
       ]);
 
       setSales(salesRes);
@@ -113,6 +141,7 @@ export function useDailyReport(selectedDateStr) {
       setSettlements(settlementsRes);
       setCustomers(customersRes);
       setInventory(inventoryRes);
+      setInvTransactions(invTxnRes);
       setEmployees(employeesRes);
       setAttendance(attendanceRes);
       setTransportTrips(transportTripsRes);
@@ -125,46 +154,21 @@ export function useDailyReport(selectedDateStr) {
       setBankDeposits(bankDepositsRes);
       setChequeRecords(chequeRecordsRes);
       setBankWithdrawals(bankWithdrawalsRes);
+      setOpeningBalances(openingBalancesRes);
 
-      // Fallback to local storage if Supabase transactions empty or error
-      if (!invTxnRes || invTxnRes.length === 0) {
-        const savedTxns = localStorage.getItem('saga_inventory_transactions');
-        setInvTransactions(savedTxns ? JSON.parse(savedTxns) : []);
-      } else {
-        setInvTransactions(invTxnRes);
-      }
-
-      const localKey = `saga_daily_report_${targetToStr}`;
-      const localData = localStorage.getItem(localKey);
-      let localParsed = {};
-      if (localData) {
-        try { localParsed = JSON.parse(localData); } catch (e) {}
-      }
+      setLoadError(failures.length ? failures.join('; ') : null);
 
       setSavedRecord(savedReportRes || null);
-      if (savedReportRes) {
-        setManualInputs({
-          freeIssue: savedReportRes.free_issue ?? localParsed.freeIssue ?? 0,
-          damagedCubes: savedReportRes.damaged_cubes ?? localParsed.damagedCubes ?? 0,
-          otherReceipts: savedReportRes.other_receipts ?? localParsed.otherReceipts ?? 0,
-          otherDetails: savedReportRes.other_details || localParsed.otherDetails || '',
-          verifiedBy: savedReportRes.verified_by || localParsed.verifiedBy || ''
-        });
-      } else if (Object.keys(localParsed).length > 0) {
-        setManualInputs(localParsed);
-      } else {
-        setManualInputs({
-          freeIssue: 0,
-          damagedCubes: 0,
-          otherReceipts: 0,
-          otherDetails: '',
-          verifiedBy: ''
-        });
-      }
+      setManualInputs({
+        freeIssue: savedReportRes?.free_issue ?? 0,
+        damagedCubes: savedReportRes?.damaged_cubes ?? 0,
+        otherReceipts: savedReportRes?.other_receipts ?? 0,
+        otherDetails: savedReportRes?.other_details || '',
+        verifiedBy: savedReportRes?.verified_by || ''
+      });
     } catch (err) {
       console.error("Failed to fetch daily report data:", err);
-      const savedTxns = localStorage.getItem('saga_inventory_transactions');
-      setInvTransactions(savedTxns ? JSON.parse(savedTxns) : []);
+      setLoadError(err?.message || "Failed to load the daily report");
     } finally {
       setLoading(false);
     }
@@ -172,6 +176,11 @@ export function useDailyReport(selectedDateStr) {
 
   useEffect(() => {
     const refetchData = coalesceRefetch(fetchData);
+    // This effect's job is to subscribe to an external system (Supabase:
+    // an initial fetch plus a realtime channel) and push what it reports
+    // back into React state — the case the rule explicitly allows for. It
+    // is not derived state being patched in after a render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData();
 
     const channel = supabase
@@ -193,6 +202,7 @@ export function useDailyReport(selectedDateStr) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cheque_records' }, refetchData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bank_withdrawals' }, refetchData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_manager_reports' }, refetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'opening_balances' }, refetchData)
       .subscribe();
 
     return () => {
@@ -306,24 +316,45 @@ export function useDailyReport(selectedDateStr) {
     // derived from that ledger instead of being entered by hand.
     const freeIssue = freeIssueQty;
 
-    // `inventory.quantity` is a LIVE figure — it already reflects the
-    // range's production, purchases, and sales the moment they happen (via
-    // the atomic RPCs). So the true opening ("previous") balance is today's
-    // live total with the range's movements backed OUT, not the live total
-    // itself. Re-adding those same movements on top of the live total (the
-    // old behavior) double-counted every day there was any activity — see
-    // Audit_Issues_And_Fixes.md #4.1.
+    // Opening and closing stock are derived from the TRANSACTION LEDGER, not
+    // from live `inventory.quantity`. The old formula wound the live total
+    // backwards by the movements inside the window only — movements AFTER the
+    // window were never backed out, so opening was wrong by everything that
+    // happened since, and closing algebraically collapsed straight back to
+    // today's live total (substitute the terms and they cancel). A signed-off
+    // report for a past day therefore quoted a closing figure that changed
+    // every time it was reopened.
     //
-    // Brine (BNC) and Damaged (DGC) are deliberately excluded from this total
-    // — both are view-only figures in every report and must never feed stock
-    // math. Free cubes DO belong here: they physically left Production/Resell
-    // stock, so they are added back when winding the live total backwards to
-    // the opening balance, exactly like sold cubes are.
-    const currentTotalStock = (Number(mfcItem?.quantity) || 0) + (Number(rscItem?.quantity) || 0);
-    const previousDayBalance = currentTotalStock - todaysProduction - todaysPurchase + todaysSalesQty + freeIssue;
+    // inventory_transactions stores new_quantity per row, so:
+    //   opening = new_quantity of the last transaction before the window
+    //   closing = opening + the window's own movements
+    // Brine (BNC) and Damaged (DGC) stay excluded — both are view-only counts
+    // that must never feed stock math.
+    const stockPoolIds = [mfcItem?.id, rscItem?.id]
+      .filter(id => id !== undefined && id !== null)
+      .map(Number);
 
-    // closingBalance therefore winds forward to exactly the live total again.
-    const closingBalance = previousDayBalance + todaysProduction + todaysPurchase - freeIssue - todaysSalesQty;
+    const openingForPool = (invId) => {
+      let latest = null;
+      invTransactions.forEach(txn => {
+        if (Number(txn.inventory_id) !== Number(invId)) return;
+        const t = new Date(txn.created_at);
+        if (isNaN(t.getTime()) || t >= fromDateTime) return;
+        if (!latest || t > latest.time || (t.getTime() === latest.time.getTime() && Number(txn.id) > Number(latest.id))) {
+          latest = { time: t, id: txn.id, qty: Number(txn.new_quantity) || 0 };
+        }
+      });
+      return latest ? latest.qty : 0;
+    };
+
+    const movementForPool = (invId) => invTransactions.reduce((sum, txn) => {
+      if (Number(txn.inventory_id) !== Number(invId)) return sum;
+      if (!isInRange(txn.created_at)) return sum;
+      return sum + (Number(txn.quantity_change) || 0);
+    }, 0);
+
+    const previousDayBalance = stockPoolIds.reduce((sum, id) => sum + openingForPool(id), 0);
+    const closingBalance = previousDayBalance + stockPoolIds.reduce((sum, id) => sum + movementForPool(id), 0);
 
     // 2. Income Details
     const cashSalesRecords = todaysSalesRecords.filter(s => s.payment_type === 'cash');
@@ -442,13 +473,38 @@ export function useDailyReport(selectedDateStr) {
     // (see cashBankMath.js) so the two pages can never show conflicting
     // figures or double-count. Cash Balance, Bank Balance, and Hand Cheques
     // are three separate stores of value — never summed into one "Total".
-    const { cashBalance, bankBalance, handChequesTotal } = computeCashBankBalances({
+    // Expense cells belonging to ledger rows dated up to the range end, tagged
+    // with where the money came from. Cash Balance never subtracted expenses
+    // at all before this: every rupee spent out of the till still showed as
+    // sitting in it, drifting by the whole operating expense total each month.
+    const expenseRowsUpToRangeEnd = expenseAmounts
+      .filter(a => {
+        const row = expenseLedgerRows.find(r => Number(r.id) === Number(a.ledger_row_id));
+        return row?.entry_date && row.entry_date <= targetToStr;
+      })
+      .map(a => {
+        const row = expenseLedgerRows.find(r => Number(r.id) === Number(a.ledger_row_id));
+        return { amount: a.amount, payment_source: row?.payment_source || 'cash' };
+      });
+
+    const {
+      cashBalance,
+      bankBalance,
+      handChequesTotal,
+      cashExpensesTotal,
+      bankExpensesTotal
+    } = computeCashBankBalances({
       cashSalesRows: sales.filter(s => s.payment_type === 'cash' && isUpToRangeEnd(s.sale_date)),
       settlementRows: settlements.filter(s => isUpToRangeEnd(s.settlement_date)),
       cashReceives: cashReceives.filter(r => isUpToRangeEnd(r.received_at)),
       bankDeposits: bankDeposits.filter(d => isUpToRangeEnd(d.deposited_at)),
       chequeRecords: chequeRecords.filter(c => isUpToRangeEnd(c.received_at)),
-      bankWithdrawals: bankWithdrawals.filter(w => isUpToRangeEnd(w.withdrawn_at))
+      bankWithdrawals: bankWithdrawals.filter(w => isUpToRangeEnd(w.withdrawn_at)),
+      expenseRows: expenseRowsUpToRangeEnd,
+      // Same argument the Cash & Bank page passes. Omitting it here (it
+      // defaulted to []) understated all three balances by exactly the opening
+      // amounts — two screens, one shared function, two different answers.
+      openingBalances
     });
 
     // "Amount Deposited" is a period metric (activity during the selected
@@ -537,11 +593,17 @@ export function useDailyReport(selectedDateStr) {
       totalCreditCollectedAmount,
       expenseList,
       totalExpensesAmount,
+      // Income and expenses used to sit side by side as two independent
+      // figures that were never netted against each other anywhere in the
+      // system. This is the missing bottom line.
+      netPosition: totalIncome - totalExpensesAmount,
       cashDetails: {
         amountDeposited,
         cashBalance,
         bankBalance,
-        handChequesTotal
+        handChequesTotal,
+        cashExpensesTotal,
+        bankExpensesTotal
       },
       employeeAttendanceList,
       vehicleTripList,
@@ -550,19 +612,18 @@ export function useDailyReport(selectedDateStr) {
       otherDetails: manualInputs.otherDetails || '',
       verifiedBy: manualInputs.verifiedBy || ''
     };
-  }, [targetFromStr, targetToStr, fromTime, toTime, sales, debts, settlements, customers, inventory, invTransactions, employees, attendance, transportTrips, notes, expenseCategories, expenseItems, expenseLedgerRows, expenseAmounts, cashReceives, bankDeposits, chequeRecords, bankWithdrawals, manualInputs]);
+  }, [targetFromStr, targetToStr, fromTime, toTime, sales, debts, settlements, customers, inventory, invTransactions, employees, attendance, transportTrips, notes, expenseCategories, expenseItems, expenseLedgerRows, expenseAmounts, cashReceives, bankDeposits, chequeRecords, bankWithdrawals, openingBalances, manualInputs]);
 
-  // Save manual updates with safe column handling
+  // Save manual updates. A failed upsert is a failed save: it is no longer
+  // console.warn'd, written to the activity log as if it succeeded, and
+  // reported to the operator as success. The localStorage mirror is gone too
+  // — it let two browsers show two different "saved" reports for the same
+  // date, neither matching the database.
   const saveDailyReport = async (updatedInputs) => {
     const payload = {
       ...manualInputs,
       ...updatedInputs
     };
-
-    setManualInputs(payload);
-
-    // Save to LocalStorage immediately
-    localStorage.setItem(`saga_daily_report_${targetToStr}`, JSON.stringify(payload));
 
     const dbPayload = {
       report_date: targetToStr,
@@ -574,26 +635,26 @@ export function useDailyReport(selectedDateStr) {
       verified_at: new Date().toISOString()
     };
 
-    try {
-      const { data, error } = await supabase
-        .from('daily_manager_reports')
-        .upsert(dbPayload, { onConflict: 'report_date' })
-        .select('*')
-        .single();
+    const { data, error } = await supabase
+      .from('daily_manager_reports')
+      .upsert(dbPayload, { onConflict: 'report_date' })
+      .select('*')
+      .maybeSingle();
 
-      if (error) {
-        console.warn("Supabase upsert daily report error:", error.message);
-      } else if (data) {
-        setSavedRecord(data);
-      }
-      logActivity({ action: 'update', entityType: 'daily_manager_report', entityId: targetToStr, description: `Saved daily manager report for ${targetToStr}`, performedBy: payload.verifiedBy });
-    } catch (err) {
-      console.warn("Supabase upsert daily report error, stored locally:", err);
-    }
+    if (error) throw new Error(error.message || "Failed to save the daily manager report");
+
+    setManualInputs(payload);
+    if (data) setSavedRecord(data);
+    logActivity({ action: 'update', entityType: 'daily_manager_report', entityId: targetToStr, description: `Saved daily manager report for ${targetToStr}`, performedBy: payload.verifiedBy });
+    return data;
   };
 
   return {
     loading,
+    // Non-null when any of the report's sources failed to load. The view
+    // refuses to render the document rather than presenting an incomplete one
+    // for a manager to sign.
+    loadError,
     reportData,
     manualInputs,
     savedRecord,

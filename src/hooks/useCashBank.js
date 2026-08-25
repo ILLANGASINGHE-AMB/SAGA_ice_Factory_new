@@ -16,7 +16,11 @@ export function useCashBank() {
   const [chequeRecords, setChequeRecords] = useState([]);
   const [bankWithdrawals, setBankWithdrawals] = useState([]);
   const [openingBalances, setOpeningBalances] = useState([]);
+  // Expense cells joined to their ledger row's payment_source, so Cash and
+  // Bank Balance can finally subtract what was spent out of each.
+  const [expenseRows, setExpenseRows] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const fetchAll = async () => {
     try {
@@ -27,23 +31,25 @@ export function useCashBank() {
         { data: depositsData, error: depositsErr },
         { data: chequesData, error: chequesErr },
         { data: withdrawalsData, error: withdrawalsErr },
-        { data: openingData, error: openingErr }
+        { data: openingData, error: openingErr },
+        { data: expenseData, error: expenseErr }
       ] = await Promise.all([
         supabase.from('sales').select('total_amount, payment_type, sale_date').eq('payment_type', 'cash'),
-        // NOTE: no settlement_code here. settle_debt_transaction generates one
-        // with get_next_code() and returns it in its JSON, but never writes it
-        // to the row — there is no such column, and selecting it 400s the
-        // whole Promise.all below, blanking every balance on this page.
-        supabase.from('debt_settlements').select('id, debt_id, amount_paid, payment_method, is_auto_applied, settlement_date, created_by, customer:customers(name, customer_code)'),
+        // settlement_code is persisted on the row now, so a customer phoning
+        // in quoting their receipt number can actually be found — and Cash &
+        // Bank history can label rows by that code instead of guessing from
+        // the customer's name.
+        supabase.from('debt_settlements').select('id, debt_id, amount_paid, payment_method, is_auto_applied, settlement_code, settlement_date, created_by, customer:customers(name, customer_code)'),
         supabase.from('cash_receives').select('*').order('received_at', { ascending: false }),
         supabase.from('bank_deposits').select('*').order('deposited_at', { ascending: false }),
         supabase.from('cheque_records').select('*, customer:customers(id, customer_code, name, is_one_time)').order('received_at', { ascending: false }),
         supabase.from('bank_withdrawals').select('*').order('withdrawn_at', { ascending: false }),
-        supabase.from('opening_balances').select('*')
+        supabase.from('opening_balances').select('*'),
+        supabase.from('expense_amounts').select('amount, ledger_row:expense_ledger_rows(payment_source)')
       ]);
 
-      if (salesErr || settlementsErr || receivesErr || depositsErr || chequesErr || withdrawalsErr || openingErr) {
-        throw salesErr || settlementsErr || receivesErr || depositsErr || chequesErr || withdrawalsErr || openingErr;
+      if (salesErr || settlementsErr || receivesErr || depositsErr || chequesErr || withdrawalsErr || openingErr || expenseErr) {
+        throw salesErr || settlementsErr || receivesErr || depositsErr || chequesErr || withdrawalsErr || openingErr || expenseErr;
       }
 
       setSales(salesData || []);
@@ -53,8 +59,14 @@ export function useCashBank() {
       setChequeRecords(chequesData || []);
       setBankWithdrawals(withdrawalsData || []);
       setOpeningBalances(openingData || []);
+      setExpenseRows((expenseData || []).map(a => ({
+        amount: a.amount,
+        payment_source: a.ledger_row?.payment_source || 'cash'
+      })));
+      setError(null);
     } catch (err) {
       console.error("Failed to fetch cash & bank data:", err);
+      setError(err.message || "Failed to load Cash & Bank data");
     } finally {
       setIsLoading(false);
     }
@@ -62,6 +74,11 @@ export function useCashBank() {
 
   useEffect(() => {
     const refetchAll = coalesceRefetch(fetchAll);
+    // This effect's job is to subscribe to an external system (Supabase:
+    // an initial fetch plus a realtime channel) and push what it reports
+    // back into React state — the case the rule explicitly allows for. It
+    // is not derived state being patched in after a render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchAll();
 
     const channel = supabase
@@ -73,6 +90,8 @@ export function useCashBank() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cheque_records' }, refetchAll)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bank_withdrawals' }, refetchAll)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'opening_balances' }, refetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_amounts' }, refetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_ledger_rows' }, refetchAll)
       .subscribe();
 
     return () => {
@@ -93,6 +112,9 @@ export function useCashBank() {
     chequesPending,
     chequesPendingTotal,
     handChequesTotal,
+    cashExpensesTotal,
+    bankExpensesTotal,
+    expensesTotal,
     cashBalance,
     bankBalance,
     openingCash,
@@ -106,9 +128,10 @@ export function useCashBank() {
       bankDeposits,
       chequeRecords,
       bankWithdrawals,
+      expenseRows,
       openingBalances
     }),
-    [sales, settlements, cashReceives, bankDeposits, chequeRecords, bankWithdrawals, openingBalances]
+    [sales, settlements, cashReceives, bankDeposits, chequeRecords, bankWithdrawals, expenseRows, openingBalances]
   );
 
   // Combined, normalized audit trail across all 4 ledgers — every entry ever
@@ -121,13 +144,16 @@ export function useCashBank() {
     const entries = [];
 
     // Label for the deposit / cheque rows a settlement produced, so a Cash &
-    // Bank entry can be traced back to the payment that created it. Settlement
-    // codes aren't stored on the row (see the select above), so the customer
-    // name is the reference — with the settlement id as a last resort.
+    // Bank entry can be traced back to the payment that created it — by the
+    // same code printed on the customer's receipt.
     const settlementLabels = new Map(
       settlements
         .filter(s => s.id != null)
-        .map(s => [s.id, s.customer?.name ? `Debt settlement — ${s.customer.name}` : `Debt settlement #${s.id}`])
+        .map(s => [s.id, [
+          `Debt settlement`,
+          s.settlement_code,
+          s.customer?.name
+        ].filter(Boolean).join(' — ')])
     );
 
     // Cash settlements have no ledger row of their own — they raise Cash
@@ -259,6 +285,10 @@ export function useCashBank() {
     logActivity({ action: 'create', entityType: 'cash_receive', entityId: data?.id, description: `Recorded cash receive of LKR ${amt.toLocaleString()}`, performedBy: createdBy });
   };
 
+  // Every client-side balance check below stays for fast feedback, but it is
+  // no longer the guarantee: each write goes through an RPC that recomputes
+  // the balance under a lock and refuses the write itself. Two operators can
+  // otherwise both pass a check against the same stale snapshot and both write.
   const addBankDeposit = async ({ amount, cashMethod, bankName, createdBy }) => {
     const amt = parseFloat(amount);
     if (isNaN(amt) || amt <= 0) throw new Error("Please enter a valid deposit amount");
@@ -275,32 +305,24 @@ export function useCashBank() {
       throw new Error(`Deposit cannot exceed current Hand Cheques balance (LKR ${handChequesTotal.toLocaleString()}).`);
     }
 
-    const { data, error } = await supabase.from('bank_deposits').insert([{
-      amount: amt,
-      cash_method: cashMethod,
-      bank_name: bankName || null,
-      created_by: createdBy || 'Admin'
-    }]).select('id').single();
+    const { data, error } = await supabase.rpc('add_bank_deposit_transaction', {
+      p_amount: amt,
+      p_cash_method: cashMethod,
+      p_bank_name: bankName || null,
+      p_created_by: createdBy || 'Admin'
+    });
     if (error) throw new Error(error.message || "Failed to save bank deposit");
     logActivity({ action: 'create', entityType: 'bank_deposit', entityId: data?.id, description: `Deposited LKR ${amt.toLocaleString()} to ${bankName || 'bank'}`, performedBy: createdBy });
   };
 
+  // Reverting the linked cheque and deleting the deposit are one transaction.
+  // As two writes, a failure between them double-counted the money: the
+  // cheque was back in Hand Cheques while the deposit still sat in Bank
+  // Balance (or, in the other order, vanished from both).
   const deleteBankDeposit = async (id) => {
-    // If this deposit was created by depositing a specific cheque, reverse
-    // that cheque back to "pending" first. The FK's `on delete set null`
-    // would otherwise clear deposit_id but leave status stuck at
-    // 'deposited' — the money would then vanish from both Bank Balance (the
-    // deposit is gone) and Hand Cheques (the cheque never returns to pending).
-    const { error: revertErr } = await supabase
-      .from('cheque_records')
-      .update({ status: 'pending', deposited_at: null, deposit_id: null })
-      .eq('deposit_id', id);
-    if (revertErr) throw new Error(revertErr.message || "Failed to reverse the linked cheque record");
-
     const { performedBy, performedByRole } = currentActor();
-    const { error } = await supabase.rpc('soft_delete_row', {
-      p_table: 'bank_deposits',
-      p_id: id,
+    const { error } = await supabase.rpc('delete_bank_deposit_transaction', {
+      p_deposit_id: id,
       p_deleted_by: performedBy,
       p_deleted_by_role: performedByRole
     });
@@ -328,24 +350,21 @@ export function useCashBank() {
 
   // Depositing a pending cheque is the "Cash received from Cheques (already
   // deposited)" Section 02 method applied to one specific cheque — it both
-  // creates the bank deposit and closes out the cheque record.
+  // creates the bank deposit and closes out the cheque record. Both writes
+  // happen in one transaction, with the cheque row locked and re-checked as
+  // pending server-side; as two client calls, a failure on the second left
+  // the money in Bank Balance AND still counted in Hand Cheques.
   const depositChequeRecord = async (chequeId) => {
     const cheque = chequeRecords.find(c => c.id === chequeId);
-    if (!cheque || cheque.status !== 'pending') return;
+    if (cheque && cheque.status !== 'pending') return;
 
-    const { data: deposit, error: depositErr } = await supabase
-      .from('bank_deposits')
-      .insert([{ amount: cheque.amount, cash_method: 'cheques', bank_name: cheque.bank_name, created_by: 'Admin' }])
-      .select('*')
-      .single();
-    if (depositErr) throw new Error(depositErr.message || "Failed to deposit cheque");
-
-    const { error: updateErr } = await supabase
-      .from('cheque_records')
-      .update({ status: 'deposited', deposited_at: new Date().toISOString(), deposit_id: deposit.id })
-      .eq('id', chequeId);
-    if (updateErr) throw new Error(updateErr.message || "Failed to update cheque status");
-    logActivity({ action: 'update', entityType: 'cheque_record', entityId: chequeId, entityLabel: cheque.cheque_no, description: `Deposited cheque ${cheque.cheque_no}` });
+    const { performedBy } = currentActor();
+    const { error } = await supabase.rpc('deposit_cheque_transaction', {
+      p_cheque_id: chequeId,
+      p_created_by: performedBy || 'Admin'
+    });
+    if (error) throw new Error(error.message || "Failed to deposit cheque");
+    logActivity({ action: 'update', entityType: 'cheque_record', entityId: chequeId, entityLabel: cheque?.cheque_no, description: `Deposited cheque ${cheque?.cheque_no || chequeId}` });
   };
 
   const deleteChequeRecord = async (id) => {
@@ -370,12 +389,12 @@ export function useCashBank() {
       throw new Error(`Withdrawal cannot exceed the available balance for ${bankName} (LKR ${available.toLocaleString()}).`);
     }
 
-    const { data, error } = await supabase.from('bank_withdrawals').insert([{
-      amount: amt,
-      bank_name: bankName,
-      purpose,
-      created_by: createdBy || 'Admin'
-    }]).select('id').single();
+    const { data, error } = await supabase.rpc('add_bank_withdrawal_transaction', {
+      p_amount: amt,
+      p_bank_name: bankName,
+      p_purpose: purpose,
+      p_created_by: createdBy || 'Admin'
+    });
     if (error) throw new Error(error.message || "Failed to save withdrawal");
     logActivity({ action: 'create', entityType: 'bank_withdrawal', entityId: data?.id, description: `Withdrew LKR ${amt.toLocaleString()} from ${bankName}`, performedBy: createdBy });
   };
@@ -437,6 +456,7 @@ export function useCashBank() {
 
   return {
     isLoading,
+    error,
     cashBalance,
     cashSalesTotal,
     debtSettlementsTotal,
@@ -451,6 +471,9 @@ export function useCashBank() {
     chequesPending,
     chequesPendingTotal,
     handChequesTotal,
+    cashExpensesTotal,
+    bankExpensesTotal,
+    expensesTotal,
     historyEntries,
     cashReceives,
     bankDeposits,

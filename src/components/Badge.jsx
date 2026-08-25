@@ -1,4 +1,3 @@
-import React from 'react';
 
 export function Badge({
   type, // 'MFC', 'RSC', 'BNC', 'DGC', 'pending', 'partial', 'settled', 'cash', 'debt', 'admin', 'user', 'lorry', 'pickup'

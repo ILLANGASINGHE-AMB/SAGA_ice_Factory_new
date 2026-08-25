@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Modal } from './Modal';
 import { Button } from './Button';
 import { Input, TextArea } from './FormFields';
@@ -10,17 +10,14 @@ function toLocalDateTimeInput(date) {
 
 const emptyValues = { end_odometer: '', end_datetime: toLocalDateTimeInput(new Date()), description: '' };
 
+// The caller gives this a `key` tied to the trip being ended, so React
+// remounts it with correct state instead of an effect patching stale props in
+// after the first render — reopening for a different trip briefly showed the
+// previous trip's values.
 export function EndTripModal({ isOpen, onClose, trip, onSubmit }) {
-  const [values, setValues] = useState(emptyValues);
+  const [values, setValues] = useState(() => ({ ...emptyValues, end_datetime: toLocalDateTimeInput(new Date()) }));
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      setValues({ ...emptyValues, end_datetime: toLocalDateTimeInput(new Date()) });
-      setError('');
-    }
-  }, [isOpen, trip]);
 
   const handleChange = (field) => (e) => {
     setValues(prev => ({ ...prev, [field]: e.target.value }));
@@ -43,10 +40,16 @@ export function EndTripModal({ isOpen, onClose, trip, onSubmit }) {
       setError("End Date and Time is required");
       return;
     }
+    // The odometer was already validated; the timestamp never was, so a
+    // mistyped date produced a trip with negative duration.
+    if (trip?.start_datetime && new Date(values.end_datetime) <= new Date(trip.start_datetime)) {
+      setError("End Date and Time must be after the trip's start time");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
-      await onSubmit(trip.id, values, trip.start_odometer);
+      await onSubmit(trip.id, values, trip.start_odometer, trip.start_datetime);
       onClose();
     } catch (err) {
       setError(err.message || "Failed to end trip");

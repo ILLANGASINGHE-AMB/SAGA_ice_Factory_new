@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useCustomers } from '../hooks/useCustomers';
 import { useDebts } from '../hooks/useDebts';
@@ -25,8 +25,9 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 import { toLocalDateStr, isWithinLocalRange } from '../utils/date';
+import { isCustomerPayment } from '../utils/cashBankMath';
 
-const GRAPH_COLORS = { orders: '#ef4444', payments: '#22c55e' };
+const GRAPH_COLORS = { orders: '#ef4444', payments: '#22c55e', autoApplied: '#94a3b8' };
 const PAYMENT_METHOD_LABELS = { cash: 'Cash', card: 'Card', bank_transfer: 'Bank Transfer', cheque: 'Cheque', other: 'Other' };
 
 function money(n) {
@@ -119,11 +120,28 @@ export function CustomerProfilePage() {
     );
   }, [customerSales, typeFilter, dateFrom, dateTo]);
 
+  // Money this customer actually handed over. An auto-applied settlement is
+  // the system offsetting one of their cash orders against an older debt —
+  // counting it as a payment showed a large "Total Payments" figure for a
+  // customer who only ever pays cash at the counter, representing money they
+  // never paid twice.
   const filteredPayments = useMemo(() => {
     // Settlements only ever exist against debt orders, so a "Cash Orders"
     // filter has no matches here — that's correct, not a bug.
     if (typeFilter === 'cash') return [];
-    return payments.filter(p => isWithinLocalRange(p.settlement_date, dateFrom, dateTo));
+    return payments.filter(p =>
+      isCustomerPayment(p) && isWithinLocalRange(p.settlement_date, dateFrom, dateTo)
+    );
+  }, [payments, typeFilter, dateFrom, dateTo]);
+
+  // The same debt reductions, kept visible as their own neutral series so the
+  // customer's history still explains why a balance dropped — the pattern
+  // useCashBank's history entries already use.
+  const filteredAutoApplied = useMemo(() => {
+    if (typeFilter === 'cash') return [];
+    return payments.filter(p =>
+      !isCustomerPayment(p) && isWithinLocalRange(p.settlement_date, dateFrom, dateTo)
+    );
   }, [payments, typeFilter, dateFrom, dateTo]);
 
   // Cheques aren't tagged cash/debt — a cheque can be received against a debt
@@ -159,6 +177,16 @@ export function CustomerProfilePage() {
       return sale.payment_type === typeFilter;
     });
   }, [notifications, dateFrom, dateTo, typeFilter, saleByCode]);
+
+  // The ledger the Payments tab lists: real payments plus the system's own
+  // debt offsets, so nothing disappears from the customer's history — but the
+  // offsets are labelled, and totalPayments below still counts only what the
+  // customer actually handed over.
+  const paymentLedgerRows = useMemo(
+    () => [...filteredPayments, ...filteredAutoApplied]
+      .sort((a, b) => new Date(b.settlement_date) - new Date(a.settlement_date)),
+    [filteredPayments, filteredAutoApplied]
+  );
 
   const totalOrderAmount = filteredSales.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
   const totalPayments = filteredPayments.reduce((sum, p) => sum + Number(p.amount_paid || 0), 0);
@@ -218,7 +246,7 @@ export function CustomerProfilePage() {
     while (cursor <= end && guard < 500) {
       const key = keyFn(cursor);
       if (!buckets.has(key)) {
-        buckets.set(key, { key, label: labelFn(cursor), sortDate: new Date(cursor), Orders: 0, Payments: 0 });
+        buckets.set(key, { key, label: labelFn(cursor), sortDate: new Date(cursor), Orders: 0, Payments: 0, 'Applied from cash order': 0 });
       }
       if (stepUnit === 'day') cursor.setDate(cursor.getDate() + 1);
       else if (stepUnit === 'month') cursor.setMonth(cursor.getMonth() + 1);
@@ -229,7 +257,7 @@ export function CustomerProfilePage() {
     const ensureBucket = (dateObj) => {
       const key = keyFn(dateObj);
       if (!buckets.has(key)) {
-        buckets.set(key, { key, label: labelFn(dateObj), sortDate: dateObj, Orders: 0, Payments: 0 });
+        buckets.set(key, { key, label: labelFn(dateObj), sortDate: dateObj, Orders: 0, Payments: 0, 'Applied from cash order': 0 });
       }
       return buckets.get(key);
     };
@@ -240,9 +268,15 @@ export function CustomerProfilePage() {
     filteredPayments.forEach(p => {
       ensureBucket(new Date(p.settlement_date)).Payments += Number(p.amount_paid || 0);
     });
+    // Charted separately, never as a Payment: line 1 already drew this money
+    // as an Order on the same date, so adding it to Payments too made one
+    // transaction draw two bars and doubled the customer's apparent turnover.
+    filteredAutoApplied.forEach(p => {
+      ensureBucket(new Date(p.settlement_date))['Applied from cash order'] += Number(p.amount_paid || 0);
+    });
 
     return Array.from(buckets.values()).sort((a, b) => a.sortDate - b.sortDate);
-  }, [filteredSales, filteredPayments, granularity, dateFrom, dateTo, customerSales, payments]);
+  }, [filteredSales, filteredPayments, filteredAutoApplied, granularity, dateFrom, dateTo, customerSales, payments]);
 
   const handleViewSale = (sale) => {
     const doc = generateBillPDF(sale, settings);
@@ -628,7 +662,7 @@ export function CustomerProfilePage() {
                 { key: 'method', label: 'Payment Method' },
                 { key: 'actions', label: 'View', sortable: false }
               ]}
-              data={filteredPayments}
+              data={paymentLedgerRows}
               isLoading={paymentsLoading}
               emptyMessage="No payments found for the selected filters."
               renderRow={(payment) => (
@@ -640,7 +674,9 @@ export function CustomerProfilePage() {
                   </td>
                   <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono text-slate-500">{new Date(payment.settlement_date).toLocaleDateString()}</td>
                   <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-slate-600 dark:text-slate-300">
-                    {PAYMENT_METHOD_LABELS[payment.payment_method] || 'Cash'}
+                    {payment.is_auto_applied
+                      ? <span className="text-slate-400">Applied from cash order</span>
+                      : (PAYMENT_METHOD_LABELS[payment.payment_method] || 'Cash')}
                   </td>
                   <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5">
                     <button
@@ -776,6 +812,10 @@ export function CustomerProfilePage() {
                   <Legend wrapperStyle={{ fontSize: '11px' }} />
                   <Line type="monotone" dataKey="Orders" name="Orders Placed" stroke={GRAPH_COLORS.orders} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
                   <Line type="monotone" dataKey="Payments" name="Payments Done" stroke={GRAPH_COLORS.payments} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+                  {/* Neutral third series: a debt reduction funded by one of
+                      this customer's own cash orders. Real, but not a payment
+                      they made — the order is already drawn above. */}
+                  <Line type="monotone" dataKey="Applied from cash order" name="Applied from Cash Order" stroke={GRAPH_COLORS.autoApplied} strokeWidth={2} strokeDasharray="4 3" dot={false} activeDot={{ r: 4 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>

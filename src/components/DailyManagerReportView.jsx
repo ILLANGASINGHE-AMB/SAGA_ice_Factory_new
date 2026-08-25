@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useDailyReport } from '../hooks/useDailyReport';
 import { useSettings } from '../hooks/useSettings';
 import { useAuth } from '../context/AuthContext';
@@ -18,7 +18,8 @@ import {
   Receipt,
   Users,
   Truck,
-  StickyNote
+  StickyNote,
+  AlertTriangle
 } from 'lucide-react';
 
 export function DailyManagerReportView() {
@@ -27,7 +28,7 @@ export function DailyManagerReportView() {
   // day the report is FOR; useDailyReport owns the 8AM-to-8AM rule itself so
   // it can never be configured to anything else from here.
   const [selectedDate, setSelectedDate] = useState(todayStr);
-  const { loading, reportData, manualInputs, isVerified, savedRecord, saveDailyReport } = useDailyReport(selectedDate);
+  const { loading, loadError, reportData, manualInputs, isVerified, savedRecord, saveDailyReport } = useDailyReport(selectedDate);
 
   // Derived only for the display strings below (empty-state captions, the
   // saved/downloaded-PDF toasts) — useDailyReport is the actual source of
@@ -58,6 +59,11 @@ export function DailyManagerReportView() {
 
   useEffect(() => {
     if (manualInputs) {
+      // This effect's job is to subscribe to an external system (Supabase:
+      // an initial fetch plus a realtime channel) and push what it reports
+      // back into React state — the case the rule explicitly allows for. It
+      // is not derived state being patched in after a render.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setOtherDetails(manualInputs.otherDetails || '');
       setVerifiedBy(manualInputs.verifiedBy || user?.fullName || '');
     }
@@ -163,6 +169,20 @@ export function DailyManagerReportView() {
       {loading ? (
         <div className="p-12 text-center text-slate-500 animate-pulse">
           Compiling Daily Manager Report metrics...
+        </div>
+      ) : loadError ? (
+        /* This document gets signed off on. Rendering it from whatever
+           happened to load would produce a complete-looking report that is
+           silently missing sections — so it isn't rendered at all. */
+        <div className="bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/50 rounded-2xl p-8 text-center space-y-3">
+          <AlertTriangle className="w-8 h-8 text-rose-500 mx-auto" />
+          <p className="font-heading font-bold text-slate-800 dark:text-slate-100">
+            This report could not be compiled
+          </p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xl mx-auto">
+            One or more sources failed to load, so the figures below would be incomplete.
+            Nothing is shown rather than a partial document. Details: {loadError}
+          </p>
         </div>
       ) : (
         <div className="space-y-6">
@@ -320,6 +340,22 @@ export function DailyManagerReportView() {
                     LKR {reportData.incomeDetails.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </p>
                 </div>
+
+                {/* Income and expenses used to sit in two separate sections
+                    with nothing anywhere netting them against each other. */}
+                <div
+                  className={`p-2.5 rounded-xl shadow-xs text-white ${reportData.netPosition >= 0 ? 'bg-navy-600 dark:bg-sky-600' : 'bg-rose-600'}`}
+                  title="Total Income minus Total Expenses for this window"
+                >
+                  <span className="text-[10px] uppercase font-bold text-white/80 block truncate">Net Position</span>
+                  <p className="font-bold text-xs sm:text-sm mt-0.5 truncate">
+                    LKR {reportData.netPosition.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </p>
+                  <span className="text-[9px] text-white/75 block truncate">
+                    Income {reportData.incomeDetails.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    {' − '}Expenses {reportData.totalExpensesAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -437,7 +473,7 @@ export function DailyManagerReportView() {
                   <Receipt size={18} className="text-rose-500" />
                   <span>05. EXPENSE DETAILS</span>
                 </div>
-                <span className="text-xs font-bold text-rose-600">
+                <span className="text-xs font-bold text-rose-600" title="Expenses now leave Cash Balance / Bank Balance according to each ledger row's payment source">
                   Total: LKR {reportData.totalExpensesAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
               </div>

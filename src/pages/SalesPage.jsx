@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSales } from '../hooks/useSales';
 import { useInventory } from '../hooks/useInventory';
@@ -18,12 +18,12 @@ import { buildSaleNotification, notificationUrl, toWhatsAppNumber } from '../uti
 import { SendNotificationDialog } from '../components/SendNotificationDialog';
 import { recordNotification } from '../hooks/useNotifications';
 import { toLocalDateStr, todayStr, thisMonthStr, thisYearStr } from '../utils/date';
-import { ShoppingCart, Search, FileDown, MessageSquare, ArrowRight, ArrowLeft, Check, Trash2, Eye, Pencil, CalendarRange } from 'lucide-react';
+import { ShoppingCart, Search, FileDown, ArrowRight, ArrowLeft, Check, Trash2, Eye, Pencil, CalendarRange } from 'lucide-react';
 
 export function SalesPage() {
-  const { sales, isLoading: salesLoading, placeOrder, updateSale, deleteSale } = useSales();
+  const { sales, isLoading: salesLoading, placeOrder, updateSale, saleDeletionImpact, deleteSale } = useSales();
   const { inventory, isLoading: inventoryLoading } = useInventory();
-  const { customers, addCustomer } = useCustomers();
+  const { customers, addCustomer, deleteCustomer } = useCustomers();
   const { customerPrices } = useCustomerPrices();
   const { debts } = useDebts();
   const { settings } = useSettings();
@@ -84,18 +84,23 @@ export function SalesPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [saleToDelete, setSaleToDelete] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  // Deleting a cash sale also un-pays whatever old debts that cash was
+  // automatically applied to. The operator has to see which ones first.
+  const [deleteImpact, setDeleteImpact] = useState(null);
 
   // View bill preview state
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [viewPdfUrl, setViewPdfUrl] = useState(null);
   const [viewSale, setViewSale] = useState(null);
 
-  // Edit bill state
+  // Edit bill state. The edit form mirrors the till: one pooled quantity, an
+  // optional free quantity and a rate. Production vs Resell is the server's
+  // decision on an edit exactly as it is on a new order.
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [saleToEdit, setSaleToEdit] = useState(null);
-  const [editCubeType, setEditCubeType] = useState('manufactured');
   const [editPricePerCube, setEditPricePerCube] = useState(0);
   const [editQuantity, setEditQuantity] = useState('');
+  const [editFreeQuantity, setEditFreeQuantity] = useState('');
   const [editPaymentType, setEditPaymentType] = useState('cash');
   const [editLoading, setEditLoading] = useState(false);
 
@@ -176,7 +181,7 @@ export function SalesPage() {
 
   // Outstanding debt for the currently selected customer — 'pending' and
   // 'partial' are both still-owed statuses (matches the FIFO offset logic
-  // in place_multi_item_order_transaction, which targets both the same way).
+  // in place_pooled_order_transaction, which targets both the same way).
   const customerPendingDebt = useMemo(() => {
     const cid = Number(customerId);
     if (!cid || !debts) return 0;
@@ -292,6 +297,12 @@ export function SalesPage() {
   // Final Order Placement
   const handlePlaceOrder = async () => {
     setActionLoading(true);
+    // A customer created by one of the inline forms below is committed before
+    // the order is placed. If the order then fails, that row is an orphan: it
+    // holds a real phone number (blocking the number from being registered
+    // again) and burns a customer code, and every retry adds another. Track
+    // it so the catch block can undo it.
+    let createdCustomerId = null;
     try {
       let finalCustomerId = customerId;
 
@@ -304,12 +315,14 @@ export function SalesPage() {
           is_one_time: true
         });
         finalCustomerId = createdCust.id;
+        createdCustomerId = createdCust.id;
       } else if (showMiniCustomerForm) {
         const createdCust = await addCustomer({
           name: newCustName,
           whatsapp_number: newCustPhone
         });
         finalCustomerId = createdCust.id;
+        createdCustomerId = createdCust.id;
       }
 
       // 2. Place a single order covering every filled-in row — one bill, one sale_code
@@ -351,6 +364,15 @@ export function SalesPage() {
         setPlacedSaleRecord(null);
       }
     } catch (err) {
+      // Roll back the customer this attempt created, so a retry doesn't leave
+      // a trail of phantom walk-ins attached to no sale.
+      if (createdCustomerId) {
+        try {
+          await deleteCustomer(createdCustomerId);
+        } catch (cleanupErr) {
+          console.warn("Could not remove the customer created for this failed order:", cleanupErr);
+        }
+      }
       toast.error(err.message || "Failed to place order");
     } finally {
       setActionLoading(false);
@@ -432,9 +454,17 @@ export function SalesPage() {
     setPlacedSaleRecord(null);
   };
 
-  const handleDeleteClick = (sale) => {
+  const handleDeleteClick = async (sale) => {
     setSaleToDelete(sale);
+    setDeleteImpact(null);
     setDeleteConfirmOpen(true);
+    try {
+      setDeleteImpact(await saleDeletionImpact(sale.id));
+    } catch (err) {
+      // Non-fatal: the confirmation still works, it just can't itemise the
+      // debt reversals. Better than blocking the delete on a preview query.
+      console.warn("Could not load sale deletion impact:", err);
+    }
   };
 
   const handleConfirmDelete = async (restoreStock) => {
@@ -449,6 +479,7 @@ export function SalesPage() {
       }
       setDeleteConfirmOpen(false);
       setSaleToDelete(null);
+      setDeleteImpact(null);
     } catch (err) {
       toast.error(err.message || "Failed to delete sale");
     } finally {
@@ -482,20 +513,23 @@ export function SalesPage() {
   // Edit bill: open the correction form pre-filled with the sale's current values
   const handleEditClick = (sale) => {
     setSaleToEdit(sale);
-    setEditCubeType(sale.cube_type);
-    setEditPricePerCube(sale.price_per_cube);
-    setEditQuantity(String(sale.quantity));
+    setEditPricePerCube(sale.price_per_cube ?? '');
+    setEditQuantity(String(sale.quantity ?? 0));
+    setEditFreeQuantity(String(sale.free_quantity ?? 0));
     setEditPaymentType(sale.payment_type);
     setEditModalOpen(true);
   };
 
+  // Available stock for an edit is the whole pool plus whatever this sale is
+  // currently holding — those cubes come back before the new quantity is taken.
+  // Read from sale_items (not sales.quantity) so free cubes and both-pool
+  // orders are counted.
   const editAvailableStock = useMemo(() => {
     if (!saleToEdit) return 0;
-    const limit = editCubeType === 'manufactured' ? stockMap.MFC.qty : stockMap.RSC.qty;
-    // The quantity currently held by this sale hasn't been restored to stock
-    // yet, so add it back when previewing "available" for the same type.
-    return editCubeType === saleToEdit.cube_type ? limit + saleToEdit.quantity : limit;
-  }, [saleToEdit, editCubeType, stockMap]);
+    const pool = stockMap.MFC.qty + stockMap.RSC.qty;
+    const held = (saleToEdit.sale_items || []).reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
+    return pool + held;
+  }, [saleToEdit, stockMap]);
 
   const editCalculatedTotal = useMemo(() => {
     const qty = parseInt(editQuantity, 10) || 0;
@@ -503,40 +537,50 @@ export function SalesPage() {
     return qty * rate;
   }, [editQuantity, editPricePerCube]);
 
-  const handleEditCubeTypeChange = (type) => {
-    setEditCubeType(type);
-    if (saleToEdit && type !== saleToEdit.cube_type) {
-      setEditPricePerCube(type === 'manufactured' ? stockMap.MFC.price : stockMap.RSC.price);
-    }
-  };
-
   const handleSaveEdit = async () => {
     if (!saleToEdit) return;
-    const qty = parseInt(editQuantity, 10);
-    if (isNaN(qty) || qty <= 0) {
-      toast.error("Quantity must be a positive integer");
+    const qty = parseInt(editQuantity, 10) || 0;
+    const freeQty = parseInt(editFreeQuantity, 10) || 0;
+
+    if (qty < 0 || freeQty < 0) {
+      toast.error("Quantities cannot be negative");
       return;
     }
-    if (qty > editAvailableStock) {
-      toast.error(`Insufficient stock! Available: ${editAvailableStock} cubes`);
+    if (qty + freeQty === 0) {
+      toast.error("Enter a cube quantity, or a free cube quantity.");
       return;
     }
-    if (!editPricePerCube || editPricePerCube <= 0) {
+    if (qty + freeQty > editAvailableStock) {
+      toast.error(`Insufficient stock! Available: ${editAvailableStock.toLocaleString()} cubes`);
+      return;
+    }
+    if (qty > 0 && !(parseFloat(editPricePerCube) > 0)) {
       toast.error("Price per cube must be a valid positive number");
       return;
     }
 
     setEditLoading(true);
     try {
-      await updateSale({
+      const result = await updateSale({
         id: saleToEdit.id,
-        cube_type: editCubeType,
         quantity: qty,
-        price_per_cube: parseFloat(editPricePerCube),
+        free_quantity: freeQty,
+        price_per_cube: parseFloat(editPricePerCube) || 0,
         payment_type: editPaymentType,
         edited_by: user?.fullName || 'Staff Operator'
       });
       toast.success(`Sale ${saleToEdit.sale_code} updated successfully.`);
+      // The corrected total re-runs the cash-to-old-debt offset, so the
+      // customer's outstanding balance may have moved as a side effect of the
+      // edit. Say so rather than letting it change silently.
+      const reversed = Number(result?.reversed_from_old_debt) || 0;
+      const applied = Number(result?.applied_to_old_debt) || 0;
+      if (reversed > 0 || applied > 0) {
+        toast.info(
+          `Old-debt offset recalculated: LKR ${reversed.toLocaleString()} reversed, ` +
+          `LKR ${applied.toLocaleString()} re-applied against this customer's oldest debts.`
+        );
+      }
       setEditModalOpen(false);
       setSaleToEdit(null);
     } catch (err) {
@@ -846,10 +890,9 @@ export function SalesPage() {
                 {isAdmin && (
                   <>
                     <button
-                      onClick={() => !isMultiItem && handleEditClick(sale)}
-                      disabled={isMultiItem}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[32px] min-h-[32px] flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                      title={isMultiItem ? "Editing multi-item bills isn't supported yet" : "Edit Sale Record"}
+                      onClick={() => handleEditClick(sale)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
+                      title="Edit Sale Record"
                       aria-label="Edit Sale Record"
                     >
                       <Pencil size={16} />
@@ -1382,6 +1425,7 @@ export function SalesPage() {
         onClose={() => {
           setDeleteConfirmOpen(false);
           setSaleToDelete(null);
+          setDeleteImpact(null);
         }}
         title="Delete Sale Ledger Entry"
         size="sm"
@@ -1393,6 +1437,24 @@ export function SalesPage() {
           <div className="bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 p-3 rounded-lg border border-amber-200/50 dark:border-amber-900/30 text-xs">
             <strong>Warning:</strong> This will permanently delete the invoice ledger record and any associated pending debts.
           </div>
+
+          {Number(deleteImpact?.auto_applied_total) > 0 && (
+            <div className="bg-rose-50 dark:bg-rose-950/20 text-rose-800 dark:text-rose-300 p-3 rounded-lg border border-rose-200/50 dark:border-rose-900/30 text-xs space-y-1.5">
+              <p>
+                <strong>This sale's cash paid down older debts.</strong> Deleting it puts
+                LKR {Number(deleteImpact.auto_applied_total).toLocaleString()} back onto:
+              </p>
+              <ul className="list-disc pl-4 space-y-0.5">
+                {(deleteImpact.auto_applied_settlements || []).map(sett => (
+                  <li key={sett.settlement_id}>
+                    {sett.customer_name || 'Customer'}
+                    {sett.debt_sale_code ? ` — ${sett.debt_sale_code}` : ''}
+                    {`: LKR ${Number(sett.amount).toLocaleString()}`}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <p className="text-xs">
             Please choose how you would like to handle the stock adjustment:
           </p>
@@ -1404,6 +1466,7 @@ export function SalesPage() {
             onClick={() => {
               setDeleteConfirmOpen(false);
               setSaleToDelete(null);
+              setDeleteImpact(null);
             }}
             disabled={deleteLoading}
             className="w-full sm:w-auto"
@@ -1470,16 +1533,19 @@ export function SalesPage() {
         size="md"
       >
         <div className="space-y-3 py-1">
+          <div className="bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400">
+            Cubes are drawn from Production first and fall back to Resell, the same
+            way a new order is filled — so there is no cube type to choose here.
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Select
-              label="Cube Type"
-              name="editCubeType"
-              options={[
-                { value: 'manufactured', label: 'Production (MFC)' },
-                { value: 'resell', label: 'Resell (RSC)' }
-              ]}
-              value={editCubeType}
-              onChange={(e) => handleEditCubeTypeChange(e.target.value)}
+            <Input
+              label="Rate per Cube (LKR)"
+              name="editPrice"
+              type="number"
+              step="0.01"
+              value={editPricePerCube}
+              onChange={(e) => setEditPricePerCube(e.target.value)}
             />
             <Select
               label="Payment Terms"
@@ -1495,19 +1561,18 @@ export function SalesPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input
-              label="Rate per Cube (LKR)"
-              name="editPrice"
-              type="number"
-              step="0.01"
-              value={editPricePerCube}
-              onChange={(e) => setEditPricePerCube(e.target.value)}
-            />
-            <Input
-              label="Order Quantity"
+              label="Order Quantity (billed)"
               name="editQty"
               type="number"
               value={editQuantity}
               onChange={(e) => setEditQuantity(e.target.value)}
+            />
+            <Input
+              label="Free Cubes"
+              name="editFreeQty"
+              type="number"
+              value={editFreeQuantity}
+              onChange={(e) => setEditFreeQuantity(e.target.value)}
             />
           </div>
 
@@ -1526,6 +1591,14 @@ export function SalesPage() {
           {saleToEdit?.payment_type === 'debt' && editPaymentType === 'cash' && (
             <div className="bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 p-3 rounded-lg border border-amber-200/50 dark:border-amber-900/30 text-xs">
               <strong>Note:</strong> Switching to cash will remove this sale's debt ledger entry. This is only allowed if no payment has been settled against it yet.
+            </div>
+          )}
+
+          {editPaymentType === 'cash' && (
+            <div className="bg-sky-50 dark:bg-sky-950/20 text-sky-800 dark:text-sky-300 p-3 rounded-lg border border-sky-200/50 dark:border-sky-900/30 text-xs">
+              <strong>Note:</strong> Saving re-applies this sale's cash against the customer's oldest
+              outstanding debts. Any offset made at the original total is reversed first, so the
+              corrected amount is what ends up written off.
             </div>
           )}
         </div>

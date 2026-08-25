@@ -1,4 +1,3 @@
-import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDashboard } from '../hooks/useDashboard';
 import { useAuth } from '../context/AuthContext';
@@ -14,9 +13,7 @@ import {
 import {
   Boxes,
   TrendingUp,
-  AlertCircle,
-  ArrowUpRight,
-  Package,
+      Package,
   Recycle,
   Layers,
   Wallet,

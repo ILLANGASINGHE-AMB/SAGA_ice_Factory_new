@@ -1,0 +1,908 @@
+================================================================================
+SAGA ICE FACTORY — FINANCIAL CORRECTNESS & BROKEN CODE
+Audit date: 2026-08-25   |   Branch: main
+Scope: money math + things that are outright broken.
+Security/RLS, scale and UX findings deliberately EXCLUDED — see appendix.
+Status: FINDINGS ONLY — NO FIXES APPLIED
+================================================================================
+
+  SECTION 1 — FINANCIAL CORRECTNESS ......... FIN-01 .. FIN-16
+  SECTION 2 — BROKEN CODE ................... BRK-01 .. BRK-14
+  APPENDIX  — deferred items (one line each)
+
+Severity: P0 = wrong money or lost money. P1 = wrong numbers on screen.
+          P2 = wrong in an edge case, or fragile.
+
+--------------------------------------------------------------------------------
+THE SHORTLIST — if you only fix eight things
+--------------------------------------------------------------------------------
+  FIN-01  Edit Bill silently rewrites the header but not the line items
+  FIN-02  Debt created_at is overwritten — debt aging is destroyed
+  FIN-03  Deleting a sale leaves its auto-applied debt reductions standing
+  FIN-04  Multi-debt settlement is not atomic — partial pay, then double-charge
+  FIN-05  Cash Balance never subtracts expenses
+  FIN-06  Daily Report drops opening balances — disagrees with Cash & Bank
+  BRK-01  Edit Bill is completely broken for any pooled order spanning 2 pools
+  BRK-02  Expense Cash Book creates duplicate rows when a save is retried
+
+================================================================================
+SECTION 1 — FINANCIAL CORRECTNESS
+================================================================================
+
+--------------------------------------------------------------------------------
+FIN-01 [P0] Edit Bill updates the sale header but never the line items
+--------------------------------------------------------------------------------
+Where:  supabase_schema.sql:1087-1280  edit_sale_transaction
+        src/hooks/useSales.js:165-235   updateSale
+
+The problem:
+  Orders are created as a header row in `sales` PLUS one row per allocation in
+  `sale_items` — place_pooled_order_transaction writes up to four
+  (paid_manufactured, paid_resell, free_manufactured, free_resell) at
+  supabase_schema.sql:2349-2366.
+
+  edit_sale_transaction never touches `sale_items`. It updates only the
+  `sales` header (step 5, line 1226-1234). After an edit the two disagree
+  permanently, and different screens read different ones:
+
+    reads sale_items (stale, pre-edit)   |  reads sales.quantity (new)
+    -------------------------------------|------------------------------
+    Bill PDF        useSales.js:109      |  Daily Report  useDailyReport.js:280
+    Public bill     schema:2482-2492     |  Sales History SalesPage table
+    Dashboard cubes useDashboard.js:92   |  Customer Profile totals
+    Stock restore   useSales.js:242-245  |
+
+  Concrete consequence: correct a sale from 100 cubes to 50. The customer's
+  bill link and the PDF still say 100. The dashboard still counts 100 cubes
+  sold. Then delete that sale with "restore stock" and 100 cubes are returned
+  to inventory for a sale of 50 — 50 cubes created from nothing.
+
+Fix:
+  Rewrite edit_sale_transaction to delete and re-insert `sale_items` for the
+  sale as part of the same transaction, mirroring the four-line structure
+  place_pooled_order_transaction produces. Restore stock from the OLD
+  sale_items rows (not from sales.quantity), then deduct against the new ones.
+  Add a check constraint or a test asserting
+  sum(sale_items.quantity where not is_free) = sales.quantity.
+
+--------------------------------------------------------------------------------
+FIN-02 [P0] Debt created_at is overwritten — aging and FIFO both break
+--------------------------------------------------------------------------------
+Where:  supabase_schema.sql:2317   inside place_pooled_order_transaction
+          created_at = case when v_old_new_remaining > 0 then v_now
+                            else created_at end
+Read by: src/pages/DebtsPage.jsx:303 (aging buckets), :338 (aging filter)
+        supabase_schema.sql:2301 (the FIFO `order by created_at asc`)
+
+The problem:
+  Whenever a cash order auto-applies against an older debt and leaves a
+  balance, that debt's created_at is reset to now.
+   - A 6-month-old debt jumps from the "90+ days" bucket into "0-30 days".
+     Every collections decision made from the Debt Aging card is wrong.
+   - FIFO inverts: the partially-paid OLD debt becomes the NEWEST, so the next
+     cash order pays down a genuinely newer debt ahead of it. The oldest debt
+     can be starved indefinitely.
+   - The original incurrence date is gone. No other column holds it.
+
+Fix:
+  1. Delete the created_at mutation from the UPDATE at :2311-2318.
+  2. If "last activity" is wanted on screen, add a separate column:
+       alter table public.debts add column last_activity_at timestamptz;
+     and set that instead.
+  3. Repair the existing damage — a debt's true date is its sale's date:
+       update public.debts d
+          set created_at = s.sale_date
+         from public.sales s
+        where s.id = d.sale_id and d.created_at <> s.sale_date;
+     Run this in a transaction and check the row count first.
+
+--------------------------------------------------------------------------------
+FIN-03 [P0] Deleting a sale leaves the debt reductions it paid for in place
+--------------------------------------------------------------------------------
+Where:  src/hooks/useSales.js:237-289   deleteSale
+        supabase_schema.sql:2293-2330   the FIFO offset that created them
+
+The problem:
+  A cash order automatically pays down the customer's older debts, writing
+  is_auto_applied rows into debt_settlements against OTHER debts.
+
+  deleteSale removes the sale. The FK cascade removes that sale's own debt and
+  its sale_items. It does NOT touch the other debts that were reduced, and it
+  does NOT remove the is_auto_applied settlement rows.
+
+  Net result: the revenue vanishes, the debt reduction it paid for stays.
+  Customers show as having paid debts that nothing paid for. Repeat this a few
+  times and the receivables ledger is quietly understated with no trace.
+
+Second defect in the same function:
+  Stock restore (lines 249-276) is an unlocked read-then-write per cube type —
+  two concurrent deletes both read the same starting quantity and one
+  overwrites the other. It also writes no inventory_transactions row, so the
+  stock movement is invisible in Inventory History. And it runs BEFORE
+  soft_delete_row (line 281): if the delete then fails, stock has already been
+  inflated with no record of why.
+
+Fix:
+  One RPC — delete_sale_transaction(p_sale_id, p_restore_stock) — that in a
+  single transaction:
+    - locks inventory, restores per sale_items line, writes an 'adjustment'
+      inventory_transactions row referencing the sale_code
+    - selects this sale's is_auto_applied settlements, adds each amount back to
+      its target debt's remaining_amount, recomputes status, deletes the rows
+    - snapshots all of it into `trash` (extend soft_delete_row's children so a
+      restore is symmetric)
+    - deletes the sale
+  In the UI, when a sale has auto-applied settlements, show the operator
+  exactly which debts will be un-paid before they confirm.
+
+--------------------------------------------------------------------------------
+FIN-04 [P0] Multi-debt settlement is not atomic
+--------------------------------------------------------------------------------
+Where:  src/hooks/useDebts.js:186-317, the loop at :221-246
+
+The problem:
+  A payment spanning several debts calls settle_debt_transaction once per debt
+  in a JavaScript for-loop. Each call commits independently.
+
+  If call #3 fails — network drop, timeout, RLS — the function throws. Calls #1
+  and #2 are already committed. The operator sees "Failed to settle debt",
+  assumes nothing happened, and retries. The first two debts are now paid
+  twice. There is no compensating rollback anywhere in the file.
+
+  Two further defects in the same function:
+   - Line 267 reads `lastSettlement.id` with no null guard. If the loop body
+     never executes (every outstanding debt has remaining_amount = 0 but status
+     != 'settled'), this throws a TypeError after the money work is done.
+   - The bank_deposits / cheque_records insert (:269-296) is a THIRD separate
+     transaction. It fails into a `ledgerWarning` toast — honest, but the books
+     stay out of balance until a human notices and acts on a toast.
+
+Fix:
+  One RPC, settle_customer_debt_transaction(p_customer_id, p_amount,
+  p_method, p_details, p_created_by), doing all of it in one transaction:
+    - lock the customer's unsettled debts: order by created_at for update
+    - validate p_amount <= sum(remaining_amount)
+    - apply FIFO, one debt_settlements row per debt touched
+    - for bank_transfer insert bank_deposits; for cheque insert cheque_records
+    - return the combined receipt JSON, including the customer's new total
+      outstanding (which also fixes FIN-14)
+  The JS then becomes a single call, and any failure rolls everything back.
+
+--------------------------------------------------------------------------------
+FIN-05 [P0] Cash Balance never subtracts expenses
+--------------------------------------------------------------------------------
+Where:  src/utils/cashBankMath.js:86
+
+      cashBalance = openingCash + cashSalesTotal + settlementCashTotal
+                    + cashReceivesTotal - cashDepositedTotal
+
+The problem:
+  Nothing subtracts expenses. The whole Expenses module
+  (expense_ledger_rows x expense_amounts, src/hooks/useExpenses.js) is a
+  parallel ledger that never touches Cash Balance.
+
+  Every rupee spent out of the cash box still shows as sitting in the till.
+  Over a month this drifts by the entire operating expense total, and the
+  physical cash count will never reconcile with the screen.
+
+  Confirmed by grep: `totalExpensesAmount` (useDailyReport.js:437) and
+  `totalIncome` (:364) are rendered as two independent figures
+  (DailyManagerReportView.jsx:320 and :441) and are never netted against each
+  other anywhere in the system. There is no net-position, net-cash or profit
+  figure in the application at all.
+
+Fix:
+  1. Decide the model explicitly — are expenses paid from the till, from the
+     bank, or either? Almost certainly "either", which means:
+       alter table public.expense_ledger_rows
+         add column payment_source text not null default 'cash'
+         check (payment_source in ('cash','bank'));
+  2. Add a `cashExpenses` / `bankExpenses` input to computeCashBankBalances and
+     subtract each from the right balance.
+  3. Pass it from BOTH call sites (useCashBank.js:100, useDailyReport.js:445).
+  4. Add a "Net Position" line to the Daily Report so income and expenses are
+     visibly reconciled rather than sitting side by side.
+
+--------------------------------------------------------------------------------
+FIN-06 [P0] Daily Report drops opening balances — the two pages disagree
+--------------------------------------------------------------------------------
+Where:  src/hooks/useDailyReport.js:445-452
+
+The problem:
+  useCashBank.js:100-108 calls computeCashBankBalances WITH openingBalances.
+  useDailyReport.js:445 calls it WITHOUT — the argument is simply omitted, so
+  it defaults to [] (cashBankMath.js:21).
+
+  The Daily Manager Report's Cash Balance, Bank Balance and Hand Cheques are
+  therefore each understated by exactly the opening amount. Two screens, same
+  shared function, two different answers — the precise drift the file header
+  (cashBankMath.js:1-3) says it exists to prevent.
+
+  Root cause: opening_balances is not in the Daily Report's Promise.all at
+  :88-105 at all, so the data isn't even fetched.
+
+Fix:
+  Add `supabase.from('opening_balances').select('*')` to the Promise.all
+  around line 105, hold it in state, and pass `openingBalances` at :445.
+  Then assert equality: for today's date the report's three balances must
+  equal the Cash & Bank page's. Make that a test.
+
+--------------------------------------------------------------------------------
+FIN-07 [P1] Edit Bill ignores the customer's negotiated price
+--------------------------------------------------------------------------------
+Where:  supabase_schema.sql:1209-1216   edit_sale_transaction step 4
+
+      select price_per_cube into v_inventory_price
+        from public.inventory where id = v_new_item_id;
+      if public.is_admin() and p_price_per_cube ... then v_final_price := ...
+      else v_final_price := v_inventory_price;
+
+The problem:
+  place_pooled_order_transaction resolves the rate as: explicit price, else
+  this customer's custom rate from customer_cube_prices, else the list price
+  (schema:2266-2280). edit_sale_transaction never looks at
+  customer_cube_prices at all — it falls back to the raw inventory list price.
+
+  So editing anything about a sale for a customer on a negotiated rate silently
+  re-prices the whole sale to the list rate. Change the quantity by one cube
+  and the customer's agreed discount disappears from the invoice.
+
+Fix:
+  Copy the resolution block from place_pooled_order_transaction verbatim:
+      select price_per_cube into v_customer_price
+        from public.customer_cube_prices
+       where customer_id = v_customer_id and cube_type = 'manufactured';
+      ...
+      v_final_price := coalesce(p_price_per_cube, v_customer_price,
+                                v_inventory_price);
+  Better still, extract it into one shared resolve_cube_price() function so the
+  two paths cannot diverge again.
+
+--------------------------------------------------------------------------------
+FIN-08 [P1] Staff-entered price is silently discarded on Edit Bill
+--------------------------------------------------------------------------------
+Where:  supabase_schema.sql:1211  `if public.is_admin() and p_price_per_cube...`
+        src/pages/SalesPage.jsx:524-528 (the UI sends the price unconditionally)
+        supabase/migrations/20260825050000_staff_can_price_ice_cubes.sql
+
+The problem:
+  That migration exists specifically to let staff set cube rates. Its header
+  says so: "Both now allow any authenticated user." It updated
+  place_pooled_order_transaction and update_inventory_price.
+
+  It missed edit_sale_transaction. Line 1211 still gates on is_admin().
+
+  So a staff operator opens Edit Bill, types a corrected price, sees the
+  preview total update (SalesPage.jsx:502-506 computes it client-side), clicks
+  Save, gets a green "Sale updated successfully" toast — and the saved price is
+  the inventory list price, not what they typed. No error, no warning.
+
+Fix:
+  Drop `public.is_admin() and` from line 1211. Fold this into the same
+  migration as FIN-07 since both are in the same code block.
+  Then grep for remaining is_admin() pricing gates — lines 669 and 881 also
+  have them, in the two dead functions covered by BRK-06.
+
+--------------------------------------------------------------------------------
+FIN-09 [P1] Edit Bill ignores free cubes entirely
+--------------------------------------------------------------------------------
+Where:  supabase_schema.sql:1087-1280 (no reference to free_quantity anywhere)
+        src/pages/SalesPage.jsx:483-489 (edit form has no free-cubes field)
+
+The problem:
+  A sale carries `sales.free_quantity` plus is_free rows in sale_items. The
+  edit path has no concept of either.
+   - v_old_quantity (line 1131) is sales.quantity — the BILLED count only. The
+     free cubes that physically left stock are never restored.
+   - The is_free sale_items rows are left behind, still pointing at the sale.
+   - sales.free_quantity keeps its old value while everything around it changes.
+
+  Editing a sale that had 20 free cubes leaks those 20 cubes out of inventory
+  permanently — they are deducted at order time and never restored.
+
+Fix:
+  Add p_free_quantity to edit_sale_transaction's signature, restore
+  old_quantity + old_free_quantity, deduct the new pair, and rewrite the
+  is_free sale_items rows alongside the paid ones (see FIN-01). Add the field
+  to the edit modal in SalesPage.
+
+--------------------------------------------------------------------------------
+FIN-10 [P1] Edit Bill never reverses the cash-to-old-debt offset
+--------------------------------------------------------------------------------
+Where:  supabase_schema.sql:1082-1085 (the comment acknowledging this)
+
+The problem:
+  The comment says: "unlike place_order_transaction, this does NOT replay the
+  cash-to-old-debt FIFO offset — that offset already happened (or didn't) at
+  the time the sale was originally placed."
+
+  That reasoning holds only if the total is unchanged. Edit a cash sale from
+  LKR 10,000 down to LKR 1,000 and 10,000 remains applied against the
+  customer's old debts, funded by a sale that is now worth 1,000. Nine
+  thousand rupees of debt was written off against money that no longer exists.
+
+  Same gap on debt -> cash conversion (lines 1259-1265): the debt is deleted,
+  but the new cash never gets applied to older debts the way a fresh cash order
+  would. Two identical end states, two different ledger outcomes.
+
+Fix:
+  On any change to total_amount or payment_type, reverse this sale's
+  is_auto_applied settlements first (same reversal logic as FIN-03), then
+  re-run the FIFO offset against the new total. Extract the FIFO loop from
+  place_pooled_order_transaction (:2296-2330) into a shared
+  apply_cash_to_old_debts(p_customer_id, p_amount, p_sale_code, p_created_by)
+  function and call it from both places.
+
+--------------------------------------------------------------------------------
+FIN-11 [P1] Dashboard "Monthly Cash Flow" double-counts
+--------------------------------------------------------------------------------
+Where:  src/hooks/useDashboard.js:121-128
+
+      monthlyCashFlow = monthlyCashSales + monthlyDebtSettled
+
+The problem:
+  monthlyDebtSettled sums EVERY settlement in the month, including:
+   - is_auto_applied rows — that cash is already inside monthlyCashSales as
+     the sale itself. Counted twice.
+   - bank_transfer and cheque rows — that money never reached the till.
+
+  cashBankMath.js:34-56 goes to real lengths to exclude exactly these three
+  cases and explains why in comments. The dashboard ignores that work and
+  re-implements the sum incorrectly.
+
+Fix:
+      const collected = settlementsList.filter(s =>
+        !s.is_auto_applied &&
+        s.payment_method !== 'bank_transfer' &&
+        s.payment_method !== 'cheque');
+  Better: export the filter from cashBankMath.js and call it here, so the two
+  cannot drift apart again.
+
+--------------------------------------------------------------------------------
+FIN-12 [P1] Customer Profile counts auto-applied settlements as payments
+--------------------------------------------------------------------------------
+Where:  src/pages/CustomerProfilePage.jsx:164 (totalPayments)
+        :239-242 (the Orders vs Payments chart)
+
+The problem:
+  Same class as FIN-11, different screen.
+      totalPayments = filteredPayments.reduce(... p.amount_paid ...)
+  with no is_auto_applied filter. A customer who only ever pays cash at the
+  counter shows a large "Total Payments" figure representing money they never
+  handed over — it was the cash sale, already counted as an order.
+
+  The chart is worse: line 238 adds the sale to Orders and line 241 adds the
+  auto-applied settlement to Payments, on the same date. One transaction draws
+  two bars. The customer appears to have both bought and paid, doubling their
+  apparent turnover.
+
+Fix:
+  Filter `!p.is_auto_applied` for the Payments total and the chart series. If
+  the debt reduction should still be visible, give it its own neutral third
+  series labelled "Applied from cash order" — the pattern useCashBank.js
+  :138-153 already uses for its history entries.
+
+--------------------------------------------------------------------------------
+FIN-13 [P1] Daily Report stock figures are wrong for every past date
+--------------------------------------------------------------------------------
+Where:  src/hooks/useDailyReport.js:319-326
+
+      previousDayBalance = currentTotalStock - todaysProduction
+                           - todaysPurchase + todaysSalesQty + freeIssue
+      closingBalance = previousDayBalance + todaysProduction
+                       + todaysPurchase - freeIssue - todaysSalesQty
+
+The problem:
+  currentTotalStock is LIVE inventory (line 318). The formula only backs out
+  movements inside the selected window — movements AFTER the window are never
+  backed out.
+
+  Open the report for last Tuesday and the opening balance is computed from
+  today's stock. It is wrong by the sum of every movement since. And the
+  closing figure is algebraically forced straight back to the live total
+  (substitute and the terms cancel), so closingBalance always equals today's
+  stock no matter which date is selected.
+
+  A signed-off report for a past day therefore states a closing stock figure
+  that changes every time it is reopened.
+
+Fix:
+  Derive from the transaction ledger, not from live quantity.
+  inventory_transactions already stores new_quantity per row, so:
+      opening = new_quantity of the last transaction before window_start,
+                per cube type (0 if none)
+      closing = opening + movements within the window
+  Add the supporting index:
+      create index on public.inventory_transactions (inventory_id, created_at);
+
+--------------------------------------------------------------------------------
+FIN-14 [P2] Settlement receipt can quote a pre-payment balance
+--------------------------------------------------------------------------------
+Where:  src/pages/DebtsPage.jsx:203-216 (pendingReceiptNotification)
+
+The problem:
+  `remaining` is re-derived from the local `debts` array, which is refreshed by
+  a realtime event debounced 350ms (realtimeRefetch.js:14). The WhatsApp prompt
+  opens immediately after the settlement returns (line 191). An operator who
+  taps Send inside that window messages the customer their OLD outstanding
+  balance — the payment they just made appears not to have registered.
+
+Fix:
+  Use the authoritative figure from the settlement RPC rather than local state.
+  Have settle_customer_debt_transaction (FIN-04) return the customer's total
+  remaining after the payment and read that directly.
+
+--------------------------------------------------------------------------------
+FIN-15 [P2] Settlement codes are printed for the customer, then thrown away
+--------------------------------------------------------------------------------
+Where:  supabase_schema.sql:1044  v_settlement_code := get_next_code(...)
+        returned at :1054, never inserted; no such column at :98-113
+        confirmed by the comment at src/hooks/useCashBank.js:34-36
+
+The problem:
+  Every settlement burns a counter value, prints the code on the receipt PDF
+  and in the WhatsApp message (notifications.js:134, DebtsPage.jsx:185), and
+  then discards it. debt_settlements has no settlement_code column.
+
+  A customer who phones quoting "Receipt No: D_0042_0826" cannot be looked up —
+  the code exists nowhere in the database. Cash & Bank history is reduced to
+  labelling rows by customer name (useCashBank.js:121-126).
+
+Fix:
+      alter table public.debt_settlements add column settlement_code text;
+      create unique index on public.debt_settlements(settlement_code);
+  Insert v_settlement_code in the INSERT at :1046-1052. Backfill existing rows
+  so historical receipts become searchable, then select it in useCashBank.js:38
+  and use it for the history labels.
+
+--------------------------------------------------------------------------------
+FIN-16 [P2] Client-side balance checks race the server
+--------------------------------------------------------------------------------
+Where:  src/hooks/useCashBank.js:271-278 (deposit vs cashBalance / handCheques)
+        :366-369 (withdrawal vs bankBalancesByName)
+        :330-352 depositChequeRecord — two writes, no transaction
+        :288-307 deleteBankDeposit — two writes, no transaction
+
+The problem:
+  Each of these validates against a client-side snapshot that may be hundreds
+  of milliseconds stale, then writes with a plain insert that has no
+  server-side equivalent check. Two operators can both pass and both write.
+
+  The two-write pairs are worse than a stale check:
+   - depositChequeRecord inserts bank_deposits, THEN marks the cheque
+     'deposited'. If the second call fails the money is in Bank Balance AND
+     still counted in Hand Cheques — created from nothing.
+   - deleteBankDeposit reverts the cheque to 'pending' FIRST, then deletes the
+     deposit. If the delete fails, same double-count in reverse.
+
+  (transport_trips is the one place this is done right — a partial unique index
+  backs the pre-check and the code handles 23505 at useTransportTrips.js:87.
+  Use it as the template.)
+
+Fix:
+  One RPC per pair — deposit_cheque_transaction, delete_bank_deposit_transaction
+  — doing both statements in one transaction, recomputing the balance under
+  lock. Keep the client-side checks for fast feedback, but stop treating them
+  as the guarantee.
+
+================================================================================
+SECTION 2 — BROKEN CODE
+================================================================================
+
+--------------------------------------------------------------------------------
+BRK-01 [P0] Edit Bill fails outright on any order that spanned both pools
+--------------------------------------------------------------------------------
+Where:  src/pages/SalesPage.jsx:483-489 (handleEditClick)
+        src/hooks/useSales.js:174-176 (validation)
+        supabase_schema.sql:1140-1170 (the NULL propagation)
+
+The problem:
+  place_pooled_order_transaction sets sales.cube_type to NULL when the paid
+  quantity was drawn from BOTH Production and Resell (schema:2340-2343):
+      case when v_paid_mfc > 0 and v_paid_rsc > 0 then null ...
+
+  handleEditClick then does `setEditCubeType(sale.cube_type)` — null. On save,
+  useSales.js:174 rejects it: "Invalid cube type selected". The operator cannot
+  edit that sale at all, and the message tells them nothing useful — they never
+  chose a cube type, the server did.
+
+  If it did reach the RPC it would be worse. With v_old_cube_type NULL:
+    line 1141  `if v_old_cube_type = p_cube_type` -> NULL, not true -> else
+    line 1147  `if v_old_cube_type < p_cube_type` -> NULL, not true -> else
+    line 1149  v_type_a := p_cube_type; v_type_b := NULL
+    line 1157  select ... where type = NULL -> no rows
+    line 1158  raise 'Inventory item for <NULL> not found'
+
+  So any order large enough to exhaust Production stock becomes permanently
+  uneditable. On a busy day that is most of them.
+
+Fix:
+  Rebuild the edit flow around sale_items rather than the legacy
+  sales.cube_type / sales.quantity columns — the same restructure FIN-01
+  requires. The edit form should show the pooled quantity and rate the operator
+  actually entered, and let the server re-allocate across pools exactly as a
+  new order does. Interim: detect `sale.cube_type == null` in handleEditClick
+  and disable the Edit button with an explanatory tooltip rather than letting
+  the operator hit a dead end.
+
+--------------------------------------------------------------------------------
+BRK-02 [P0] Retrying a failed Expense save creates duplicate ledger rows
+--------------------------------------------------------------------------------
+Where:  src/components/ExpenseCashBookGrid.jsx:118-139 (handleSaveChanges)
+        src/hooks/useExpenses.js:190-226 (saveLedgerRow)
+
+The problem:
+  saveLedgerRow inserts the ledger row first (:196-203), then upserts each cell
+  amount in a sequential loop (:212-221), throwing on the first cell failure.
+
+  handleSaveChanges loops over edited rows awaiting each one, and only clears
+  editingIds on full success (line 133). The returned real `rowId` is
+  discarded. The resync effect (:59-68) is gated on `editingIds.size === 0`, so
+  on failure localRows keeps the `temp-...` id.
+
+  Sequence: new row -> ledger row INSERTED -> a cell upsert fails -> toast
+  "Failed to save changes" -> row still shows as editing with its temp id ->
+  operator clicks Save again -> `isNew` is still true (useExpenses.js:194) ->
+  a SECOND ledger row is inserted.
+
+  Every retry adds another duplicate expense row, each carrying whichever cells
+  did land. The Cash Book grand total (useExpenses.js:271) counts them all.
+
+Fix:
+  1. In handleSaveChanges, capture the returned rowId and immediately update
+     that entry in localRows so a retry takes the UPDATE branch.
+  2. Clear the successfully-saved ids from editingIds even on partial failure,
+     and report which rows failed.
+  3. Make saveLedgerRow atomic — batch the cells into one
+     `.upsert([...])` array call instead of a loop, or move the whole row save
+     into an RPC. That removes the partial-save window entirely.
+
+--------------------------------------------------------------------------------
+BRK-03 [P0] Three live references to a table dropped in August
+--------------------------------------------------------------------------------
+Where:  dropped in
+        supabase/migrations/20260821140000_expenses_redesign.sql:6
+          drop table if exists public.operating_expenses cascade;
+
+  1. supabase_schema.sql:315-316
+        create index ... on public.operating_expenses(category);
+        create index ... on public.operating_expenses(expense_date);
+     Nothing in that file creates the table. Running supabase_schema.sql
+     against a fresh project FAILS at line 315 — the documented bootstrap path
+     for a new environment is broken.
+
+  2. src/services/sagaAiService.js:23
+        supabase.from('operating_expenses').select('*')...
+     The error is swallowed by the destructuring at :9-25, so the AI's
+     "Operating Ledger Expenses" figure (:61) is always LKR 0. SAGA AI
+     confidently reports the factory has no expenses.
+
+  3. src/components/GlobalSearchModal.jsx:56
+        supabase.from('operating_expenses').select('*').limit(50)
+     The Expenses section of global search is permanently empty, and the modal
+     fires a failing request every time it opens.
+
+Fix:
+  Delete the two index statements from supabase_schema.sql. Repoint both
+  queries at expense_ledger_rows x expense_amounts — useExpenses.js:21-24
+  already has the correct shape to copy. Then run supabase_schema.sql against a
+  scratch project to prove the bootstrap works end to end.
+
+--------------------------------------------------------------------------------
+BRK-04 [P1] Global search only searches an arbitrary 100 rows per table
+--------------------------------------------------------------------------------
+Where:  src/components/GlobalSearchModal.jsx:49-57
+
+The problem:
+  Every query is `.limit(100)` with NO order by, and the filtering happens
+  afterwards client-side in a useMemo. Which 100 rows Postgres returns is
+  unspecified.
+
+  Search for customer #250, or a sale from last month, and you get "no
+  results". The record exists — it just was not among the arbitrary 100 that
+  were downloaded. The feature appears to work, which makes it worse than one
+  that visibly fails.
+
+Fix:
+  Push the search term into the query rather than filtering after the fact:
+      .ilike('name', `%${q}%`).limit(20)
+  debounced ~250ms, re-run per keystroke. Add trigram indexes on the searched
+  columns:
+      create extension if not exists pg_trgm;
+      create index on public.customers using gin (name gin_trgm_ops);
+
+--------------------------------------------------------------------------------
+BRK-05 [P1] Failures are logged to the console and rendered as zero
+--------------------------------------------------------------------------------
+Where:  the pattern repeats in ~20 places. Worst offenders:
+        src/hooks/useDailyReport.js:88-106   .catch(() => []) x19
+        src/hooks/useDashboard.js:57-66      .catch(() => []) x6
+        src/pages/ReportsPage.jsx:80-83      .catch(() => []) x4
+        useSettings.js:20, useCustomers.js:18, useSales.js:20,
+        useInventory.js:19, useDebts.js:20   console.error, keep old state
+
+The problem:
+  There is no error state anywhere in the data layer. Not one hook returns an
+  `error`. A failed query leaves the previous (or empty) array in place, so the
+  screen renders a complete, plausible-looking report built from partial data.
+
+  The Daily Report is the sharpest case: 19 independent catches. Any subset can
+  fail and the report still renders, silently missing whatever did not load —
+  and it is a document a manager signs off on.
+
+  Write path, same problem: useDailyReport.js:583-586 catches a failed report
+  upsert, console.warns it, writes "Saved daily manager report" to the activity
+  log anyway, and the UI reports success.
+
+Fix:
+  Return `error` from every hook and render it. At minimum distinguish "no
+  data" from "could not load". For writes, never report success on a failed
+  call and never log the activity. If the Daily Report cannot load all 19
+  sources, refuse to render it rather than showing an incomplete document.
+
+--------------------------------------------------------------------------------
+BRK-06 [P1] Two dead order RPCs still live in the database
+--------------------------------------------------------------------------------
+Where:  supabase_schema.sql:623-775   place_order_transaction
+        supabase_schema.sql:776-997   place_multi_item_order_transaction
+        Neither is called from src/ — verified by grep across the whole tree.
+        Only stale COMMENTS reference them (SalesPage.jsx:179,
+        SettingsPage.jsx:437), which actively misleads whoever reads them next.
+
+The problem:
+  ~350 lines of superseded order logic, still granted to authenticated and
+  still callable. Both contain the pre-migration is_admin() pricing gate at
+  :669 and :881 that 20260825050000 was written to remove — so calling either
+  reintroduces a bug that is supposedly fixed. Both write single-pool sales
+  that the current pooled model does not expect.
+
+Fix:
+      drop function if exists public.place_order_transaction(...);
+      drop function if exists public.place_multi_item_order_transaction(...);
+  Update the two comments to name place_pooled_order_transaction.
+
+--------------------------------------------------------------------------------
+BRK-07 [P1] updatePrice swallows real RPC failures
+--------------------------------------------------------------------------------
+Where:  src/hooks/useInventory.js:211-235
+
+The problem:
+  addStock (:83-92) and removeStock (:152-160) each fall back to the direct
+  table write ONLY on error code 42883 (function does not exist), with a
+  comment explaining that falling back on any other error is unsafe because it
+  bypasses the RPC's atomic validation.
+
+  updatePrice has no such guard. ANY rpc error — RLS denial, constraint
+  violation, timeout — falls straight through to a direct
+  `.update({ price_per_cube })`. The validation the RPC exists to enforce is
+  skipped whenever it matters most.
+
+Fix:
+      if (rpcErr.code !== '42883') throw new Error(rpcErr.message);
+  Same three lines as the other two functions. Better: now that the RPCs are
+  long deployed, delete all three fallbacks — they only exist to cover a
+  migration window that closed months ago.
+
+--------------------------------------------------------------------------------
+BRK-08 [P1] endTrip has no status guard
+--------------------------------------------------------------------------------
+Where:  src/hooks/useTransportTrips.js:96-119
+
+The problem:
+  The UPDATE has no `.eq('status','ongoing')` filter and never checks how many
+  rows it touched. Two operators ending the same trip both "succeed" — the
+  second silently overwrites the first's odometer reading and end time.
+
+  It also never validates that end_datetime is after start_datetime, so a
+  mistyped date produces a trip with negative duration. The odometer IS checked
+  (line 103) — the timestamp is not.
+
+Fix:
+  Add `.eq('status','ongoing')`, use `.select()` and verify exactly one row
+  came back, and reject when end_datetime <= start_datetime. Back it with a
+  CHECK constraint so the database enforces it too.
+
+--------------------------------------------------------------------------------
+BRK-09 [P1] Escape closes every stacked modal at once
+--------------------------------------------------------------------------------
+Where:  src/components/Modal.jsx:20-36
+
+The problem:
+  Each open Modal registers its own keydown listener on `window`, so one Escape
+  press fires all of them. Press Escape inside a ConfirmDialog opened from a
+  form modal and BOTH close — the confirm is dismissed and the half-filled form
+  behind it is destroyed.
+
+  The file already tracks openModalCount (line 8) for the scroll lock, so the
+  information needed to fix this is sitting right there, unused.
+
+  Also missing: focus trap, focus restore to the trigger on close, and any
+  dirty-state guard before the backdrop click at line 53 discards a form.
+
+Fix:
+  Maintain a modal stack; only the top entry handles Escape. Store
+  document.activeElement on open and restore on close. Add a focus trap (or
+  move to the native <dialog> element, which provides both). Guard
+  backdrop-click dismissal when a form has unsaved input.
+
+--------------------------------------------------------------------------------
+BRK-10 [P1] updateCustomer cannot save a one-time customer
+--------------------------------------------------------------------------------
+Where:  src/hooks/useCustomers.js:110-112  vs  :50-52
+
+The problem:
+  addCustomer correctly exempts walk-ins from the phone requirement:
+      if (!is_one_time && !whatsapp_number && !contact_number) throw ...
+  updateCustomer does not — line 110 requires a number unconditionally.
+
+  A one-time customer created without a phone (which is the entire point of the
+  flag — see the comment at :48-49) can therefore never be edited. Every save
+  is rejected with "Provide at least one number".
+
+  updateCustomer also ignores is_one_time completely, so the flag can never be
+  cleared to promote a walk-in into a real account.
+
+Fix:
+  Accept is_one_time as a parameter, mirror addCustomer's guard, and include it
+  in updatePayload when explicitly passed — the same pattern already used for
+  notes and is_branch at :142-143.
+
+--------------------------------------------------------------------------------
+BRK-11 [P1] Failed one-time orders leave orphan customer rows
+--------------------------------------------------------------------------------
+Where:  src/pages/SalesPage.jsx:296-311
+
+The problem:
+  handlePlaceOrder creates the customer first, places the order second. If
+  placeOrder throws — insufficient stock, price not set, network — the customer
+  row is already committed.
+
+  Every retry creates another "Walk-in Customer" row and burns another
+  SIFO_/OTC code. A few failed attempts on a busy till leaves the customer
+  registry full of phantom walk-ins, each attached to no sale. Same problem on
+  the inline "register new customer" path at :306-311, where the phantom row
+  also holds a real phone number and blocks that number from being registered
+  again (the duplicate check at useCustomers.js:61-71).
+
+Fix:
+  Pass the new-customer details into place_pooled_order_transaction and create
+  the customer inside that transaction. Failing that, delete the just-created
+  customer in the catch block when it was created in this same call.
+
+--------------------------------------------------------------------------------
+BRK-12 [P2] localStorage is used as a silent data-integrity fallback
+--------------------------------------------------------------------------------
+Where:  src/hooks/useInventory.js:35-43, :133-135, :202-204
+        src/hooks/useDailyReport.js:128-134, :143-152, :160-167, :565
+
+The problem:
+  inventory_transactions is mirrored into localStorage and read back whenever
+  the server query fails OR returns an empty array. useDailyReport.js:129
+  treats "empty" as "broken":
+      if (!invTxnRes || invTxnRes.length === 0) -> use the cached copy
+  So a genuinely empty table renders stale cached history instead of nothing.
+
+  The Daily Report also merges localStorage values OVER server values
+  (:143-152), which means two browsers can display two different "saved"
+  reports for the same date, and neither matches the database.
+
+  The cache is unbounded — the entire transactions table, growing forever,
+  inside a ~5MB store.
+
+Fix:
+  Remove the localStorage mirroring for server data. It creates more failure
+  modes than the offline resilience is worth here. If offline support is a real
+  requirement, implement it deliberately with IndexedDB and a visible sync
+  state, not an implicit silent fallback that masks errors.
+
+--------------------------------------------------------------------------------
+BRK-13 [P2] `.limit(1).single()` throws when no settings row exists
+--------------------------------------------------------------------------------
+Where:  src/hooks/useSales.js:113-117, :204-208
+        src/hooks/useDebts.js:111-115
+
+The problem:
+  `.single()` errors when zero rows come back. On a fresh install, or right
+  after a Clear All Data that removed the settings row, placing an order throws
+  inside the PDF block. It happens to be caught (useSales.js:143) so the order
+  survives without a bill — but that is luck, not design, and the operator gets
+  no invoice with no explanation.
+
+Fix:
+  Use `.maybeSingle()`. The `settings || {}` fallback that follows already
+  handles the null correctly.
+
+--------------------------------------------------------------------------------
+BRK-14 [P2] 33 setState-in-effect violations; lint is failing
+--------------------------------------------------------------------------------
+Where:  `npx eslint .` -> 97 errors
+          60 no-unused-vars
+          33 react-hooks/set-state-in-effect
+           1 react-hooks/exhaustive-deps (AuthContext.jsx:82)
+           1 no-empty
+
+The problem:
+  Two distinct patterns behind the 33:
+   a) All 24 hooks: fetch-in-effect-then-setState. Works, but it is what
+      @tanstack/react-query exists to replace — and that library is installed
+      and mounted (App.jsx:88) with zero useQuery calls anywhere in src/.
+   b) The form modals — EndTripModal.jsx:20, NoteFormModal.jsx:16,
+      TransportTripFormModal.jsx:26 and :69, VehicleTripFormModal.jsx:24,
+      SettingsPage.jsx:147 — sync props into local state. These render once
+      with STALE values before the sync lands, so reopening a modal for a
+      different record briefly shows the previous record's data.
+
+Fix:
+  For (b): reset via a `key` prop — `<Modal key={editingRecord?.id}>` — so
+  React remounts with correct state instead of patching it after the fact.
+  For (a): migrate to react-query, or drop the unused dependency.
+  Run `npx eslint . --fix` for the unused imports, delete the dead
+  FALLBACK_MODELS (sagaAiService.js:135), then make CI fail on lint.
+
+================================================================================
+SUGGESTED ORDER OF WORK
+================================================================================
+
+Round 1 — the Edit Bill path is the single worst area; fix it as one job:
+    BRK-01  restructure edit around sale_items (unblocks the rest)
+    FIN-01  rewrite sale_items on edit
+    FIN-09  handle free cubes
+    FIN-07  honour the customer's custom price
+    FIN-08  remove the stray is_admin() pricing gate
+    FIN-10  reverse and replay the cash-to-old-debt offset
+  These are all inside edit_sale_transaction plus the SalesPage edit modal.
+  Doing them together is far less work than doing them separately.
+
+Round 2 — ledger integrity:
+    FIN-02  stop mutating debts.created_at + run the repair query
+    FIN-03  atomic delete_sale_transaction with settlement reversal
+    FIN-04  atomic settle_customer_debt_transaction
+    FIN-16  atomic cheque deposit / deposit delete
+
+Round 3 — figures that are simply wrong on screen:
+    FIN-05  decide the expense/cash model and subtract it
+    FIN-06  pass openingBalances to the Daily Report
+    FIN-11  filter auto-applied from Dashboard cash flow
+    FIN-12  filter auto-applied from Customer Profile
+    FIN-13  derive report stock from the transaction ledger
+    FIN-15  persist settlement_code
+
+Round 4 — broken code cleanup:
+    BRK-02  duplicate expense rows on retry
+    BRK-03  operating_expenses references (unblocks fresh setup)
+    BRK-05  real error states
+    BRK-04, BRK-06 .. BRK-14
+
+================================================================================
+APPENDIX — DEFERRED (not covered above, per instruction)
+================================================================================
+Security / access control:
+  - soft_delete_row and restore_trash_item are SECURITY DEFINER, granted to
+    authenticated, with no is_admin() check — any staff login can delete
+    customers, sales, debts and cash rows.  supabase_schema.sql:1818, :1932
+  - Public bill links are enumerable (sequential sale_code, granted to anon).
+  - gemini_api_key is readable by every authenticated user; also in localStorage
+    and in the backup export file.
+  - saga-ai-proxy has no auth check, CORS *, and accepts a caller-supplied key.
+  - The whole customer + debt database is sent to Google on every AI message.
+  - Cash/bank/expense tables use blanket `for all to authenticated using (true)`.
+  - 18 of 26 SECURITY DEFINER functions have no `set search_path`.
+  - admin-users allows demoting/deleting the last admin.
+
+Data loss:
+  - Settings > Restore deletes 8 tables (cascading into ~15 more that were
+    never backed up), then re-inserts from a client JSON with no transaction
+    and no rollback.  SettingsPage.jsx:336-390
+  - Clear All Data leaves opening_balances and notification_log intact.
+
+Scale:
+  - Every list query is unbounded; results silently truncate at the API row cap,
+    which quietly understates Total Revenue, Cash Balance and Outstanding Debts.
+  - Daily Report pulls 18 full tables per view; Dashboard does 30 passes over
+    the full sales list; ReportsPage refetches 4 full tables uncoalesced.
+
+Say the word if you want any of these written up in the same detail.
+
+================================================================================
+END OF REPORT — no code was modified.
+================================================================================

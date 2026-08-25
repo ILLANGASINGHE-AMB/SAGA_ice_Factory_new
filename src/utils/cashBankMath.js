@@ -13,6 +13,13 @@ export function computeCashBankBalances({
   bankDeposits = [],
   chequeRecords = [],
   bankWithdrawals = [],
+  // Expenses, as {amount, payment_source} rows — one per expense_amounts cell
+  // joined to its ledger row. Money spent out of the till has to leave Cash
+  // Balance and money spent out of the bank has to leave Bank Balance;
+  // before this the whole Expenses module was a parallel ledger that never
+  // touched either, so every rupee spent still showed as sitting in the till
+  // and the physical cash count could never reconcile with the screen.
+  expenseRows = [],
   // "Initial Collection": what each store of value already held when the
   // factory started using the system. Balances here are otherwise derived
   // purely from recorded transactions, so without these every balance starts
@@ -68,6 +75,14 @@ export function computeCashBankBalances({
   const bankDepositsTotal = bankDeposits.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
   const bankWithdrawalsTotal = bankWithdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
 
+  const cashExpensesTotal = expenseRows
+    .filter(e => (e.payment_source || 'cash') === 'cash')
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const bankExpensesTotal = expenseRows
+    .filter(e => e.payment_source === 'bank')
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const expensesTotal = cashExpensesTotal + bankExpensesTotal;
+
   const chequesPending = chequeRecords.filter(c => c.status === 'pending');
   const chequesPendingTotal = chequesPending.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
 
@@ -83,8 +98,8 @@ export function computeCashBankBalances({
     .reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
 
   const handChequesTotal = Math.max(0, openingCheques + chequesPendingTotal - unlinkedChequeDepositsTotal);
-  const cashBalance = Math.max(0, openingCash + cashSalesTotal + settlementCashTotal + cashReceivesTotal - cashDepositedTotal);
-  const bankBalance = openingBank + bankDepositsTotal - bankWithdrawalsTotal;
+  const cashBalance = Math.max(0, openingCash + cashSalesTotal + settlementCashTotal + cashReceivesTotal - cashDepositedTotal - cashExpensesTotal);
+  const bankBalance = openingBank + bankDepositsTotal - bankWithdrawalsTotal - bankExpensesTotal;
 
   return {
     cashSalesTotal,
@@ -101,10 +116,32 @@ export function computeCashBankBalances({
     chequesPendingTotal,
     unlinkedChequeDepositsTotal,
     handChequesTotal,
+    cashExpensesTotal,
+    bankExpensesTotal,
+    expensesTotal,
     cashBalance,
     bankBalance,
     openingCash,
     openingBank,
     openingCheques
   };
+}
+
+// A settlement counts as cash COLLECTED only when someone actually handed
+// money over at the counter. Excluded:
+//   - is_auto_applied rows — a cash order paying down the customer's own old
+//     debt. That cash is already counted as the sale itself.
+//   - bank_transfer / cheque rows — real money, but it never reached the till.
+// Exported so the Dashboard and Customer Profile stop re-deriving (and
+// mis-deriving) the same rule.
+export function isCollectedCashSettlement(settlement) {
+  return !settlement.is_auto_applied
+    && settlement.payment_method !== 'bank_transfer'
+    && settlement.payment_method !== 'cheque';
+}
+
+// Every settlement that represents money the customer actually paid, by any
+// method — i.e. everything except the system's own auto-applied offsets.
+export function isCustomerPayment(settlement) {
+  return !settlement.is_auto_applied;
 }

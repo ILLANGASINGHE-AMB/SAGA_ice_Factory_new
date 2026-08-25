@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search,
@@ -15,26 +15,53 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
+const MIN_QUERY_LENGTH = 2;
+const PER_TABLE_LIMIT = 20;
+
+// Two things need neutralising before a term goes into a filter:
+//   - LIKE wildcards, or a customer literally named "50%" matches everything;
+//   - PostgREST's own or() grammar separators (comma, parentheses, dot), which
+//     would otherwise be read as filter syntax rather than search text.
+function escapeLike(term) {
+  return term
+    .replace(/[,()."]/g, ' ')
+    .replace(/[\\%_]/g, m => `\\${m}`)
+    .trim();
+}
+
 export function GlobalSearchModal({ isOpen, onClose }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
-  const [data, setData] = useState({
-    customers: [],
-    employees: [],
-    vehicles: [],
-    sales: [],
-    debts: [],
-    inventory: [],
-    expenses: [],
-    notes: []
-  });
+  const [searchResults, setSearchResults] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Fetch all entities on open
+  // The search term is pushed INTO the queries rather than downloading an
+  // arbitrary 100 rows per table and filtering them client-side. Those queries
+  // had no `order by` at all, so which 100 rows came back was unspecified:
+  // customer #250 or a sale from last month simply returned "no results"
+  // despite existing. Trigram indexes back the ilike lookups.
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      // This effect's job is to subscribe to an external system (Supabase:
+      // an initial fetch plus a realtime channel) and push what it reports
+      // back into React state — the case the rule explicitly allows for. It
+      // is not derived state being patched in after a render.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSearchResults([]);
+      return undefined;
+    }
 
-    const fetchAllData = async () => {
+    const q = query.trim();
+    if (q.length < MIN_QUERY_LENGTH) {
+      setSearchResults([]);
+      setIsLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const pattern = `%${escapeLike(q)}%`;
+
+    const timer = setTimeout(async () => {
       setIsLoading(true);
       try {
         const [
@@ -47,35 +74,131 @@ export function GlobalSearchModal({ isOpen, onClose }) {
           { data: expenses },
           { data: notes }
         ] = await Promise.all([
-          supabase.from('customers').select('*').limit(100),
-          supabase.from('employees').select('*').limit(100),
-          supabase.from('vehicles').select('*').limit(100),
-          supabase.from('sales').select('*, customer:customers(name)').limit(100),
-          supabase.from('debts').select('*, customer:customers(name), sale:sales(sale_code)').limit(100),
-          supabase.from('inventory').select('*'),
-          supabase.from('operating_expenses').select('*').limit(50),
-          supabase.from('notes').select('*').limit(100)
+          supabase.from('customers').select('*')
+            .or(`name.ilike.${pattern},customer_code.ilike.${pattern},whatsapp_number.ilike.${pattern},contact_number.ilike.${pattern}`)
+            .order('name').limit(PER_TABLE_LIMIT),
+          supabase.from('employees').select('*')
+            .or(`name.ilike.${pattern},employee_code.ilike.${pattern},nic.ilike.${pattern},job_type.ilike.${pattern}`)
+            .order('name').limit(PER_TABLE_LIMIT),
+          supabase.from('vehicles').select('*')
+            .or(`vehicle_no.ilike.${pattern},vehicle_model.ilike.${pattern},vehicle_type.ilike.${pattern}`)
+            .order('vehicle_no').limit(PER_TABLE_LIMIT),
+          supabase.from('sales').select('*, customer:customers(name)')
+            .ilike('sale_code', pattern)
+            .order('sale_date', { ascending: false }).limit(PER_TABLE_LIMIT),
+          supabase.from('debts').select('*, customer:customers(name), sale:sales(sale_code)')
+            .ilike('status', pattern)
+            .order('created_at', { ascending: false }).limit(PER_TABLE_LIMIT),
+          supabase.from('inventory').select('*')
+            .or(`code.ilike.${pattern},type.ilike.${pattern}`).limit(PER_TABLE_LIMIT),
+          // operating_expenses was dropped in the August expenses redesign
+          // (20260821140000). This query used to 404 on every open and render
+          // the Expenses section permanently empty.
+          supabase.from('expense_amounts')
+            .select('id, amount, expense_item:expense_items(name, expense_code, category:expense_categories(name)), ledger_row:expense_ledger_rows(entry_date, description, payment_source)')
+            .gt('amount', 0)
+            .limit(200),
+          supabase.from('notes').select('*')
+            .or(`note_text.ilike.${pattern},created_by.ilike.${pattern}`)
+            .order('created_at', { ascending: false }).limit(PER_TABLE_LIMIT)
         ]);
 
-        setData({
-          customers: customers || [],
-          employees: employees || [],
-          vehicles: vehicles || [],
-          sales: sales || [],
-          debts: debts || [],
-          inventory: inventory || [],
-          expenses: expenses || [],
-          notes: notes || []
-        });
-      } catch (err) {
-        console.error("Global search data fetch failed:", err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+        if (cancelled) return;
 
-    fetchAllData();
-  }, [isOpen]);
+        const lower = q.toLowerCase();
+        const results = [];
+
+        (customers || []).forEach(c => results.push({
+          type: 'Customer',
+          icon: <Users size={16} className="text-blue-500" />,
+          title: c.name,
+          subtitle: `${c.customer_code} • ${c.whatsapp_number || c.contact_number || 'No number'}`,
+          path: '/customers'
+        }));
+
+        (employees || []).forEach(e => results.push({
+          type: 'Employee',
+          icon: <Contact size={16} className="text-emerald-500" />,
+          title: e.name,
+          subtitle: `${e.employee_code} • ${e.job_type || 'No job type'}`,
+          path: '/employees'
+        }));
+
+        (vehicles || []).forEach(v => results.push({
+          type: 'Vehicle',
+          icon: <Truck size={16} className="text-indigo-500" />,
+          title: v.vehicle_no,
+          subtitle: `${v.vehicle_model} • ${v.vehicle_type === 'lorry' ? 'Lorry' : 'Pickup'}`,
+          path: `/vehicles/${v.id}`
+        }));
+
+        (sales || []).forEach(sale => results.push({
+          type: 'Sale',
+          icon: <ShoppingCart size={16} className="text-emerald-500" />,
+          title: sale.sale_code,
+          subtitle: `${sale.customer?.name || 'Customer'} • LKR ${Number(sale.total_amount || 0).toLocaleString()} (${sale.payment_type})`,
+          path: '/sales'
+        }));
+
+        (debts || []).forEach(d => results.push({
+          type: 'Debt Record',
+          icon: <DollarSign size={16} className="text-rose-500" />,
+          title: `${d.customer?.name || 'Customer'} (${d.sale?.sale_code || 'Debt'})`,
+          subtitle: `Outstanding: LKR ${Number(d.remaining_amount || 0).toLocaleString()} • Status: ${d.status}`,
+          path: '/debts'
+        }));
+
+        (inventory || []).forEach(i => results.push({
+          type: 'Stock Item',
+          icon: <Package size={16} className="text-amber-500" />,
+          title: `${i.code} (${i.type})`,
+          subtitle: `Stock Qty: ${Number(i.quantity || 0).toLocaleString()} cubes • Price: LKR ${i.price_per_cube || 'N/A'}`,
+          path: '/inventory'
+        }));
+
+        // The Cash Book has no single searchable text column (a description
+        // lives on the ledger row, the name/category on the item), so this one
+        // is matched in memory over a bounded recent slice.
+        (expenses || []).forEach(a => {
+          const itemName = a.expense_item?.name || '';
+          const categoryName = a.expense_item?.category?.name || '';
+          const description = a.ledger_row?.description || '';
+          const code = a.expense_item?.expense_code || '';
+          const haystack = `${itemName} ${categoryName} ${description} ${code}`.toLowerCase();
+          if (!haystack.includes(lower)) return;
+          results.push({
+            type: 'Expense',
+            icon: <Receipt size={16} className="text-orange-500" />,
+            title: `${code || 'Expense'} — ${description || itemName || 'Cash Book entry'}`,
+            subtitle: `${categoryName || 'Uncategorized'} • LKR ${Number(a.amount || 0).toLocaleString()} • ${a.ledger_row?.entry_date || ''} (${a.ledger_row?.payment_source === 'bank' ? 'Bank' : 'Cash'})`,
+            path: '/expenses'
+          });
+        });
+
+        (notes || []).forEach(n => results.push({
+          type: 'Note',
+          icon: <StickyNote size={16} className="text-sky-500" />,
+          title: n.note_text?.length > 60 ? `${n.note_text.slice(0, 60)}...` : n.note_text,
+          subtitle: `By ${n.created_by} • ${new Date(n.created_at).toLocaleDateString()}`,
+          path: '/notes'
+        }));
+
+        setSearchResults(results.slice(0, 25));
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Global search failed:", err);
+          setSearchResults([]);
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [isOpen, query]);
 
   // Escape key listener
   useEffect(() => {
@@ -85,120 +208,6 @@ export function GlobalSearchModal({ isOpen, onClose }) {
     if (isOpen) window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
-
-  // Filtered Results Calculation
-  const searchResults = useMemo(() => {
-    const q = query.toLowerCase().trim();
-    if (!q) return [];
-
-    const results = [];
-
-    // Search Customers
-    data.customers.forEach(c => {
-      if (c.name?.toLowerCase().includes(q) || c.whatsapp_number?.includes(q) || c.contact_number?.includes(q) || c.customer_code?.toLowerCase().includes(q)) {
-        results.push({
-          type: 'Customer',
-          icon: <Users size={16} className="text-blue-500" />,
-          title: c.name,
-          subtitle: `${c.customer_code} • ${c.whatsapp_number || c.contact_number || 'No number'}`,
-          path: '/customers'
-        });
-      }
-    });
-
-    // Search Employees
-    data.employees.forEach(e => {
-      if (e.name?.toLowerCase().includes(q) || e.employee_code?.toLowerCase().includes(q) || e.nic?.toLowerCase().includes(q) || e.job_type?.toLowerCase().includes(q)) {
-        results.push({
-          type: 'Employee',
-          icon: <Contact size={16} className="text-emerald-500" />,
-          title: e.name,
-          subtitle: `${e.employee_code} • ${e.job_type || 'No job type'}`,
-          path: '/employees'
-        });
-      }
-    });
-
-    // Search Vehicles
-    data.vehicles.forEach(v => {
-      if (v.vehicle_no?.toLowerCase().includes(q) || v.vehicle_model?.toLowerCase().includes(q) || v.vehicle_type?.toLowerCase().includes(q)) {
-        results.push({
-          type: 'Vehicle',
-          icon: <Truck size={16} className="text-indigo-500" />,
-          title: v.vehicle_no,
-          subtitle: `${v.vehicle_model} • ${v.vehicle_type === 'lorry' ? 'Lorry' : 'Pickup'}`,
-          path: `/vehicles/${v.id}`
-        });
-      }
-    });
-
-    // Search Sales
-    data.sales.forEach(s => {
-      if (s.sale_code?.toLowerCase().includes(q) || s.customer?.name?.toLowerCase().includes(q) || s.cube_type?.toLowerCase().includes(q)) {
-        results.push({
-          type: 'Sale',
-          icon: <ShoppingCart size={16} className="text-emerald-500" />,
-          title: s.sale_code,
-          subtitle: `${s.customer?.name || 'Customer'} • LKR ${s.total_amount?.toLocaleString()} (${s.payment_type})`,
-          path: '/sales'
-        });
-      }
-    });
-
-    // Search Debts
-    data.debts.forEach(d => {
-      if (d.customer?.name?.toLowerCase().includes(q) || d.sale?.sale_code?.toLowerCase().includes(q) || d.status?.toLowerCase().includes(q)) {
-        results.push({
-          type: 'Debt Record',
-          icon: <DollarSign size={16} className="text-rose-500" />,
-          title: `${d.customer?.name} (${d.sale?.sale_code || 'Debt'})`,
-          subtitle: `Outstanding: LKR ${d.remaining_amount?.toLocaleString()} • Status: ${d.status}`,
-          path: '/debts'
-        });
-      }
-    });
-
-    // Search Inventory
-    data.inventory.forEach(i => {
-      if (i.code?.toLowerCase().includes(q) || i.type?.toLowerCase().includes(q)) {
-        results.push({
-          type: 'Stock Item',
-          icon: <Package size={16} className="text-amber-500" />,
-          title: `${i.code} (${i.type})`,
-          subtitle: `Stock Qty: ${i.quantity?.toLocaleString()} cubes • Price: LKR ${i.price_per_cube || 'N/A'}`,
-          path: '/inventory'
-        });
-      }
-    });
-
-    // Search Expenses
-    data.expenses.forEach(e => {
-      if (e.expense_code?.toLowerCase().includes(q) || e.description?.toLowerCase().includes(q) || e.category?.toLowerCase().includes(q)) {
-        results.push({
-          type: 'Expense',
-          icon: <Receipt size={16} className="text-orange-500" />,
-          title: `${e.expense_code} - ${e.description}`,
-          subtitle: `Category: ${e.category} • Amount: LKR ${e.amount?.toLocaleString()}`,
-          path: '/expenses'
-        });
-      }
-    });
-
-    // Search Notes
-    data.notes.forEach(n => {
-      if (n.note_text?.toLowerCase().includes(q) || n.created_by?.toLowerCase().includes(q)) {
-        results.push({
-          type: 'Note',
-          icon: <StickyNote size={16} className="text-sky-500" />,
-          title: n.note_text?.length > 60 ? `${n.note_text.slice(0, 60)}...` : n.note_text,
-          subtitle: `By ${n.created_by} • ${new Date(n.created_at).toLocaleDateString()}`,
-          path: '/notes'
-        });
-      }
-    });
-
-    return results.slice(0, 15); // Limit to top 15 matches
-  }, [query, data]);
 
   if (!isOpen) return null;
 
@@ -267,6 +276,10 @@ export function GlobalSearchModal({ isOpen, onClose }) {
                   </button>
                 ))}
               </div>
+            </div>
+          ) : query.trim().length < MIN_QUERY_LENGTH ? (
+            <div className="p-8 text-center text-xs text-slate-400">
+              Type at least {MIN_QUERY_LENGTH} characters to search.
             </div>
           ) : searchResults.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-400">

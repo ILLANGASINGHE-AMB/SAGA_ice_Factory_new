@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useTrash } from '../hooks/useTrash';
 import { useToast } from '../components/Toast';
 import { Table } from '../components/Table';

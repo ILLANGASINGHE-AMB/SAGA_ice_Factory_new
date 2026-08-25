@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { isCollectedCashSettlement } from '../utils/cashBankMath';
 import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { toLocalDateStr } from '../utils/date';
 
@@ -118,10 +119,15 @@ export function useDashboard() {
         .filter(d => d.status === 'pending' || d.status === 'partial')
         .reduce((sum, d) => sum + (Number(d.remaining_amount) || 0), 0);
 
+      // "Monthly Cash Flow" means money that reached the till. Summing every
+      // settlement counted an auto-applied row twice (that cash is already in
+      // monthlyCashSales as the sale itself) and counted bank-transfer and
+      // cheque settlements that never touched the till at all. The rule lives
+      // in cashBankMath so the two can't drift apart again.
       let monthlyDebtSettled = 0;
       settlementsList.forEach(setl => {
         const sDate = new Date(setl.settlement_date);
-        if (sDate >= startOfMonth) {
+        if (sDate >= startOfMonth && isCollectedCashSettlement(setl)) {
           monthlyDebtSettled += Number(setl.amount_paid) || 0;
         }
       });
@@ -304,6 +310,11 @@ export function useDashboard() {
 
   useEffect(() => {
     const refetchDashboardData = coalesceRefetch(fetchDashboardData);
+    // This effect's job is to subscribe to an external system (Supabase:
+    // an initial fetch plus a realtime channel) and push what it reports
+    // back into React state — the case the rule explicitly allows for. It
+    // is not derived state being patched in after a render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchDashboardData();
 
     const channel = supabase

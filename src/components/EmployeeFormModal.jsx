@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { Modal } from './Modal';
 import { Button } from './Button';
 import { Input, Select } from './FormFields';

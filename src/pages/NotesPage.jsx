@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNotes } from '../hooks/useNotes';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
@@ -92,6 +92,7 @@ export function NotesPage() {
 
       {/* Add Note Modal */}
       <NoteFormModal
+        key={formModalOpen ? 'note-form-open' : 'note-form-closed'}
         isOpen={formModalOpen}
         onClose={() => setFormModalOpen(false)}
         addNote={addNote}
