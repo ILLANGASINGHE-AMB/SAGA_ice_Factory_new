@@ -324,9 +324,10 @@ export function SalesPage() {
         created_by: user?.fullName || 'Staff Operator'
       });
 
-      // 3. Immediately trigger PDF generation and download
-      const billDoc = generateBillPDF(sale, settings);
-      billDoc.save(`${sale.sale_code}_invoice.pdf`);
+      // No auto-download: the invoice PDF is already generated and stored
+      // server-side (placeOrder uploads it for the shareable bill link/
+      // notification), and the operator can preview or download it any time
+      // afterward from the Sales History table's View/Download buttons.
 
       // When a CASH order reduces pre-existing old debt, notify the operator
       // so they know the cash went toward old balances (debtsLogic.md rule).

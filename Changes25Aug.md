@@ -1,6 +1,6 @@
 # Changes — 25 August 2026
 
-Twelve pieces of work:
+Thirteen pieces of work:
 
 1. **Dashboard "Settle Debts" quick action** — register a debt payment straight
    from the dashboard without first hunting the customer down in the ledger.
@@ -34,6 +34,8 @@ Twelve pieces of work:
 12. **Customer Profile filters actually filter now** — Daily/Monthly/Yearly did
     nothing outside Graph View, and Cheques/Notifications ignored every
     filter shown above them.
+13. **New Order no longer auto-downloads the invoice** — the bill is available
+    on demand afterward, exactly like debt settlement already worked.
 
 **Status:** production build passes (`npm run build`, ✓ built). ESLint reports
 the same problems as before the changes (`React` unused in both pages,
@@ -43,7 +45,7 @@ the same problems as before the changes (`React` unused in both pages,
 neither the settlement path nor the new ledger inserts were exercised at
 runtime.
 
-**33 files changed · 4 new migrations**
+**34 files changed · 4 new migrations**
 
 ---
 
@@ -1029,6 +1031,49 @@ range all sat above these tabs doing precisely nothing, which is the core of
 
 ---
 
+# Part 13 — Stop auto-downloading bills
+
+**No migration.** `src/pages/SalesPage.jsx` only.
+
+## Audit: every PDF `.save()` in the app
+
+Checked all eight `doc.save(...)` call sites for whether they fire on their
+own or only from an explicit click:
+
+| Location | Trigger | Verdict |
+|---|---|---|
+| `SalesPage.jsx` `handlePlaceOrder` | **Fired automatically** the instant an order is placed | **Fixed — removed** |
+| `SalesPage.jsx` `downloadInvoice` | "Download" button (Sales History row / bill preview modal) | Explicit — kept |
+| `DebtsPage.jsx` `downloadReceipt` | "Download PDF" button inside the settlement receipt preview modal | Explicit — kept |
+| `DebtsPage.jsx` `downloadBill` | "Download PDF" button inside the Debt Statement preview modal | Explicit — kept |
+| `CustomerProfilePage.jsx` `handleViewSale` | "View" row action in Sales History | Explicit click — kept (a pre-existing naming quirk: it downloads rather than previews despite the button's label, but the operator did click it — out of scope for "stop *automatic* downloads") |
+| `PublicBillPage.jsx` `handleDownloadPDF` | "Download" button on the customer-facing shared bill page | Explicit, different audience entirely — kept |
+| `ReportsPage.jsx` `handleDownloadPDF` | "Download PDF" button on a compiled report preview | Explicit — kept |
+| `DailyManagerReportView.jsx` `handleDownloadPDF` | "Export PDF" button | Explicit — kept |
+
+**Only one genuinely auto-fired**: placing an order. Settling a debt already
+did exactly what you're asking for — `settleCustomerDebt` opens an in-app
+receipt **preview** (an iframe in a modal), and the file only saves to disk if
+the operator clicks **Download PDF** inside it. That pattern was already
+correct before this change; nothing there needed fixing.
+
+## The fix
+
+`handlePlaceOrder` used to generate the invoice and immediately call
+`billDoc.save(...)` the moment `placeOrder()` returned — no preview, no
+click, straight to the downloads folder. That call is removed.
+
+The invoice itself is unaffected — `placeOrder()` (in `useSales.js`) still
+generates the PDF and uploads it to storage server-side, which is what powers
+the shareable bill link (`/bill/:saleCode`) and the WhatsApp/SMS invoice
+notification; only the *local browser save* triggered from the wizard was
+removed. To get the file, the operator uses the **View** or **Download**
+button already on each row in Sales History (or the Download button inside
+the View preview modal) — the exact "I'll download it myself afterward"
+flow requested.
+
+---
+
 ## What was deliberately *not* changed
 
 - **No new settlement logic.** `handlePickCustomer` hands off to the existing
@@ -1111,3 +1156,13 @@ range all sat above these tabs doing precisely nothing, which is the core of
 - **The Graph View's type filter behavior is unchanged** — "Cash Orders"
   still zeroes the Payments line (settlements only exist against debt
   orders), which was already correct, not part of this bug.
+- **Debt settlement's receipt preview modal still opens automatically**
+  after settling (Part 13). That's a preview, not a download — nothing
+  saves to disk unless the operator clicks Download PDF inside it, which is
+  exactly the behavior asked for. Say the word if you'd rather the preview
+  not pop up either.
+- **`CustomerProfilePage.jsx`'s "View" button still downloads instead of
+  previewing** (Part 13's audit table). It's operator-triggered, not
+  automatic, so it's outside what was asked — flagged in case it should be
+  switched to a preview like Sales History's own View button for
+  consistency.
