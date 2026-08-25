@@ -36,6 +36,46 @@ const ACTION_LABELS = {
 
 const money = (n) => `LKR ${(Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 
+// Section 01 cash income record — how each kind of income is labelled and
+// whether it reached the till. Sources whose `cash` is false are collections
+// that really happened but landed somewhere other than Cash Balance; they are
+// listed anyway so the record accounts for every payment, not just cash ones.
+const INCOME_SOURCES = {
+  cash_sale:         { label: 'Cash Sale',        where: 'Cash Balance',  cash: true },
+  debt_cash:         { label: 'Debt Collected',   where: 'Cash Balance',  cash: true },
+  other_receive:     { label: 'Other Receive',    where: 'Cash Balance',  cash: true },
+  debt_bank_transfer:{ label: 'Debt Collected',   where: 'Bank Balance',  cash: false },
+  debt_cheque:       { label: 'Debt Collected',   where: 'Hand Cheques',  cash: false },
+  debt_auto_applied: { label: 'Debt Settled',     where: 'Already in Cash Sales', cash: false }
+};
+
+const incomeSource = (key) =>
+  INCOME_SOURCES[key] || { label: 'Debt Collected', where: 'Cash Balance', cash: true };
+
+// One line of the "how the balance came" reconciliation.
+function LedgerLine({ label, detail, count, amount, sign = '+', muted = false }) {
+  return (
+    <div className="flex items-start justify-between gap-3 py-1.5">
+      <div className="min-w-0">
+        <p className={`text-xs font-semibold ${muted ? 'text-slate-500 dark:text-slate-400' : 'text-slate-800 dark:text-slate-100'}`}>
+          {label}
+          {count != null && (
+            <span className="ml-1.5 font-normal text-slate-400">
+              ({count} {count === 1 ? 'entry' : 'entries'})
+            </span>
+          )}
+        </p>
+        {detail && <p className="text-[10px] text-slate-400 mt-0.5">{detail}</p>}
+      </div>
+      <p className={`text-xs font-bold tabular-nums whitespace-nowrap ${
+        muted ? 'text-slate-400' : sign === '-' ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
+      }`}>
+        {muted ? '' : sign} {money(amount)}
+      </p>
+    </div>
+  );
+}
+
 function StatCard({ label, icon, value, subtitle, tone = 'default' }) {
   const tones = {
     emerald: 'bg-emerald-500 text-white',
@@ -109,6 +149,15 @@ export function CashBankPage() {
   const [receiveAmount, setReceiveAmount] = useState('');
   const [receiveAt, setReceiveAt] = useState(nowLocalDatetimeStr);
   const [receiveType, setReceiveType] = useState('head_office');
+  // Default off: the record's job is to account for every collection, and
+  // hiding the non-cash ones is what makes "I collected that debt, so why is
+  // Cash Balance unchanged?" unanswerable in the first place.
+  const [cashOnlyIncome, setCashOnlyIncome] = useState(false);
+
+  const visibleIncomeEntries = useMemo(
+    () => cashOnlyIncome ? cb.cashIncomeEntries.filter(e => e.addsToCash) : cb.cashIncomeEntries,
+    [cb.cashIncomeEntries, cashOnlyIncome]
+  );
 
   // Section 02: Bank Deposit
   const [depositAmount, setDepositAmount] = useState('');
@@ -460,36 +509,146 @@ export function CashBankPage() {
               </Button>
             </form>
 
-            {cb.cashReceives.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-2">No cash receives recorded yet.</p>
-            ) : (
-              <div className="overflow-x-auto max-h-48 overflow-y-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px]">
-                      <th className="py-1.5">Date & Time</th>
-                      <th className="py-1.5">Description</th>
-                      <th className="py-1.5 text-right">Amount</th>
-                      <th className="py-1.5 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {cb.cashReceives.map((r) => (
-                      <tr key={r.id}>
-                        <td className="py-1.5 text-slate-500 whitespace-nowrap">{fmtDateTime(r.received_at)}</td>
-                        <td className="py-1.5 font-medium">{r.receive_type === 'head_office' ? 'Received by Head Office' : 'Other Receives'}</td>
-                        <td className="py-1.5 text-right font-bold text-emerald-600">{money(r.amount)}</td>
-                        <td className="py-1.5 text-right">
-                          <button onClick={() => requestDelete('receive', r.id, `this cash receive of ${money(r.amount)}`)} className="p-1 text-rose-500 hover:bg-rose-50 rounded">
-                            <Trash2 size={12} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {/* --- How the Cash Balance was arrived at ---------------------
+                Cash Balance is derived, not stored, and three different
+                things feed it (cash orders, cash debt collections, manual
+                receives) while two drain it (banking, cash-paid expenses).
+                Showing only the total left no way to answer "where did this
+                figure come from?", so the reconciliation below restates the
+                exact arithmetic behind the card, line by line, and the record
+                under it backs every line with its individual transactions. */}
+            <div className="rounded-2xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/20 p-4">
+              <div className="flex items-center space-x-2 mb-2">
+                <Wallet size={15} className="text-emerald-600" />
+                <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                  How the Cash Balance was arrived at
+                </h4>
               </div>
-            )}
+
+              <div className="divide-y divide-emerald-100 dark:divide-emerald-900/40">
+                {cb.cashBalanceBreakdown.inflows.map(row => (
+                  <LedgerLine key={row.key} label={row.label} detail={row.detail} count={row.count} amount={row.amount} sign="+" />
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between gap-3 py-2 mt-1 border-t-2 border-emerald-200 dark:border-emerald-900/60">
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-100">Total cash in</p>
+                <p className="text-xs font-extrabold tabular-nums text-emerald-700 dark:text-emerald-400">{money(cb.cashBalanceBreakdown.totalIn)}</p>
+              </div>
+
+              <div className="divide-y divide-emerald-100 dark:divide-emerald-900/40 mt-2 pt-2 border-t border-emerald-100 dark:border-emerald-900/40">
+                {cb.cashBalanceBreakdown.outflows.map(row => (
+                  <LedgerLine key={row.key} label={row.label} detail={row.detail} count={row.count} amount={row.amount} sign="-" />
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between gap-3 py-2 mt-1 border-t-2 border-emerald-300 dark:border-emerald-800">
+                <p className="text-sm font-extrabold font-heading text-slate-900 dark:text-slate-50">= Cash Balance</p>
+                <p className="text-sm font-extrabold font-heading tabular-nums text-emerald-700 dark:text-emerald-400">{money(cb.cashBalanceBreakdown.cashBalance)}</p>
+              </div>
+
+              {/* The card is floored at zero, so a negative net would otherwise
+                  vanish behind an LKR 0.00 that looks like an empty till
+                  rather than a data-entry problem. */}
+              {cb.cashBalanceBreakdown.net < 0 && (
+                <p className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 mt-1.5">
+                  Recorded cash out exceeds cash in by {money(Math.abs(cb.cashBalanceBreakdown.net))} — the balance is shown as zero. Check for a deposit or expense entered against cash that never left this till.
+                </p>
+              )}
+
+              {cb.cashBalanceBreakdown.excluded.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-dashed border-emerald-200 dark:border-emerald-900/60">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                    Collected, but not in Cash Balance
+                  </p>
+                  <div className="divide-y divide-emerald-100 dark:divide-emerald-900/40">
+                    {cb.cashBalanceBreakdown.excluded.map(row => (
+                      <LedgerLine key={row.key} label={row.label} detail={row.detail} amount={row.amount} muted />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* --- Every cash income, transaction by transaction ------------- */}
+            <div>
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  Cash Income Record
+                </h4>
+                <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-500 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="accent-emerald-500 cursor-pointer"
+                    checked={cashOnlyIncome}
+                    onChange={(e) => setCashOnlyIncome(e.target.checked)}
+                  />
+                  Only what reached the till
+                </label>
+              </div>
+
+              {visibleIncomeEntries.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-3">No cash income recorded yet.</p>
+              ) : (
+                <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="sticky top-0 bg-white dark:bg-slate-900">
+                      <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px]">
+                        <th className="py-1.5">Date &amp; Time</th>
+                        <th className="py-1.5">Source</th>
+                        <th className="py-1.5">Reference</th>
+                        <th className="py-1.5">Added To</th>
+                        <th className="py-1.5 text-right">Amount</th>
+                        <th className="py-1.5 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {visibleIncomeEntries.map((entry) => {
+                        const src = incomeSource(entry.source);
+                        return (
+                          <tr key={entry.id}>
+                            <td className="py-1.5 text-slate-500 whitespace-nowrap">{fmtDateTime(entry.occurredAt)}</td>
+                            <td className="py-1.5">
+                              <span className="font-medium">{src.label}</span>
+                              {entry.party && <span className="block text-[10px] text-slate-400">{entry.party}</span>}
+                            </td>
+                            <td className="py-1.5 font-mono text-[10px] text-slate-500">{entry.reference || '—'}</td>
+                            <td className="py-1.5">
+                              <span className={`inline-block px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
+                                entry.addsToCash
+                                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                  : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                              }`}>
+                                {src.where}
+                              </span>
+                              {entry.note && <span className="block text-[10px] text-slate-400 mt-0.5">{entry.note}</span>}
+                            </td>
+                            <td className={`py-1.5 text-right font-bold tabular-nums ${entry.addsToCash ? 'text-emerald-600' : 'text-slate-400'}`}>
+                              {money(entry.amount)}
+                            </td>
+                            <td className="py-1.5 text-right">
+                              {/* Only this section's own rows are deletable here.
+                                  A cash sale or a settlement is reversed where it
+                                  was created, not from a reporting view. */}
+                              {entry.source === 'other_receive' ? (
+                                <button
+                                  onClick={() => requestDelete('receive', Number(entry.id.split('-')[1]), `this cash receive of ${money(entry.amount)}`)}
+                                  className="p-1 text-rose-500 hover:bg-rose-50 rounded cursor-pointer"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              ) : (
+                                <span className="text-slate-300">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
           )}
 

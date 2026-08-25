@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { coalesceRefetch } from '../lib/realtimeRefetch';
-import { computeCashBankBalances } from '../utils/cashBankMath';
+import { computeCashBankBalances, isCollectedCashSettlement } from '../utils/cashBankMath';
 import { logActivity, currentActor } from '../lib/activityLog';
 
 // Cash & Bank Management runs as a live running ledger (not day-scoped like
@@ -34,7 +34,10 @@ export function useCashBank() {
         { data: openingData, error: openingErr },
         { data: expenseData, error: expenseErr }
       ] = await Promise.all([
-        supabase.from('sales').select('total_amount, payment_type, sale_date').eq('payment_type', 'cash'),
+        // sale_code / customer / created_by are pulled alongside the amount so
+        // Section 01's cash income record can list each cash order as its own
+        // line rather than a single opaque "Cash Sales" total.
+        supabase.from('sales').select('id, sale_code, total_amount, payment_type, sale_date, created_by, customer:customers(name, customer_code)').eq('payment_type', 'cash'),
         // settlement_code is persisted on the row now, so a customer phoning
         // in quoting their receipt number can actually be found — and Cash &
         // Bank history can label rows by that code instead of guessing from
@@ -107,6 +110,8 @@ export function useCashBank() {
     settlementBankTotal,
     settlementChequeTotal,
     settlementAutoAppliedTotal,
+    cashReceivesTotal,
+    cashDepositedTotal,
     bankDepositsTotal,
     bankWithdrawalsTotal,
     chequesPending,
@@ -133,6 +138,179 @@ export function useCashBank() {
     }),
     [sales, settlements, cashReceives, bankDeposits, chequeRecords, bankWithdrawals, expenseRows, openingBalances]
   );
+
+  // --- Section 01: where Cash Balance came from -----------------------------
+  // Cash Balance is derived, never stored: it is the sum of everything that
+  // put money in the till minus everything that took money out. Showing only
+  // the resulting number left operators with no way to answer "how did we get
+  // this figure?", so the two structures below break it back down.
+  //
+  // cashIncomeEntries — one row per individual cash income event (each cash
+  // order, each cash settlement, each manual receive), so the record is at
+  // transaction level and every rupee is traceable to its source document.
+  const cashIncomeEntries = useMemo(() => {
+    const entries = [];
+
+    for (const s of sales) {
+      entries.push({
+        id: `sale-${s.id}`,
+        source: 'cash_sale',
+        occurredAt: s.sale_date,
+        amount: Number(s.total_amount) || 0,
+        reference: s.sale_code || null,
+        party: s.customer?.name || 'Walk-in',
+        doneBy: s.created_by || 'Operator',
+        addsToCash: true,
+        note: null
+      });
+    }
+
+    // Split by where the money actually went, not by what it settled. A
+    // settlement is a debt being collected either way; only the cash ones
+    // reach the till. The other three are carried here as non-cash rows
+    // rather than dropped, because "I collected that debt — why didn't Cash
+    // Balance move?" is exactly the question this record has to answer.
+    for (const s of settlements) {
+      const cash = isCollectedCashSettlement(s);
+      entries.push({
+        id: `settlement-${s.id}`,
+        source: s.is_auto_applied ? 'debt_auto_applied' : cash ? 'debt_cash' : `debt_${s.payment_method}`,
+        occurredAt: s.settlement_date,
+        amount: Number(s.amount_paid) || 0,
+        reference: s.settlement_code || null,
+        party: s.customer?.name || '—',
+        doneBy: s.created_by || 'Admin',
+        addsToCash: cash,
+        note: s.is_auto_applied
+          ? 'Paid off by a cash order — that cash is already counted as the sale'
+          : s.payment_method === 'bank_transfer'
+            ? 'Transferred straight to the bank — added to Bank Balance'
+            : s.payment_method === 'cheque'
+              ? 'Taken as a cheque — held in Hand Cheques until banked'
+              : null
+      });
+    }
+
+    for (const r of cashReceives) {
+      entries.push({
+        id: `receive-${r.id}`,
+        source: 'other_receive',
+        occurredAt: r.received_at,
+        amount: Number(r.amount) || 0,
+        reference: null,
+        party: r.receive_type === 'head_office' ? 'Head Office' : 'Other',
+        doneBy: r.created_by || 'Admin',
+        addsToCash: true,
+        note: null
+      });
+    }
+
+    return entries.sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt));
+  }, [sales, settlements, cashReceives]);
+
+  // cashBalanceBreakdown — the same arithmetic cashBankMath performs, restated
+  // as an ordered, labelled reconciliation that adds up on screen to exactly
+  // the Cash Balance card. Sourced from the same computed totals rather than
+  // re-derived, so the two can never disagree.
+  const cashBalanceBreakdown = useMemo(() => {
+    const cashSaleCount = sales.length;
+    const cashSettlementCount = settlements.filter(isCollectedCashSettlement).length;
+    const bankedCount = bankDeposits.filter(
+      d => d.cash_method !== 'cheques' && d.cash_method !== 'debt_settlement'
+    ).length;
+
+    const inflows = [
+      {
+        key: 'opening',
+        label: 'Opening cash (Initial Collection)',
+        detail: 'What the till already held at go-live',
+        amount: openingCash,
+        count: null
+      },
+      {
+        key: 'cash_sales',
+        label: 'Cash Sales',
+        detail: 'Orders paid in cash at the counter',
+        amount: cashSalesTotal,
+        count: cashSaleCount
+      },
+      {
+        key: 'debt_cash',
+        label: 'Debt Collected (cash)',
+        detail: 'Debt settlements the customer paid in cash',
+        amount: settlementCashTotal,
+        count: cashSettlementCount
+      },
+      {
+        key: 'other_receives',
+        label: 'Other Cash Receives',
+        detail: 'Head office and other cash recorded in this section',
+        amount: cashReceivesTotal,
+        count: cashReceives.length
+      }
+    ];
+
+    const outflows = [
+      {
+        key: 'banked',
+        label: 'Cash banked',
+        detail: 'Till cash deposited into the bank',
+        amount: cashDepositedTotal,
+        count: bankedCount
+      },
+      {
+        key: 'cash_expenses',
+        label: 'Expenses paid from cash',
+        detail: 'Expense ledger rows with cash as the payment source',
+        amount: cashExpensesTotal,
+        count: null
+      }
+    ];
+
+    // Debt that was genuinely collected but never reached the till. Listed so
+    // the record accounts for every settlement, not just the cash ones.
+    const excluded = [
+      {
+        key: 'debt_bank',
+        label: 'Debt collected by bank transfer',
+        detail: 'Went to Bank Balance, not the till',
+        amount: settlementBankTotal
+      },
+      {
+        key: 'debt_cheque',
+        label: 'Debt collected by cheque',
+        detail: 'Held in Hand Cheques until banked',
+        amount: settlementChequeTotal
+      },
+      {
+        key: 'debt_auto',
+        label: 'Debt cleared by a cash order',
+        detail: 'Already counted above inside Cash Sales',
+        amount: settlementAutoAppliedTotal
+      }
+    ].filter(row => row.amount > 0);
+
+    const totalIn = inflows.reduce((sum, r) => sum + r.amount, 0);
+    const totalOut = outflows.reduce((sum, r) => sum + r.amount, 0);
+
+    return {
+      inflows,
+      outflows,
+      excluded,
+      totalIn,
+      totalOut,
+      // cashBalance is floored at 0 by computeCashBankBalances; net is the raw
+      // arithmetic. They differ only when recorded outflows exceed inflows,
+      // which means something was mis-entered — surfaced rather than hidden.
+      net: totalIn - totalOut,
+      cashBalance
+    };
+  }, [
+    sales, settlements, cashReceives, bankDeposits,
+    openingCash, cashSalesTotal, settlementCashTotal, cashReceivesTotal,
+    cashDepositedTotal, cashExpensesTotal, settlementBankTotal,
+    settlementChequeTotal, settlementAutoAppliedTotal, cashBalance
+  ]);
 
   // Combined, normalized audit trail across all 4 ledgers — every entry ever
   // saved to cash_receives / bank_deposits / cheque_records / bank_withdrawals
@@ -464,6 +642,10 @@ export function useCashBank() {
     settlementBankTotal,
     settlementChequeTotal,
     settlementAutoAppliedTotal,
+    cashReceivesTotal,
+    cashDepositedTotal,
+    cashIncomeEntries,
+    cashBalanceBreakdown,
     bankBalance,
     bankDepositsTotal,
     bankWithdrawalsTotal,
