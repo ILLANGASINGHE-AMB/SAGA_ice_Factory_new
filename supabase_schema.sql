@@ -2091,6 +2091,45 @@ begin
     v_applied_to_old_debt := public.apply_cash_to_old_debts(
       p_customer_id, v_total_amount, v_sale_id, v_sale_code, p_created_by
     );
+
+    -- Cash diverted to older invoices is cash THIS order did not receive, so
+    -- an equal shortfall opens against it.
+    --
+    -- Without this the same rupees were spent twice: the sale was booked as
+    -- fully paid AND the old debt was written off. A customer holding a
+    -- LKR 25,000 debt who then placed a LKR 35,000 cash order walked away
+    -- owing nothing -- LKR 60,000 of ice for LKR 35,000 of cash, with
+    -- LKR 25,000 of receivables silently destroyed.
+    --
+    -- The invariant this restores: A CASH ORDER NEVER CHANGES A CUSTOMER'S
+    -- TOTAL OUTSTANDING. They hand over exactly what the order is worth, so
+    -- the balance is a wash; FIFO only moves WHICH invoice carries it (oldest
+    -- cleared, shortfall opened on this one), never how much is carried.
+    --   before: 25,000 owed on the old invoice
+    --   pay   : 35,000 cash -> 25,000 clears the old invoice, 10,000 lands here
+    --   after : 25,000 owed on THIS invoice (35,000 billed - 10,000 received)
+    -- Cash Balance still receives the full 35,000: the sale row is unchanged
+    -- and every offset settlement is flagged is_auto_applied, which is what
+    -- keeps cashBankMath from counting the same money a second time.
+
+    -- total_amount is the shortfall, not the order total, and paid_amount stays
+    -- 0 with no settlement row behind it. That is deliberate: the ledger's own
+    -- consistency check (`debt_paid_amount_vs_settlements`) requires
+    -- paid_amount to equal the sum of a debt's settlements, so recording the
+    -- LKR 10,000 that DID land here as `paid` would demand a settlement row --
+    -- and delete_sale_transaction would then capture that row twice in one
+    -- trash snapshot (once under this debt, once as an auto-applied offset),
+    -- making the sale impossible to restore. The shortfall alone is the figure
+    -- every balance actually needs.
+    if v_applied_to_old_debt > 0 then
+      insert into public.debts (
+        sale_id, customer_id, total_amount, paid_amount, remaining_amount,
+        status, created_at, last_activity_at
+      ) values (
+        v_sale_id, p_customer_id, v_applied_to_old_debt, 0, v_applied_to_old_debt,
+        'pending', v_now, v_now
+      ) returning id into v_debt_id;
+    end if;
   end if;
 
   return jsonb_build_object(
@@ -2329,9 +2368,14 @@ begin
   else
     -- Converting to cash: only safe to drop the debt if nothing has been
     -- collected against it yet.
+    -- A cash order can now carry a debt of its own (the shortfall left when
+    -- its cash was diverted to older invoices), so this branch is reached for
+    -- cash -> cash edits too, not just debt -> cash conversions. Either way the
+    -- rule is the same: the row is only safe to drop if nothing has been
+    -- collected against it.
     if v_debt_id is not null then
       if coalesce(v_debt_paid, 0) > 0 then
-        raise exception 'Cannot convert to cash: LKR % has already been settled against this sale''s debt', v_debt_paid;
+        raise exception 'Cannot re-price this sale: LKR % has already been settled against the debt it carries', v_debt_paid;
       end if;
       delete from public.debts where id = v_debt_id;
       v_debt_id := null;
@@ -2342,6 +2386,43 @@ begin
     v_applied_to_old_debt := public.apply_cash_to_old_debts(
       v_customer_id, v_new_total, p_sale_id, v_sale_code, p_edited_by
     );
+
+    -- Cash diverted to older invoices is cash THIS order did not receive, so
+    -- an equal shortfall opens against it.
+    --
+    -- Without this the same rupees were spent twice: the sale was booked as
+    -- fully paid AND the old debt was written off. A customer holding a
+    -- LKR 25,000 debt who then placed a LKR 35,000 cash order walked away
+    -- owing nothing -- LKR 60,000 of ice for LKR 35,000 of cash, with
+    -- LKR 25,000 of receivables silently destroyed.
+    --
+    -- The invariant this restores: A CASH ORDER NEVER CHANGES A CUSTOMER'S
+    -- TOTAL OUTSTANDING. They hand over exactly what the order is worth, so
+    -- the balance is a wash; FIFO only moves WHICH invoice carries it (oldest
+    -- cleared, shortfall opened on this one), never how much is carried.
+    --   before: 25,000 owed on the old invoice
+    --   pay   : 35,000 cash -> 25,000 clears the old invoice, 10,000 lands here
+    --   after : 25,000 owed on THIS invoice (35,000 billed - 10,000 received)
+    -- Cash Balance still receives the full 35,000: the sale row is unchanged
+    -- and every offset settlement is flagged is_auto_applied, which is what
+    -- keeps cashBankMath from counting the same money a second time.
+
+    if v_applied_to_old_debt > 0 then
+      insert into public.debts (
+        sale_id, customer_id, total_amount, paid_amount, remaining_amount,
+        status, created_at, last_activity_at
+      ) values (
+        p_sale_id, v_customer_id, v_applied_to_old_debt, 0, v_applied_to_old_debt,
+        'pending',
+        -- created_at is the SALE's date, not the edit's. Two reasons: the
+        -- ledger check `debt_created_at_vs_sale_date` requires them to match,
+        -- and apply_cash_to_old_debts orders by created_at -- dating a
+        -- re-priced order's debt to today would jump it to the back of the
+        -- FIFO queue and quietly break that customer's debt aging.
+        (select sale_date from public.sales where id = p_sale_id),
+        v_now
+      ) returning id into v_debt_id;
+    end if;
   end if;
 
   return jsonb_build_object(
@@ -3222,3 +3303,76 @@ end;
 $$;
 
 grant execute on function public.clear_all_data() to authenticated;
+
+-- FIN-17 repair: rebuild receivables that pre-patch cash orders wrote off.
+-- Dry run by default; see 20260826040000 for the full rationale.
+create or replace function public.backfill_cash_order_shortfall_debts(
+  p_dry_run boolean default true
+)
+returns table (
+  sale_code       text,
+  customer_name   text,
+  sale_date       timestamptz,
+  order_total     numeric,
+  applied_to_old  numeric,
+  shortfall       numeric,
+  action          text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_row record;
+begin
+  if not public.is_admin() then
+    raise exception 'Only admins can repair receivables';
+  end if;
+
+  for v_row in
+    select s.id, s.sale_code, s.sale_date, s.customer_id, s.total_amount,
+           c.name as customer_name,
+           sum(ds.amount_paid) as applied
+      from public.sales s
+      join public.debt_settlements ds
+        on ds.source_sale_id = s.id and ds.is_auto_applied
+      left join public.customers c on c.id = s.customer_id
+     where s.payment_type = 'cash'
+       -- Idempotency: a sale that already carries its own debt row has either
+       -- been repaired already or was written by the patched RPC.
+       and not exists (select 1 from public.debts d where d.sale_id = s.id)
+     group by s.id, s.sale_code, s.sale_date, s.customer_id, s.total_amount, c.name
+     order by s.sale_date, s.id
+  loop
+    -- The shortfall is whatever this order's cash was diverted to, capped at
+    -- the order total: cash cannot fund more of other invoices than the
+    -- customer actually handed over for this one.
+    if not p_dry_run then
+      insert into public.debts (
+        sale_id, customer_id, total_amount, paid_amount, remaining_amount,
+        status, created_at, last_activity_at
+      ) values (
+        v_row.id, v_row.customer_id,
+        least(v_row.applied, v_row.total_amount), 0,
+        least(v_row.applied, v_row.total_amount),
+        'pending',
+        -- Matches the sale's date, both for the `debt_created_at_vs_sale_date`
+        -- ledger check and so FIFO aging places it correctly among the
+        -- customer's other invoices.
+        v_row.sale_date, timezone('utc'::text, now())
+      );
+    end if;
+
+    sale_code      := v_row.sale_code;
+    customer_name  := coalesce(v_row.customer_name, '(deleted customer)');
+    sale_date      := v_row.sale_date;
+    order_total    := v_row.total_amount;
+    applied_to_old := v_row.applied;
+    shortfall      := least(v_row.applied, v_row.total_amount);
+    action         := case when p_dry_run then 'would create' else 'created' end;
+    return next;
+  end loop;
+end;
+$$;
+
+grant execute on function public.backfill_cash_order_shortfall_debts(boolean) to authenticated;

@@ -391,9 +391,16 @@ export function SalesPage() {
     // this order; for a cash order the sale settles itself and only any
     // pre-existing balance is left standing.
     const priorDebt = Number(placedSaleRecord.priorDebt) || 0;
+    // A cash order leaves the customer's total outstanding EXACTLY where it
+    // was: they hand over what the order is worth, so it is a wash. The FIFO
+    // offset only moves which invoice carries the balance -- the oldest is
+    // cleared and an equal shortfall opens on this one -- which is why the
+    // old `priorDebt - currentAmount` was wrong. It told a customer who owed
+    // 25,000 and then paid cash for a 35,000 order that they now owed nothing,
+    // matching the server-side write-off that FIN-17 fixes.
     const remainingAmount = placedSaleRecord.payment_type === 'debt'
       ? priorDebt + currentAmount
-      : Math.max(0, priorDebt - currentAmount);
+      : priorDebt;
     const totalAmount = placedSaleRecord.payment_type === 'debt'
       ? priorDebt + currentAmount
       : currentAmount;
