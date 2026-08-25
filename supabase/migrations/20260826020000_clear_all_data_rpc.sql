@@ -7,27 +7,16 @@
 --   1. Silent no-ops. A client `.delete()` on a table with no DELETE policy
 --      removes zero rows and reports no error, so `code_counters` survived
 --      every "clear" and SAGA codes kept counting up from the old data.
---   2. Missed tables. `drivers`, `opening_balances`, `notification_log`,
+--   2. Missed tables. `opening_balances`, `notification_log`,
 --      `expense_categories`, `expense_items` and `settings` were never in
---      the list, so a "cleared" system still held driver names, opening
---      cash/bank balances, the WhatsApp dispatch log, the expense chart of
---      accounts and the company profile / Gemini API key.
+--      the list, so a "cleared" system still held opening cash/bank
+--      balances, the WhatsApp dispatch log, the expense chart of accounts
+--      and the company profile / Gemini API key.
 --   3. Non-atomic. A failure partway through the loop left the database
 --      half-wiped with no way back.
 --
 -- What survives: login information only — `auth.users` and the `profiles`
--- rows that carry each account's role, name and username. Everything else
--- goes. The two structural exceptions below are reset in place rather than
--- deleted, because deleting their rows would brick the app rather than
--- blank it, and resetting them reaches the identical zero-data end state:
---
---   * `inventory` — the four catalog rows (MFC/RSC/BNC/DGC) are looked up by
---     `type` by the order-placement RPCs, which expect exactly one row per
---     cube type. Quantities go to 0 and prices to null (unset), matching the
---     fresh-install seed.
---   * `settings` — one row is expected by useSettings(); its columns are
---     reset to the schema defaults, clearing the company profile, logo,
---     favicon and stored Gemini API key.
+-- rows that carry each account's role, name and username.
 -- --------------------------------------------------------------------------
 
 create or replace function public.clear_all_data()
@@ -36,59 +25,64 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_tables text;
 begin
   if not public.is_admin() then
     raise exception 'Only admins can clear the database';
   end if;
 
-  -- Children before parents so the `on delete restrict` FKs
-  -- (transport_trips.employee_id, transport_trips.driver_id) never block a
-  -- step. Every statement carries `where true`: this runs as the function
-  -- owner, which has pg-safeupdate enabled and rejects an unqualified
-  -- DELETE/UPDATE.
+  -- A DENYLIST, not an allowlist -- deliberately.
+  --
+  -- Naming the tables to wipe was the first attempt at this and it was the
+  -- wrong shape twice over. It rots the moment a feature adds a table, and it
+  -- rots SILENTLY: data survives the one operation whose entire promise is
+  -- that nothing survives. It also goes stale in the other direction -- the
+  -- first draft listed `drivers`, dropped back in
+  -- 20260821080000_link_transport_to_employees.sql when drivers were folded
+  -- into `employees`, so the whole function aborted on a table that had not
+  -- existed for months.
+  --
+  -- Discovering the list from the live catalog fixes both: a table added next
+  -- month is wiped automatically, and a table dropped last month cannot
+  -- reappear here. Only three are held back, and only for structural reasons:
+  --
+  --   profiles  -- login information, the one thing that must survive.
+  --   inventory -- the MFC/RSC/BNC/DGC catalog rows are looked up by `type`
+  --                by the order-placement RPCs, which expect exactly one row
+  --                per cube type. Deleting them would brick Sales rather than
+  --                blank it, so it is reset in place below instead.
+  --   settings  -- useSettings() expects a single row. Reset in place below.
+  select string_agg(format('public.%I', c.relname), ', ')
+    into v_tables
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public'
+     and c.relkind = 'r'
+     and not c.relispartition
+     and c.relname not in ('profiles', 'inventory', 'settings')
+     -- Anything an extension owns (pg_depend deptype 'e') is infrastructure,
+     -- not factory data; truncating one could break the extension.
+     and not exists (
+       select 1 from pg_depend d
+        where d.objid = c.oid and d.deptype = 'e'
+     );
 
-  -- Sales, debts and customers
-  delete from public.debt_settlements where true;
-  delete from public.debts where true;
-  delete from public.sale_items where true;
-  delete from public.sales where true;
-  delete from public.customer_cube_prices where true;
-  delete from public.notification_log where true;
-  delete from public.customers where true;
+  if v_tables is not null then
+    -- One TRUNCATE over the whole set at once, so FK order stops mattering --
+    -- Postgres checks the set as a whole rather than statement by statement,
+    -- which is what made the old children-before-parents ordering necessary.
+    -- RESTART IDENTITY puts row ids back to 1 so the system genuinely reads
+    -- as a fresh install rather than carrying on from the old data's numbers.
+    -- CASCADE cannot reach the three held-back tables: it only pulls in
+    -- tables that REFERENCE a truncated one, and none of the three do
+    -- (profiles points at auth.users; inventory and settings point nowhere).
+    execute format('truncate table %s restart identity cascade', v_tables);
+  end if;
 
-  -- Transport and staff
-  delete from public.transport_trips where true;
-  delete from public.vehicle_trips where true;
-  delete from public.vehicles where true;
-  delete from public.drivers where true;
-  delete from public.employee_attendance where true;
-  delete from public.employees where true;
-
-  -- Expenses, including the chart of accounts itself
-  delete from public.expense_amounts where true;
-  delete from public.expense_ledger_rows where true;
-  delete from public.expense_items where true;
-  delete from public.expense_categories where true;
-
-  -- Cash, bank and reporting
-  delete from public.daily_manager_reports where true;
-  delete from public.cheque_records where true;
-  delete from public.bank_deposits where true;
-  delete from public.cash_receives where true;
-  delete from public.bank_withdrawals where true;
-  delete from public.opening_balances where true;
-
-  -- Notes, audit trails and recycle bin
-  delete from public.notes where true;
-  delete from public.activity_log where true;
-  delete from public.inventory_transactions where true;
-  delete from public.trash where true;
-
-  -- SAGA code sequences restart from 1. next_code() upserts its counter row,
-  -- so deleting these is safe — the rows come back on first use.
-  delete from public.code_counters where true;
-
-  -- Structural rows reset in place (see header).
+  -- Structural rows reset in place (see above). Both carry `where true`: this
+  -- runs as the function owner, which has pg-safeupdate enabled and rejects
+  -- an unqualified UPDATE.
   update public.inventory
      set quantity = 0,
          price_per_cube = null,
