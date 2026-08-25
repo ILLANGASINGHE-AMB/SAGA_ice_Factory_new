@@ -50,40 +50,40 @@ export function useSales() {
     };
   }, []);
 
+  // One pooled Ice Cubes order: a billed quantity at one rate, plus an
+  // optional free quantity. The operator no longer picks Production vs
+  // Resell — the server draws Production first and falls back to Resell, and
+  // records the resulting split per sale_item.
   const placeOrder = async ({
     customer_id,
-    items, // [{ cube_type, quantity, price_per_cube }]
+    quantity,
+    price_per_cube,
+    free_quantity = 0,
     payment_type,
     created_by
   }) => {
     if (!customer_id) throw new Error("Customer is required");
-    if (!Array.isArray(items) || items.length === 0) {
-      throw new Error("At least one order item is required");
-    }
-    for (const item of items) {
-      if (!item.cube_type || (item.cube_type !== 'manufactured' && item.cube_type !== 'resell')) {
-        throw new Error("Invalid cube type selected");
-      }
-      if (!item.quantity || item.quantity <= 0 || !Number.isInteger(Number(item.quantity))) {
-        throw new Error("All row quantities must be positive integers");
-      }
-    }
+
+    const paid = Number(quantity) || 0;
+    const free = Number(free_quantity) || 0;
+
+    if (!Number.isInteger(paid) || paid < 0) throw new Error("Cube quantity must be a whole number");
+    if (!Number.isInteger(free) || free < 0) throw new Error("Free cube quantity must be a whole number");
+    if (paid + free === 0) throw new Error("Enter a cube quantity or a free cube quantity");
+    if (paid > 0 && !(Number(price_per_cube) > 0)) throw new Error("Price per cube must be set before placing a sale");
     if (!payment_type || (payment_type !== 'cash' && payment_type !== 'debt')) {
       throw new Error("Invalid payment type selected");
     }
 
     // Atomic PostgreSQL single-transaction RPC execution. No JS fallback here
-    // — multi-row inventory locking and cash-to-old-debt FIFO bookkeeping
-    // across several cube types is not safe to approximate outside a real DB
-    // transaction (same reasoning as the single-item path this replaced:
-    // safer to block the sale and ask the operator to retry).
-    const { data: rpcData, error: rpcErr } = await supabase.rpc('place_multi_item_order_transaction', {
+    // — pooled inventory locking, Production-first allocation and
+    // cash-to-old-debt FIFO bookkeeping are not safe to approximate outside a
+    // real DB transaction: safer to block the sale and ask the operator to retry.
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('place_pooled_order_transaction', {
       p_customer_id: customer_id,
-      p_items: items.map(i => ({
-        cube_type: i.cube_type,
-        quantity: i.quantity,
-        price_per_cube: i.price_per_cube || null
-      })),
+      p_quantity: paid,
+      p_price_per_cube: Number(price_per_cube) || null,
+      p_free_quantity: free,
       p_payment_type: payment_type,
       p_created_by: created_by
     });
@@ -97,7 +97,7 @@ export function useSales() {
     const total_amount = rpcData.total_amount;
     const debtId = rpcData.debt_id;
     // Populated when a 'cash' order's payment reduces the customer's pre-existing
-    // outstanding debts (see place_multi_item_order_transaction).
+    // outstanding debts (see place_pooled_order_transaction).
     const appliedToOldDebt = Number(rpcData.applied_to_old_debt) || 0;
 
     // Fetch the fully joined sale (customer, line items) for PDF generation
@@ -150,7 +150,12 @@ export function useSales() {
       total_amount,
       bill_pdf_url: bill_pdf_url || fullSale?.bill_pdf_url || null,
       debtId,
-      appliedToOldDebt
+      appliedToOldDebt,
+      // How the pooled quantity was actually drawn across Production/Resell,
+      // paid and free — the operator entered one number, so this is the only
+      // place the split is visible to the UI.
+      allocation: rpcData.allocation || null,
+      free_quantity: Number(rpcData.free_quantity) || 0
     };
   };
 

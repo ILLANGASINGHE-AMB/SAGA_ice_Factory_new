@@ -32,10 +32,28 @@ export function computeCashBankBalances({
   const debtSettlementsTotal = settlementRows.reduce((sum, s) => sum + (Number(s.amount_paid) || 0), 0);
   const cashReceivesTotal = cashReceives.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
 
+  // A debt settlement only lands in the till when it was actually paid in
+  // cash. A settlement taken as a bank/online transfer arrives as its own
+  // bank_deposits row (cash_method 'debt_settlement'), and one taken as a
+  // cheque arrives as a pending cheque_records row — counting either here as
+  // well would book the same money into two stores of value at once.
+  // Anything else ('card', 'other', legacy rows with no method) keeps the
+  // original cash treatment so historical balances are unchanged.
+  const settlementsToCash = settlementRows.filter(
+    s => s.payment_method !== 'bank_transfer' && s.payment_method !== 'cheque'
+  );
+  const settlementsToBank = settlementRows.filter(s => s.payment_method === 'bank_transfer');
+  const settlementsToCheques = settlementRows.filter(s => s.payment_method === 'cheque');
+
+  const settlementCashTotal = settlementsToCash.reduce((sum, s) => sum + (Number(s.amount_paid) || 0), 0);
+  const settlementBankTotal = settlementsToBank.reduce((sum, s) => sum + (Number(s.amount_paid) || 0), 0);
+  const settlementChequeTotal = settlementsToCheques.reduce((sum, s) => sum + (Number(s.amount_paid) || 0), 0);
+
   // Only cash physically banked (sales/other cash) leaves the till — a
-  // "cheques already deposited" bank deposit never touched cash on hand.
+  // "cheques already deposited" bank deposit never touched cash on hand, and
+  // neither did a debt settled by online transfer straight into the bank.
   const cashDepositedTotal = bankDeposits
-    .filter(d => d.cash_method !== 'cheques')
+    .filter(d => d.cash_method !== 'cheques' && d.cash_method !== 'debt_settlement')
     .reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
 
   const bankDepositsTotal = bankDeposits.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
@@ -56,12 +74,15 @@ export function computeCashBankBalances({
     .reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
 
   const handChequesTotal = Math.max(0, openingCheques + chequesPendingTotal - unlinkedChequeDepositsTotal);
-  const cashBalance = Math.max(0, openingCash + cashSalesTotal + debtSettlementsTotal + cashReceivesTotal - cashDepositedTotal);
+  const cashBalance = Math.max(0, openingCash + cashSalesTotal + settlementCashTotal + cashReceivesTotal - cashDepositedTotal);
   const bankBalance = openingBank + bankDepositsTotal - bankWithdrawalsTotal;
 
   return {
     cashSalesTotal,
     debtSettlementsTotal,
+    settlementCashTotal,
+    settlementBankTotal,
+    settlementChequeTotal,
     cashReceivesTotal,
     cashDepositedTotal,
     bankDepositsTotal,

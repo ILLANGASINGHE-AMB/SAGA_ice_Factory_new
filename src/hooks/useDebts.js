@@ -180,9 +180,18 @@ export function useDebts() {
   // debt_settlements audit row (via settle_debt_transaction), so the ledger
   // stays accurate per sale; the caller gets back one combined receipt
   // describing every sale the payment touched.
-  const settleCustomerDebt = async (customerId, amountPaid, createdBy, paymentMethod = 'cash', notes = null) => {
+  const settleCustomerDebt = async (customerId, amountPaid, createdBy, paymentMethod = 'cash', notes = null, paymentDetails = {}) => {
     if (!amountPaid || amountPaid <= 0) {
       throw new Error("Settlement amount must be a positive number");
+    }
+
+    // A cheque has to carry enough detail to become a real Hand Cheques
+    // record, so it is validated BEFORE any money moves — a settlement that
+    // succeeded but couldn't be filed as a cheque would leave the payment
+    // recorded against the debt with nothing holding the funds.
+    if (paymentMethod === 'cheque') {
+      if (!paymentDetails.chequeNo?.trim()) throw new Error("Cheque number is required for a cheque settlement");
+      if (!paymentDetails.bankName?.trim()) throw new Error("Bank name is required for a cheque settlement");
     }
 
     const { data: outstandingDebts, error: debtsErr } = await supabase
@@ -239,6 +248,50 @@ export function useDebts() {
       .eq('id', customerId)
       .single();
 
+    // Put the money where it actually went. A cash settlement needs nothing
+    // here — Cash Balance is derived from debt_settlements directly. The
+    // other two methods never touch the till, so each files its own row in
+    // the Cash & Bank ledger it belongs to, linked back to this settlement:
+    //
+    //   Bank/Online Transfer -> bank_deposits  -> Bank Balance
+    //   Cheque               -> cheque_records -> Hand Cheques (pending)
+    //
+    // Best-effort: the debts above are already settled and are NOT rolled
+    // back if this fails. The caller is handed a ledgerWarning instead so the
+    // operator can file the entry by hand in Cash & Bank rather than losing
+    // the receipt and re-running a payment that already went through.
+    let ledgerWarning = null;
+    const settlementId = lastSettlement.id;
+
+    try {
+      if (paymentMethod === 'bank_transfer') {
+        const { error: depositErr } = await supabase.from('bank_deposits').insert([{
+          amount: amountPaid,
+          cash_method: 'debt_settlement',
+          bank_name: paymentDetails.bankName?.trim() || null,
+          settlement_id: settlementId,
+          created_by: createdBy || 'Admin'
+        }]);
+        if (depositErr) throw new Error(depositErr.message);
+      } else if (paymentMethod === 'cheque') {
+        const { error: chequeErr } = await supabase.from('cheque_records').insert([{
+          cheque_no: paymentDetails.chequeNo.trim(),
+          bank_name: paymentDetails.bankName.trim(),
+          amount: amountPaid,
+          payer_name: paymentDetails.payerName?.trim() || customer?.name || 'Customer',
+          customer_id: customerId ? Number(customerId) : null,
+          settlement_id: settlementId,
+          created_by: createdBy || 'Admin'
+        }]);
+        if (chequeErr) throw new Error(chequeErr.message);
+      }
+    } catch (ledgerErr) {
+      console.error("Settlement recorded but the Cash & Bank entry failed:", ledgerErr);
+      ledgerWarning = paymentMethod === 'cheque'
+        ? "Settlement saved, but the cheque could not be added to Hand Cheques — please add it manually in Cash & Bank."
+        : "Settlement saved, but the bank deposit could not be recorded — please add it manually in Cash & Bank.";
+    }
+
     logActivity({ action: 'settle_debt', entityType: 'customer', entityId: customerId, entityLabel: customer?.customer_code, description: `Settled LKR ${Number(amountPaid).toLocaleString()} across ${lines.length} debt(s) for ${customer?.customer_code || customerId}`, performedBy: createdBy });
 
     return {
@@ -251,9 +304,12 @@ export function useDebts() {
       settlement_date: lastSettlement.settlement_date,
       created_by: createdBy,
       customer,
+      cheque_no: paymentMethod === 'cheque' ? paymentDetails.chequeNo?.trim() || null : null,
+      bank_name: paymentDetails.bankName?.trim() || null,
       settlements: lines,
       remaining_amount: lines[lines.length - 1]?.remaining_amount ?? 0,
-      status: lines[lines.length - 1]?.status ?? 'settled'
+      status: lines[lines.length - 1]?.status ?? 'settled',
+      ledgerWarning
     };
   };
 

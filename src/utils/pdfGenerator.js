@@ -226,21 +226,53 @@ export function generateBillPDF(sale, settings) {
   fieldLine(doc, `Payment Method: ${sale.payment_type?.toUpperCase()}`, 115, y0 + 10.5);
   fieldLine(doc, `Operator: ${sale.created_by || 'System'}`, 115, y0 + 15.5);
 
-  // Itemized table using jspdf-autotable — one row per line item so a
-  // multi cube-type order (e.g. Production + Resell in one bill) lists each
-  // type separately. Falls back to a single legacy row built from the
-  // scalar sale fields if sale_items wasn't loaded (defensive only — every
-  // sale has at least one line item after the multi-item orders migration).
+  // Itemized table using jspdf-autotable. An order is now entered as one
+  // pooled Ice Cubes quantity that the server draws Production-first then
+  // Resell, so the several sale_items rows behind it are a stock-allocation
+  // detail, not something the customer ordered — they are collapsed back into
+  // a single billed line per rate. Free cubes are listed separately, at no
+  // charge, so the bill shows what actually left the store.
+  //
+  // Falls back to a single legacy row built from the scalar sale fields if
+  // sale_items wasn't loaded (defensive only — every sale has at least one
+  // line item after the multi-item orders migration).
   const lineItems = sale.sale_items?.length
     ? sale.sale_items
-    : [{ cube_type: sale.cube_type, quantity: sale.quantity, price_per_cube: sale.price_per_cube, subtotal: sale.total_amount }];
+    : [{ cube_type: sale.cube_type, quantity: sale.quantity, price_per_cube: sale.price_per_cube, subtotal: sale.total_amount, is_free: false }];
 
-  const tableData = lineItems.map(item => [
-    `Ice Cubes (${item.cube_type === 'manufactured' ? 'Production' : 'Resell'})`,
-    item.quantity.toLocaleString(),
-    `LKR ${Number(item.price_per_cube).toFixed(2)}`,
-    `LKR ${Number(item.subtotal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const paidItems = lineItems.filter(i => !i.is_free);
+  const freeItems = lineItems.filter(i => i.is_free);
+
+  // Group the billed lines by rate — one row per distinct price, since the
+  // customer was quoted a rate, not a cube source.
+  const paidByRate = new Map();
+  for (const item of paidItems) {
+    const rate = Number(item.price_per_cube) || 0;
+    const key = rate.toFixed(2);
+    const row = paidByRate.get(key) || { rate, quantity: 0, subtotal: 0 };
+    row.quantity += Number(item.quantity) || 0;
+    row.subtotal += Number(item.subtotal) || 0;
+    paidByRate.set(key, row);
+  }
+
+  const tableData = Array.from(paidByRate.values()).map(row => [
+    'Ice Cubes',
+    row.quantity.toLocaleString(),
+    `LKR ${row.rate.toFixed(2)}`,
+    `LKR ${row.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   ]);
+
+  const freeTotal = freeItems.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0)
+    || Number(sale.free_quantity) || 0;
+
+  if (freeTotal > 0) {
+    tableData.push([
+      'Free Cubes (complimentary)',
+      freeTotal.toLocaleString(),
+      'FREE',
+      'LKR 0.00'
+    ]);
+  }
 
   doc.autoTable({
     ...TABLE_STYLE_DEFAULTS,
@@ -298,7 +330,16 @@ export function generateBillPDF(sale, settings) {
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(LABEL[0], LABEL[1], LABEL[2]);
-  if (isDebt) {
+  if (freeTotal > 0) {
+    // With free cubes on the bill, the billed quantity and the quantity
+    // handed over differ — say so plainly rather than leaving the customer
+    // to reconcile the table.
+    const billedTotal = paidItems.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
+    doc.text(`${billedTotal.toLocaleString()} cubes billed + ${freeTotal.toLocaleString()} free = ${(billedTotal + freeTotal).toLocaleString()} issued.`, 19, finalY + 15);
+    doc.text(isDebt
+      ? 'Issued on credit terms; the amount is in the debts statement.'
+      : 'Thank you! This invoice has been settled in full.', 19, finalY + 19.5);
+  } else if (isDebt) {
     doc.text('This invoice was issued on credit terms. The amount is', 19, finalY + 15);
     doc.text('recorded in the customer’s pending debts statement.', 19, finalY + 19.5);
   } else {
@@ -438,7 +479,14 @@ export function generateSettlementReceiptPDF(settlement, settings) {
   fieldLabel(doc, 'Settlement Details', 115, y0);
   fieldLine(doc, `Date & Time: ${new Date(settlement.settlement_date).toLocaleString()}`, 115, y0 + 5.5);
   fieldLine(doc, `Sale Reference: ${saleRefText}`, 115, y0 + 10.5);
-  fieldLine(doc, `Payment Method: ${(settlement.payment_method || 'cash').replace('_', ' ').toUpperCase()}`, 115, y0 + 15.5);
+  // A cheque or bank transfer names where the money went, so the receipt can
+  // be checked against the Cash & Bank ledger entry it created.
+  const methodDetail = settlement.payment_method === 'cheque'
+    ? ` (No. ${settlement.cheque_no || 'N/A'}${settlement.bank_name ? `, ${settlement.bank_name}` : ''})`
+    : settlement.payment_method === 'bank_transfer' && settlement.bank_name
+      ? ` (${settlement.bank_name})`
+      : '';
+  fieldLine(doc, `Payment Method: ${(settlement.payment_method || 'cash').replace('_', ' ').toUpperCase()}${methodDetail}`, 115, y0 + 15.5);
   fieldLine(doc, `Authorized By: ${settlement.created_by || 'System'}`, 115, y0 + 20.5);
 
   let tableStartY = y0 + 28;
@@ -685,14 +733,14 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   doc.autoTable({
     ...TABLE_STYLE_DEFAULTS,
     startY: currentY + 3,
-    head: [['PREV BALANCE', 'PRODUCTION', 'PURCHASES', 'BRINE CUBES (VIEW ONLY)', 'FREE ISSUE', 'DAMAGED', 'SALES/ISSUE', 'SENT TO BRANCH', 'CLOSING BALANCE']],
+    head: [['PREV BALANCE', 'PRODUCTION', 'PURCHASES', 'BRINE (VIEW ONLY)', 'DAMAGED (VIEW ONLY)', 'FREE ISSUE', 'SALES/ISSUE', 'SENT TO BRANCH', 'CLOSING BALANCE']],
     body: [[
       stockData.previousDayBalance.toLocaleString(),
       stockData.todaysProduction.toLocaleString(),
       stockData.todaysPurchase.toLocaleString(),
       stockData.brineCubes.toLocaleString(),
-      stockData.freeIssue.toLocaleString(),
       stockData.damagedCubes.toLocaleString(),
+      stockData.freeIssue.toLocaleString(),
       stockData.todaysSalesQty.toLocaleString(),
       stockData.branchCubes.toLocaleString(),
       stockData.closingBalance.toLocaleString()

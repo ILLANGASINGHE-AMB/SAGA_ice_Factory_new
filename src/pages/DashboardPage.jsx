@@ -22,7 +22,8 @@ import {
   Wallet,
   Landmark,
   CreditCard,
-  ShoppingCart
+  ShoppingCart,
+  HandCoins
 } from 'lucide-react';
 
 export function DashboardPage() {
@@ -32,6 +33,13 @@ export function DashboardPage() {
 
   const handleAddNewOrder = () => {
     navigate('/sales', { state: { openNewOrder: true } });
+  };
+
+  // Collections shortcut: hands the operator straight to the Debts ledger with
+  // the debtor picker already open, so a walk-in payment can be registered
+  // without hunting the customer down in the ledger first.
+  const handleSettleDebts = () => {
+    navigate('/debts', { state: { openSettleDebt: true } });
   };
 
   // Color constants for charts
@@ -136,8 +144,16 @@ export function DashboardPage() {
   return (
     <div className="space-y-4 sm:space-y-6">
 
-      {/* Add New Order Trigger */}
-      <div className="flex justify-end">
+      {/* Quick Action Triggers */}
+      <div className="flex justify-end gap-2.5">
+        <Button
+          variant="primary"
+          onClick={handleSettleDebts}
+          className="flex items-center justify-center space-x-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 shadow-emerald-200 focus:ring-emerald-500"
+        >
+          <HandCoins size={16} />
+          <span>Settle Debts</span>
+        </Button>
         <Button
           variant="primary"
           onClick={handleAddNewOrder}

@@ -224,23 +224,37 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
     const mfcItem = inventory.find(i => i.type === 'manufactured');
     const rscItem = inventory.find(i => i.type === 'resell');
     const wstItem = inventory.find(i => i.type === 'waste');
+    const dgcItem = inventory.find(i => i.type === 'damaged');
 
     // 1. Stock / Production Details for the selected range
     let mfcTxnAdditions = 0;
     let rscTxnAdditions = 0;
     let brineTxnAdditions = 0;
+    let damagedTxnAdditions = 0;
+    // Cubes given away on orders in this range. Free cubes leave Production /
+    // Resell stock exactly like sold cubes do, but are not in sales.quantity —
+    // so the stock math below has to account for them separately.
+    let freeIssueQty = 0;
 
     invTransactions.forEach(txn => {
-      if (isInRange(txn.created_at) && (txn.transaction_type === 'add' || Number(txn.quantity_change) > 0)) {
-        const invId = txn.inventory_id;
-        const qty = Number(txn.quantity_change) || 0;
+      if (!isInRange(txn.created_at)) return;
+      const invId = txn.inventory_id;
+      const qty = Number(txn.quantity_change) || 0;
 
+      if (txn.transaction_type === 'free_issue') {
+        freeIssueQty += Math.abs(qty);
+        return;
+      }
+
+      if (txn.transaction_type === 'add' || qty > 0) {
         if (mfcItem && Number(invId) === Number(mfcItem.id)) {
           mfcTxnAdditions += qty;
         } else if (rscItem && Number(invId) === Number(rscItem.id)) {
           rscTxnAdditions += qty;
         } else if (wstItem && Number(invId) === Number(wstItem.id)) {
           brineTxnAdditions += qty;
+        } else if (dgcItem && Number(invId) === Number(dgcItem.id)) {
+          damagedTxnAdditions += qty;
         }
       }
     });
@@ -268,11 +282,16 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
       .filter(b => b.quantity > 0);
     const branchCubes = branchSalesList.reduce((sum, b) => sum + b.quantity, 0);
 
-    // Brine Cubes = Brine cubes added in range — auto-calculated only, not
-    // manager-editable (only Free Issue and Damaged are).
+    // Brine and Damaged Cubes = cubes added to those lines in range. Both are
+    // auto-calculated, view-only figures: they are separate stock counts, not
+    // deductions from sellable stock, so neither belongs in Closing Balance.
     const brineCubes = brineTxnAdditions;
-    const freeIssue = Number(manualInputs.freeIssue) || 0;
-    const damagedCubes = Number(manualInputs.damagedCubes) || 0;
+    const damagedCubes = damagedTxnAdditions;
+    // Free Issue used to be a manager-typed number because the system had no
+    // record of giveaways. Orders now carry a Free Cubes quantity that really
+    // deducts stock and logs a 'free_issue' inventory transaction, so this is
+    // derived from that ledger instead of being entered by hand.
+    const freeIssue = freeIssueQty;
 
     // `inventory.quantity` is a LIVE figure — it already reflects the
     // range's production, purchases, and sales the moment they happen (via
@@ -282,16 +301,16 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
     // old behavior) double-counted every day there was any activity — see
     // Audit_Issues_And_Fixes.md #4.1.
     //
-    // Brine Cubes (BNC) is deliberately excluded from this total — it is a
-    // view-only figure in every report and must never feed stock math.
+    // Brine (BNC) and Damaged (DGC) are deliberately excluded from this total
+    // — both are view-only figures in every report and must never feed stock
+    // math. Free cubes DO belong here: they physically left Production/Resell
+    // stock, so they are added back when winding the live total backwards to
+    // the opening balance, exactly like sold cubes are.
     const currentTotalStock = (Number(mfcItem?.quantity) || 0) + (Number(rscItem?.quantity) || 0);
-    const previousDayBalance = currentTotalStock - todaysProduction - todaysPurchase + todaysSalesQty;
+    const previousDayBalance = currentTotalStock - todaysProduction - todaysPurchase + todaysSalesQty + freeIssue;
 
-    // closingBalance therefore reduces to currentTotalStock minus whatever
-    // was reported as free-issued/damaged — those are pure manual report
-    // entries that never touch the actual inventory table, so they're the
-    // only genuine adjustment left to apply on top of the live total.
-    const closingBalance = previousDayBalance + todaysProduction + todaysPurchase - freeIssue - damagedCubes - todaysSalesQty;
+    // closingBalance therefore winds forward to exactly the live total again.
+    const closingBalance = previousDayBalance + todaysProduction + todaysPurchase - freeIssue - todaysSalesQty;
 
     // 2. Income Details
     const cashSalesRecords = todaysSalesRecords.filter(s => s.payment_type === 'cash');

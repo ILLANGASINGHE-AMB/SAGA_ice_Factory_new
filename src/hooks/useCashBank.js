@@ -29,7 +29,7 @@ export function useCashBank() {
         { data: openingData, error: openingErr }
       ] = await Promise.all([
         supabase.from('sales').select('total_amount, payment_type, sale_date').eq('payment_type', 'cash'),
-        supabase.from('debt_settlements').select('amount_paid, settlement_date'),
+        supabase.from('debt_settlements').select('id, settlement_code, amount_paid, payment_method, settlement_date, created_by, customer:customers(name, customer_code)'),
         supabase.from('cash_receives').select('*').order('received_at', { ascending: false }),
         supabase.from('bank_deposits').select('*').order('deposited_at', { ascending: false }),
         supabase.from('cheque_records').select('*, customer:customers(id, customer_code, name, is_one_time)').order('received_at', { ascending: false }),
@@ -77,6 +77,9 @@ export function useCashBank() {
   const {
     cashSalesTotal,
     debtSettlementsTotal,
+    settlementCashTotal,
+    settlementBankTotal,
+    settlementChequeTotal,
     bankDepositsTotal,
     bankWithdrawalsTotal,
     chequesPending,
@@ -109,6 +112,34 @@ export function useCashBank() {
   const historyEntries = useMemo(() => {
     const entries = [];
 
+    // Settlement code for the deposit / cheque rows a settlement produced, so
+    // a Cash & Bank entry can be traced back to the payment that created it.
+    const settlementLabels = new Map(
+      settlements.filter(s => s.id != null).map(s => [s.id, s.settlement_code ? `Settlement ${s.settlement_code}` : null])
+    );
+
+    // Cash settlements have no ledger row of their own — they raise Cash
+    // Balance straight from debt_settlements — so they are listed here to
+    // keep the history complete. Bank-transfer and cheque settlements are
+    // deliberately NOT listed twice: each already appears above as the bank
+    // deposit or the received cheque it produced.
+    for (const s of settlements) {
+      if (s.payment_method === 'bank_transfer' || s.payment_method === 'cheque') continue;
+      entries.push({
+        id: `settlement-${s.id}`,
+        actionType: 'debt_settlement',
+        occurredAt: s.settlement_date,
+        amount: Number(s.amount_paid) || 0,
+        direction: 'in',
+        doneBy: s.created_by || 'Admin',
+        detail: [
+          'Debt Settlement (Cash)',
+          s.customer?.name,
+          s.settlement_code
+        ].filter(Boolean).join(' — ')
+      });
+    }
+
     for (const r of cashReceives) {
       entries.push({
         id: `receive-${r.id}`,
@@ -122,6 +153,11 @@ export function useCashBank() {
     }
 
     for (const d of bankDeposits) {
+      const methodLabel =
+        d.cash_method === 'sales' ? 'Cash Received From Sales'
+        : d.cash_method === 'other' ? 'Cash Received From Other'
+        : d.cash_method === 'debt_settlement' ? 'Debt Settlement (Bank / Online Transfer)'
+        : 'Cash Received From Cheques';
       entries.push({
         id: `deposit-${d.id}`,
         actionType: 'bank_deposit',
@@ -130,8 +166,9 @@ export function useCashBank() {
         direction: 'in',
         doneBy: d.created_by || 'Admin',
         detail: [
-          d.cash_method === 'sales' ? 'Cash Received From Sales' : d.cash_method === 'other' ? 'Cash Received From Other' : 'Cash Received From Cheques',
-          d.bank_name
+          methodLabel,
+          d.bank_name,
+          settlementLabels.get(d.settlement_id) || null
         ].filter(Boolean).join(' — ')
       });
     }
@@ -144,7 +181,10 @@ export function useCashBank() {
         amount: Number(c.amount) || 0,
         direction: 'neutral',
         doneBy: c.created_by || 'Admin',
-        detail: `Cheque No. ${c.cheque_no} — ${c.bank_name} (${c.payer_name})`
+        detail: [
+          `Cheque No. ${c.cheque_no} — ${c.bank_name} (${c.payer_name})`,
+          settlementLabels.get(c.settlement_id) || null
+        ].filter(Boolean).join(' — ')
       });
     }
 
@@ -161,7 +201,7 @@ export function useCashBank() {
     }
 
     return entries.sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt));
-  }, [cashReceives, bankDeposits, chequeRecords, bankWithdrawals]);
+  }, [cashReceives, bankDeposits, chequeRecords, bankWithdrawals, settlements]);
 
   // Per-bank available balance, used to populate & validate Section 04's
   // "Select Bank to Withdraw From" — a withdrawal can't exceed what was
@@ -382,6 +422,9 @@ export function useCashBank() {
     cashBalance,
     cashSalesTotal,
     debtSettlementsTotal,
+    settlementCashTotal,
+    settlementBankTotal,
+    settlementChequeTotal,
     bankBalance,
     bankDepositsTotal,
     bankWithdrawalsTotal,

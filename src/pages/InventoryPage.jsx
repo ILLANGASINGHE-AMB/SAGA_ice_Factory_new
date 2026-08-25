@@ -16,10 +16,19 @@ import {
 const GRAPH_COLORS = {
   manufactured: '#22c55e', // Production - green
   resell: '#0ea5e9',       // Resell - light blue
-  waste: '#f97316'         // Brine - light orange
+  waste: '#f97316',        // Brine - light orange
+  damaged: '#f43f5e'       // Damaged - rose
 };
 
-const CUBE_TYPE_LABELS = { manufactured: 'Production', resell: 'Resell', waste: 'Brine' };
+const CUBE_TYPE_LABELS = { manufactured: 'Production', resell: 'Resell', waste: 'Brine', damaged: 'Damaged' };
+
+// Card heading per inventory type. Brine and Damaged are stock counts with no
+// price and are never sold — they are excluded from Total Cubes below.
+const CUBE_CARD_TITLES = { manufactured: 'Production', resell: 'Purchases', waste: 'Brine', damaged: 'Damaged' };
+
+// The two pools that can actually be sold. Everything that adds up to a
+// sellable "Total Cubes" figure comes from these.
+const SELLABLE_TYPES = ['manufactured', 'resell'];
 
 // Year filter options, derived from the current year rather than hardcoded so
 // the list never goes stale.
@@ -48,7 +57,16 @@ export function InventoryPage() {
   const [historyDate, setHistoryDate] = useState(todayStr);
   const [historyMonth, setHistoryMonth] = useState(thisMonthStr);
   const [historyYear, setHistoryYear] = useState(thisYearStr);
-  const [historyCubeType, setHistoryCubeType] = useState('all'); // 'all' | 'manufactured' | 'resell' | 'waste'
+  const [historyCubeType, setHistoryCubeType] = useState('all'); // 'all' | 'manufactured' | 'resell' | 'waste' | 'damaged'
+
+  // Total Cubes = Production + Resell. Brine and Damaged are counted and shown
+  // on their own cards but never added in — they aren't sellable stock.
+  const totalSellableCubes = useMemo(
+    () => (inventory || [])
+      .filter(i => SELLABLE_TYPES.includes(i.type))
+      .reduce((sum, i) => sum + (Number(i.quantity) || 0), 0),
+    [inventory]
+  );
 
   const openModal = (type, item) => {
     setSelectedItem(item);
@@ -158,15 +176,15 @@ export function InventoryPage() {
     return dateFilteredTransactions.filter(txn => txn.inventory?.type === historyCubeType);
   }, [dateFilteredTransactions, historyCubeType]);
 
-  // Summary stats for filtered history — Brine (waste) is view-only
-  // everywhere in the system and must never be folded into a combined
-  // total, so the 'all' aggregate excludes it (an explicit Brine-only
-  // filter still shows its own isolated added/deducted figures).
+  // Summary stats for filtered history — Brine (waste) and Damaged are
+  // view-only everywhere in the system and must never be folded into a
+  // combined total, so the 'all' aggregate excludes both (an explicit
+  // Brine-only or Damaged-only filter still shows its own isolated figures).
   const historyStats = useMemo(() => {
     let added = 0;
     let deducted = 0;
     filteredTransactions.forEach(t => {
-      if (historyCubeType === 'all' && t.inventory?.type === 'waste') return;
+      if (historyCubeType === 'all' && !SELLABLE_TYPES.includes(t.inventory?.type)) return;
       const change = Number(t.quantity_change) || 0;
       if (change > 0) added += change;
       else deducted += Math.abs(change);
@@ -179,7 +197,7 @@ export function InventoryPage() {
   // previously narrowed the table but left the graph showing all three series,
   // which read as the filter being broken in Graph View.
   const graphSeries = useMemo(() => {
-    if (historyCubeType === 'all') return ['Production', 'Resell', 'Brine'];
+    if (historyCubeType === 'all') return ['Production', 'Resell', 'Brine', 'Damaged'];
     return [CUBE_TYPE_LABELS[historyCubeType]];
   }, [historyCubeType]);
 
@@ -189,17 +207,17 @@ export function InventoryPage() {
     let buckets;
     if (historyFilterType === 'daily') {
       buckets = Array.from({ length: 24 }, (_, h) => ({
-        label: `${h.toString().padStart(2, '0')}:00`, Production: 0, Resell: 0, Brine: 0
+        label: `${h.toString().padStart(2, '0')}:00`, Production: 0, Resell: 0, Brine: 0, Damaged: 0
       }));
     } else if (historyFilterType === 'monthly') {
       const [y, m] = historyMonth.split('-').map(Number);
       const daysInMonth = new Date(y, m, 0).getDate();
       buckets = Array.from({ length: daysInMonth }, (_, d) => ({
-        label: `${d + 1}`, Production: 0, Resell: 0, Brine: 0
+        label: `${d + 1}`, Production: 0, Resell: 0, Brine: 0, Damaged: 0
       }));
     } else {
       buckets = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-        .map(label => ({ label, Production: 0, Resell: 0, Brine: 0 }));
+        .map(label => ({ label, Production: 0, Resell: 0, Brine: 0, Damaged: 0 }));
     }
 
     dateFilteredTransactions.forEach(txn => {
@@ -220,8 +238,8 @@ export function InventoryPage() {
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {Array.from({ length: 3 }).map((_, i) => (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="animate-pulse bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 h-60" />
         ))}
       </div>
@@ -237,14 +255,35 @@ export function InventoryPage() {
           Inventory & Stock Control
         </h2>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-          Real-time stock balances for Production, Purchases, and Brine Cubes.
+          Real-time stock balances for Production, Purchases, Brine and Damaged Cubes.
         </p>
       </div>
 
-      {/* Stock Cards Layout - 3-Column Landscape Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 landscape:grid-cols-3 gap-3 sm:gap-5">
+      {/* Total Cubes — Production + Resell only. Brine and Damaged are stock
+          counts of cubes that can't be sold, so folding them in would
+          overstate what the factory actually has available to sell. */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
+            Total Cubes
+          </span>
+          <span className="text-[11px] text-slate-400 block mt-0.5 truncate">
+            Production + Resell — available to sell
+          </span>
+        </div>
+        <div className="text-right shrink-0">
+          <span className="text-xl sm:text-2xl md:text-3xl font-extrabold font-heading text-navy-600 dark:text-sky-400 block leading-none">
+            {totalSellableCubes.toLocaleString()}
+          </span>
+          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Cubes</span>
+        </div>
+      </div>
+
+      {/* Stock Cards Layout - 4-Column Landscape Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 landscape:grid-cols-4 gap-3 sm:gap-5">
         {inventory.map((item) => {
-          const isWst = item.type === 'waste';
+          // Brine and Damaged are stock-only lines: no price, nothing to sell.
+          const isStockOnly = !SELLABLE_TYPES.includes(item.type);
           
           return (
             <div 
@@ -263,7 +302,7 @@ export function InventoryPage() {
                     {item.code}
                   </span>
                   <h3 className="text-sm sm:text-base font-bold font-heading text-slate-800 dark:text-slate-100 capitalize mt-0.5">
-                    {item.type === 'manufactured' ? 'Production' : item.type === 'resell' ? 'Purchases' : 'Brine'} Cubes
+                    {CUBE_CARD_TITLES[item.type] || item.type} Cubes
                   </h3>
                 </div>
 
@@ -275,7 +314,7 @@ export function InventoryPage() {
                     </span>
                   </div>
                   
-                  {!isWst && (
+                  {!isStockOnly && (
                     <div className="text-right">
                       <span className="text-[11px] text-slate-400 block mb-0.5">Price / Cube</span>
                       {item.price_per_cube !== null && item.price_per_cube !== undefined ? (
@@ -330,8 +369,8 @@ export function InventoryPage() {
                   </Button>
                 )}
 
-                {/* Edit Price admin only, hidden/disabled for BNC */}
-                {!isWst ? (
+                {/* Edit Price admin only — Brine and Damaged have no price */}
+                {!isStockOnly ? (
                   isAdmin ? (
                     <Button 
                       variant="primary" 
@@ -442,6 +481,7 @@ export function InventoryPage() {
             <option value="manufactured">Production (MFC)</option>
             <option value="resell">Resell (RSC)</option>
             <option value="waste">Brine Cubes (BNC)</option>
+            <option value="damaged">Damaged Cubes (DGC)</option>
           </select>
         </div>
       </div>
@@ -514,7 +554,7 @@ export function InventoryPage() {
                   {filteredTransactions.map((txn, idx) => {
                     const change = Number(txn.quantity_change) || 0;
                     const isPositive = change > 0;
-                    const typeLabel = txn.inventory?.type === 'manufactured' ? 'Production' : txn.inventory?.type === 'resell' ? 'Resell' : txn.inventory?.type === 'waste' ? 'Brine' : txn.inventory?.type || 'Cube';
+                    const typeLabel = CUBE_TYPE_LABELS[txn.inventory?.type] || txn.inventory?.type || 'Cube';
 
                     return (
                       <tr key={txn.id || idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
@@ -530,9 +570,11 @@ export function InventoryPage() {
                               ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                               : txn.transaction_type === 'sale_deduction'
                                 ? 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300'
-                                : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                : txn.transaction_type === 'free_issue'
+                                  ? 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300'
+                                  : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
                           }`}>
-                            {txn.transaction_type.replace('_', ' ')}
+                            {txn.transaction_type.replace(/_/g, ' ')}
                           </span>
                         </td>
                         <td className={`py-2.5 px-3 text-right font-mono font-bold ${
@@ -588,6 +630,9 @@ export function InventoryPage() {
                 )}
                 {graphSeries.includes('Resell') && (
                   <Line type="monotone" dataKey="Resell" stroke={GRAPH_COLORS.resell} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+                )}
+                {graphSeries.includes('Damaged') && (
+                  <Line type="monotone" dataKey="Damaged" stroke={GRAPH_COLORS.damaged} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
                 )}
                 {graphSeries.includes('Brine') && (
                   <Line type="monotone" dataKey="Brine" stroke={GRAPH_COLORS.waste} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />

@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useDebts } from '../hooks/useDebts';
 import { useSettings } from '../hooks/useSettings';
 import { useAuth } from '../context/AuthContext';
@@ -12,13 +13,31 @@ import { generateSettlementReceiptPDF, generateDebtStatementPDF } from '../utils
 import { buildSettlementNotification, notificationUrl, toWhatsAppNumber } from '../utils/notifications';
 import { SendNotificationDialog } from '../components/SendNotificationDialog';
 import { recordNotification } from '../hooks/useNotifications';
-import { DollarSign, RefreshCcw, FileDown, Users, History } from 'lucide-react';
+import { DollarSign, RefreshCcw, FileDown, Users, History, Search, Landmark } from 'lucide-react';
+
+// Roll a set of debt rows up into one outstanding-balance line per customer,
+// heaviest debtor first. Shared by the ledger's "Debt by Customers" view and
+// the debtor picker, so both always agree on what a customer owes.
+function groupDebtsByCustomer(rows) {
+  const map = new Map();
+  rows.forEach(d => {
+    if (d.status === 'settled') return;
+    const key = d.customer_id;
+    if (!map.has(key)) {
+      map.set(key, { customer_id: key, customer: d.customer, total_debt: 0 });
+    }
+    map.get(key).total_debt += Number(d.remaining_amount);
+  });
+  return Array.from(map.values()).sort((a, b) => b.total_debt - a.total_debt);
+}
 
 export function DebtsPage() {
   const { debts, isLoading, settleCustomerDebt } = useDebts();
   const { settings } = useSettings();
   const { user } = useAuth();
   const toast = useToast();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   // Overview mode: 'byCustomer' (grouped debtors ledger) or 'history' (per-sale debt ledger)
   const [viewMode, setViewMode] = useState('byCustomer');
@@ -30,6 +49,11 @@ export function DebtsPage() {
   const [toDate, setToDate] = useState('');
   const [agingFilter, setAgingFilter] = useState('all');
 
+  // Debtor picker modal state — the entry point used by the dashboard's
+  // "Settle Debts" shortcut, which arrives here without a customer chosen yet.
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState('');
+
   // Settlement modal state
   const [settleModalOpen, setSettleModalOpen] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState(null);
@@ -37,6 +61,13 @@ export function DebtsPage() {
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [settlementNote, setSettlementNote] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Where the money actually landed. A bank/online transfer optionally names
+  // the receiving account (so the amount is withdrawable from that bank in
+  // Cash & Bank); a cheque must carry a cheque number and bank name before it
+  // can be filed under Hand Cheques.
+  const [chequeNo, setChequeNo] = useState('');
+  const [settlementBankName, setSettlementBankName] = useState('');
 
   // Settlement receipt preview modal state (generated, not auto-downloaded)
   const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false);
@@ -58,11 +89,30 @@ export function DebtsPage() {
     return Math.max(0, selectedGroup.total_debt - pay);
   }, [selectedGroup, paymentAmount]);
 
+  const openCustomerPicker = () => {
+    setPickerQuery('');
+    setCustomerPickerOpen(true);
+  };
+
+  const closeCustomerPicker = () => {
+    setCustomerPickerOpen(false);
+    setPickerQuery('');
+  };
+
+  // Picking a debtor hands straight over to the normal settlement modal, so
+  // the payment, receipt and notification steps are the same either way.
+  const handlePickCustomer = (group) => {
+    closeCustomerPicker();
+    openSettleModal(group);
+  };
+
   const openSettleModal = (group) => {
     setSelectedGroup(group);
     setPaymentAmount('');
     setPaymentMethod('cash');
     setSettlementNote('');
+    setChequeNo('');
+    setSettlementBankName('');
     setSettleModalOpen(true);
   };
 
@@ -72,7 +122,21 @@ export function DebtsPage() {
     setPaymentAmount('');
     setPaymentMethod('cash');
     setSettlementNote('');
+    setChequeNo('');
+    setSettlementBankName('');
   };
+
+  // Dashboard "Settle Debts" shortcut: land on the ledger with the debtor
+  // picker already open. The navigation state is cleared straight away so a
+  // back/forward or refresh doesn't reopen the picker unexpectedly.
+  useEffect(() => {
+    if (location.state?.openSettleDebt) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      openCustomerPicker();
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   // Submit Settle Debt (applied FIFO across the customer's oldest debts)
   const handleConfirmSettlement = async (e) => {
@@ -86,6 +150,16 @@ export function DebtsPage() {
       toast.error(`Payment amount exceeds total debt (LKR ${selectedGroup.total_debt.toLocaleString()})`);
       return;
     }
+    if (paymentMethod === 'cheque') {
+      if (!chequeNo.trim()) {
+        toast.error("Please enter the cheque number");
+        return;
+      }
+      if (!settlementBankName.trim()) {
+        toast.error("Please enter the bank name on the cheque");
+        return;
+      }
+    }
 
     setActionLoading(true);
     try {
@@ -94,7 +168,12 @@ export function DebtsPage() {
         amount,
         user?.fullName || 'Staff Operator',
         paymentMethod,
-        settlementNote.trim() || null
+        settlementNote.trim() || null,
+        {
+          chequeNo: chequeNo.trim(),
+          bankName: settlementBankName.trim(),
+          payerName: selectedGroup.customer?.name
+        }
       );
 
       // Generate the receipt PDF and show it in-app for preview — download is
@@ -105,6 +184,9 @@ export function DebtsPage() {
       setSettlementReceiptRecord(result);
 
       toast.success(`Settlement recorded! Code: ${result.settlement_code}`);
+      // The debt is settled either way, but the operator has to know if the
+      // money never made it into the Cash & Bank ledger.
+      if (result.ledgerWarning) toast.error(result.ledgerWarning);
       closeSettleModal();
       // Notification first: getting the confirmation out to the customer is
       // the time-critical step, so it is the first thing the operator is
@@ -309,18 +391,22 @@ export function DebtsPage() {
   }, [debts, statusFilter, agingFilter, searchQuery, fromDate, toDate]);
 
   // Debt by Customers: group the (already filtered) outstanding debts by customer
-  const customerGroups = useMemo(() => {
-    const map = new Map();
-    filteredDebts.forEach(d => {
-      if (d.status === 'settled') return;
-      const key = d.customer_id;
-      if (!map.has(key)) {
-        map.set(key, { customer_id: key, customer: d.customer, total_debt: 0 });
-      }
-      map.get(key).total_debt += Number(d.remaining_amount);
-    });
-    return Array.from(map.values()).sort((a, b) => b.total_debt - a.total_debt);
-  }, [filteredDebts]);
+  const customerGroups = useMemo(() => groupDebtsByCustomer(filteredDebts), [filteredDebts]);
+
+  // Debtors offered in the picker — deliberately built from every debt rather
+  // than the filtered set, so the ledger's active filters can't hide the
+  // customer standing at the counter with a payment.
+  const allDebtorGroups = useMemo(() => groupDebtsByCustomer(debts || []), [debts]);
+
+  const pickerResults = useMemo(() => {
+    const query = pickerQuery.toLowerCase().trim();
+    if (!query) return allDebtorGroups;
+    return allDebtorGroups.filter(g =>
+      g.customer?.name?.toLowerCase().includes(query) ||
+      g.customer?.customer_code?.toLowerCase().includes(query) ||
+      g.customer?.contact_number?.toLowerCase().includes(query)
+    );
+  }, [allDebtorGroups, pickerQuery]);
 
   // Debt History as a true transaction ledger.
   //
@@ -730,6 +816,79 @@ export function DebtsPage() {
         </div>
       )}
 
+      {/* --- Select Debtor Modal (dashboard "Settle Debts" entry point) --- */}
+      <Modal
+        isOpen={customerPickerOpen}
+        onClose={closeCustomerPicker}
+        title="Select Customer to Settle"
+      >
+        <div className="space-y-3">
+          <div className="relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              autoFocus
+              value={pickerQuery}
+              onChange={(e) => setPickerQuery(e.target.value)}
+              placeholder="Search by name, customer ID or phone..."
+              className="w-full pl-9 pr-3 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-navy-500 focus:border-transparent"
+            />
+          </div>
+
+          <div className="flex justify-between items-center text-[11px] font-semibold text-slate-500 px-1">
+            <span>{pickerResults.length} debtor{pickerResults.length === 1 ? '' : 's'} with outstanding balance</span>
+            <span className="font-mono text-rose-600 dark:text-rose-400">
+              LKR {pickerResults.reduce((sum, g) => sum + g.total_debt, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </span>
+          </div>
+
+          <div className="max-h-[52vh] overflow-y-auto touch-scroll space-y-2 pr-1">
+            {isLoading && (
+              <p className="text-center text-xs text-slate-400 py-8">Loading debtors...</p>
+            )}
+
+            {!isLoading && pickerResults.length === 0 && (
+              <p className="text-center text-xs text-slate-400 py-8">
+                {allDebtorGroups.length === 0
+                  ? 'Clear ledger! No customer currently owes anything.'
+                  : 'No debtor matched that search.'}
+              </p>
+            )}
+
+            {pickerResults.map(group => (
+              <button
+                key={group.customer_id}
+                type="button"
+                onClick={() => handlePickCustomer(group)}
+                className="w-full text-left p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-emerald-400 hover:bg-emerald-50/40 dark:hover:bg-emerald-950/20 transition-all flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
+                    {group.customer?.name || 'Unknown Customer'}
+                  </p>
+                  <p className="text-[11px] font-mono text-navy-600 dark:text-navy-400 truncate">
+                    {group.customer?.customer_code}
+                    {group.customer?.contact_number ? ` · ${group.customer.contact_number}` : ''}
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Owes</span>
+                  <span className="block text-sm font-bold font-mono text-rose-600 dark:text-rose-400">
+                    LKR {group.total_debt.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex justify-end pt-3 border-t border-slate-100 dark:border-slate-800">
+            <Button variant="secondary" onClick={closeCustomerPicker}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* --- Settle Debt Modal Dialog --- */}
       <Modal
         isOpen={settleModalOpen}
@@ -774,17 +933,86 @@ export function DebtsPage() {
             onChange={(e) => setPaymentAmount(e.target.value)}
           />
 
-          {/* Payment method */}
+          {/* Payment method — decides which Cash & Bank store of value the
+              settlement lands in: Cash Balance, Bank Balance, or Hand Cheques. */}
           <Select
             label="Payment Method"
             name="paymentMethod"
             options={[
               { value: 'cash', label: 'Cash' },
-              { value: 'card', label: 'Card' }
+              { value: 'bank_transfer', label: 'Bank / Online Transfer' },
+              { value: 'cheque', label: 'Cheque' }
             ]}
             value={paymentMethod}
             onChange={(e) => setPaymentMethod(e.target.value)}
           />
+
+          {/* Where the money lands, stated plainly before the operator commits */}
+          <div className={`flex items-start gap-2 p-2.5 rounded-xl text-[11px] font-semibold border ${
+            paymentMethod === 'cash'
+              ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-100 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-400'
+              : paymentMethod === 'bank_transfer'
+                ? 'bg-sky-50 dark:bg-sky-950/20 border-sky-100 dark:border-sky-900/50 text-sky-700 dark:text-sky-400'
+                : 'bg-amber-50 dark:bg-amber-950/20 border-amber-100 dark:border-amber-900/50 text-amber-700 dark:text-amber-400'
+          }`}>
+            <Landmark size={14} className="mt-0.5 shrink-0" />
+            <span>
+              {paymentMethod === 'cash' && 'Adds to Cash Balance in Cash & Bank Management.'}
+              {paymentMethod === 'bank_transfer' && 'Recorded as a Bank Deposit and adds to Bank Balance in Cash & Bank Management.'}
+              {paymentMethod === 'cheque' && 'Filed as a pending cheque and adds to Hand Cheques in Cash & Bank Management.'}
+            </span>
+          </div>
+
+          {/* Bank/online transfer — naming the receiving account is optional,
+              but without it the deposit lands in the unnamed bucket in Cash &
+              Bank and can't be withdrawn against a specific bank. */}
+          {paymentMethod === 'bank_transfer' && (
+            <Input
+              label="Bank Name (Optional)"
+              name="transferBankName"
+              placeholder="Which account received the transfer?"
+              value={settlementBankName}
+              onChange={(e) => setSettlementBankName(e.target.value)}
+            />
+          )}
+
+          {/* Cheque — everything Hand Cheques needs to hold the funds and
+              later deposit them. The amount is the settlement amount above,
+              shown here so the operator can check it against the cheque. */}
+          {paymentMethod === 'cheque' && (
+            <div className="space-y-3 p-3 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/40 dark:bg-amber-950/10">
+              <Input
+                label="Cheque No."
+                name="chequeNo"
+                required
+                placeholder="e.g. 004512"
+                value={chequeNo}
+                onChange={(e) => setChequeNo(e.target.value)}
+              />
+              <Input
+                label="Bank Name"
+                name="chequeBankName"
+                required
+                placeholder="Bank printed on the cheque"
+                value={settlementBankName}
+                onChange={(e) => setSettlementBankName(e.target.value)}
+              />
+              <Input
+                label="Cheque Amount (LKR)"
+                name="chequeAmount"
+                type="number"
+                step="0.01"
+                min="0.01"
+                max={selectedGroup?.total_debt}
+                placeholder="Same as the payment amount"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+              />
+              <p className="text-[11px] text-amber-700 dark:text-amber-400 font-medium">
+                The cheque amount is the settlement amount — editing either keeps both in step, so the debt and Hand Cheques can never disagree.
+              </p>
+            </div>
+          )}
 
           {/* Note */}
           <TextArea

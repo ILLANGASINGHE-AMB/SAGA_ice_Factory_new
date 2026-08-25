@@ -66,9 +66,13 @@ export function SalesPage() {
   const [oneTimeMode, setOneTimeMode] = useState(false);
   const [oneTimeName, setOneTimeName] = useState('');
 
-  // Order items — fixed two categories (Production/MFC and Resell/RSC),
-  // both always present so the operator never has to pick a category.
-  const [orderRows, setOrderRows] = useState([]);
+  // One pooled Ice Cubes line. The operator enters a rate and a quantity and
+  // the server draws Production first, falling back to Resell — so there is
+  // no cube-type choice to make at the till any more. Free Cubes are issued
+  // from the same pool at no charge.
+  const [cubePrice, setCubePrice] = useState('');
+  const [cubeQty, setCubeQty] = useState('');
+  const [freeQty, setFreeQty] = useState('');
 
   // Post placement prompt state
   const [whatsappPromptOpen, setWhatsappPromptOpen] = useState(false);
@@ -99,18 +103,25 @@ export function SalesPage() {
       return {
         MFC: { qty: 0, price: 0, id: null },
         RSC: { qty: 0, price: 0, id: null },
-        BNC: { qty: 0 }
+        BNC: { qty: 0 },
+        DGC: { qty: 0 }
       };
     }
     const mfc = inventory.find(i => i.type === 'manufactured');
     const rsc = inventory.find(i => i.type === 'resell');
     const bnc = inventory.find(i => i.type === 'waste');
+    const dgc = inventory.find(i => i.type === 'damaged');
     return {
       MFC: mfc ? { qty: mfc.quantity, price: mfc.price_per_cube || 0, id: mfc.id } : { qty: 0, price: 0, id: null },
       RSC: rsc ? { qty: rsc.quantity, price: rsc.price_per_cube || 0, id: rsc.id } : { qty: 0, price: 0, id: null },
-      BNC: bnc ? { qty: bnc.quantity } : { qty: 0 }
+      BNC: bnc ? { qty: bnc.quantity } : { qty: 0 },
+      DGC: dgc ? { qty: dgc.quantity } : { qty: 0 }
     };
   }, [inventory]);
+
+  // Live sellable pool: Production + Resell. Brine and Damaged are stock
+  // counts of cubes that can't be sold, so they're excluded.
+  const totalAvailableCubes = stockMap.MFC.qty + stockMap.RSC.qty;
 
   // Open Wizard flow
   const handleOpenWizard = () => {
@@ -123,36 +134,32 @@ export function SalesPage() {
     setShowMiniCustomerForm(false);
     setOneTimeMode(false);
     setOneTimeName('');
-    setOrderRows([
-      { id: 'mfc', cubeType: 'manufactured', pricePerCube: '', quantity: '' },
-      { id: 'rsc', cubeType: 'resell', pricePerCube: '', quantity: '' }
-    ]);
+    setCubePrice('');
+    setCubeQty('');
+    setFreeQty('');
     setWizardOpen(true);
   };
 
-  // Rate for a cube type: the selected customer's custom price if one is set,
-  // otherwise the live inventory default. Resolved fresh whenever the wizard
-  // advances past customer selection so it always reflects the chosen
-  // customer, but stored on the row afterwards so an admin's manual edit
-  // sticks instead of being overwritten on every keystroke.
-  const resolveDefaultRate = (cubeType, custIdOverride) => {
+  // The single Ice Cubes rate. One order is billed at one rate however the
+  // cubes end up being drawn across Production and Resell, so the Production
+  // rate is the basis: this customer's custom Production price when one is
+  // set, otherwise the live Production price. Resolved once the customer is
+  // known and then left alone, so an admin's manual edit sticks instead of
+  // being overwritten on every keystroke. Mirrors what the server resolves in
+  // place_pooled_order_transaction, so the preview matches the invoice.
+  const resolveDefaultRate = (custIdOverride) => {
     const cid = Number(custIdOverride !== undefined ? custIdOverride : customerId);
     if (cid) {
-      const custom = customerPrices.find(p => Number(p.customer_id) === cid && p.cube_type === cubeType);
+      const custom = customerPrices.find(p => Number(p.customer_id) === cid && p.cube_type === 'manufactured');
       if (custom && Number(custom.price_per_cube) > 0) return Number(custom.price_per_cube);
     }
-    return cubeType === 'manufactured' ? stockMap.MFC.price : stockMap.RSC.price;
+    return stockMap.MFC.price;
   };
 
-  const hasCustomRate = (cubeType) => {
+  const hasCustomRate = () => {
     const cid = Number(customerId);
     if (!cid) return false;
-    return customerPrices.some(p => Number(p.customer_id) === cid && p.cube_type === cubeType && Number(p.price_per_cube) > 0);
-  };
-
-  // Row helpers — quantity always editable; pricePerCube only for admins (UI-gated).
-  const updateRow = (id, field, value) => {
-    setOrderRows(rows => rows.map(r => r.id === id ? { ...r, [field]: value } : r));
+    return customerPrices.some(p => Number(p.customer_id) === cid && p.cube_type === 'manufactured' && Number(p.price_per_cube) > 0);
   };
 
   // Allow navigating here from other tabs (e.g. Dashboard's "Add New Order")
@@ -194,14 +201,13 @@ export function SalesPage() {
     );
   }, [customers, customerSearchQuery]);
 
-  // Calculate grand total across all rows
-  const calculatedTotal = useMemo(() => {
-    return orderRows.reduce((sum, r) => {
-      const qty = parseInt(r.quantity, 10) || 0;
-      const rate = parseFloat(r.pricePerCube) || 0;
-      return sum + qty * rate;
-    }, 0);
-  }, [orderRows]);
+  // Order total — free cubes are issued at no charge, so they never enter it.
+  const paidQty = parseInt(cubeQty, 10) || 0;
+  const freeQtyNum = parseInt(freeQty, 10) || 0;
+  const calculatedTotal = useMemo(
+    () => paidQty * (parseFloat(cubePrice) || 0),
+    [paidQty, cubePrice]
+  );
 
   // Handle customer selection — touch flow: tapping a result both selects it
   // and carries the wizard straight to Order Details, no separate Next tap.
@@ -209,7 +215,7 @@ export function SalesPage() {
     setCustomerId(cust.id);
     setCustomerSearchQuery(cust.name);
     setCustomerFieldFocused(false);
-    setOrderRows(rows => rows.map(r => ({ ...r, pricePerCube: resolveDefaultRate(r.cubeType, cust.id) })));
+    setCubePrice(resolveDefaultRate(cust.id));
     setTimeout(() => setStep(3), 180);
   };
 
@@ -224,7 +230,7 @@ export function SalesPage() {
           toast.error("Enter a name for the one-time customer (min 2 chars)");
           return;
         }
-        setOrderRows(rows => rows.map(r => ({ ...r, pricePerCube: resolveDefaultRate(r.cubeType) })));
+        setCubePrice(resolveDefaultRate());
         setStep(3);
         return;
       }
@@ -242,31 +248,27 @@ export function SalesPage() {
         toast.error("Please enter a valid 10-digit WhatsApp number starting with 0 (e.g. 0771234567)");
         return;
       }
-      // Resolve each row's rate now that the customer is known: their custom
-      // price if set, otherwise the inventory default.
-      setOrderRows(rows => rows.map(r => ({ ...r, pricePerCube: resolveDefaultRate(r.cubeType) })));
+      // Resolve the rate now that the customer is known: their custom
+      // Production price if set, otherwise the inventory default.
+      setCubePrice(resolveDefaultRate());
       setStep(3);
     } else if (step === 3) {
-      // Only rows the operator actually filled in (quantity > 0) count toward the order.
-      const activeRows = orderRows.filter(r => (parseInt(r.quantity, 10) || 0) > 0);
-      if (activeRows.length === 0) {
-        toast.error("Enter a quantity for at least one cube type.");
+      if (paidQty <= 0 && freeQtyNum <= 0) {
+        toast.error("Enter a cube quantity, or a free cube quantity.");
         return;
       }
-      for (const r of activeRows) {
-        if (!(parseFloat(r.pricePerCube) > 0)) {
-          const label = r.cubeType === 'manufactured' ? 'Production (MFC)' : 'Resell (RSC)';
-          toast.error(isAdmin
-            ? `Enter a rate for ${label} before continuing.`
-            : `No rate set for ${label}. Ask an admin to set it in Inventory or the customer's Custom Prices.`);
-          return;
-        }
+      if (paidQty > 0 && !(parseFloat(cubePrice) > 0)) {
+        toast.error(isAdmin
+          ? "Enter a cube price before continuing."
+          : "No cube price set. Ask an admin to set it in Inventory or the customer's Custom Prices.");
+        return;
       }
-      // Tally quantities by cube type to check stock
-      const mfcQty = activeRows.filter(r => r.cubeType === 'manufactured').reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0);
-      const rscQty = activeRows.filter(r => r.cubeType === 'resell').reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0);
-      if (mfcQty > stockMap.MFC.qty) { toast.error(`Insufficient Production stock! Available: ${stockMap.MFC.qty}`); return; }
-      if (rscQty > stockMap.RSC.qty) { toast.error(`Insufficient Resell stock! Available: ${stockMap.RSC.qty}`); return; }
+      // Paid and free cubes come out of the same pool, so they are checked
+      // against the combined Production + Resell stock together.
+      if (paidQty + freeQtyNum > totalAvailableCubes) {
+        toast.error(`Insufficient stock! Available: ${totalAvailableCubes.toLocaleString()} cubes (Production ${stockMap.MFC.qty.toLocaleString()} + Resell ${stockMap.RSC.qty.toLocaleString()})`);
+        return;
+      }
       setStep(4);
     }
   };
@@ -299,13 +301,9 @@ export function SalesPage() {
       // 2. Place a single order covering every filled-in row — one bill, one sale_code
       const sale = await placeOrder({
         customer_id: finalCustomerId,
-        items: orderRows
-          .filter(row => (parseInt(row.quantity, 10) || 0) > 0)
-          .map(row => ({
-            cube_type: row.cubeType,
-            quantity: parseInt(row.quantity, 10),
-            price_per_cube: parseFloat(row.pricePerCube)
-          })),
+        quantity: paidQty,
+        price_per_cube: parseFloat(cubePrice) || 0,
+        free_quantity: freeQtyNum,
         payment_type: paymentType,
         created_by: user?.fullName || 'Staff Operator'
       });
@@ -790,7 +788,16 @@ export function SalesPage() {
                 <Badge type={sale.cube_type === 'manufactured' ? 'MFC' : 'RSC'} />
               )}
             </td>
-            <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono">{sale.quantity.toLocaleString()}</td>
+            <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono">
+              {sale.quantity.toLocaleString()}
+              {/* Billed qty is the sortable figure; free cubes left stock on
+                  the same order, so they're noted rather than added in. */}
+              {Number(sale.free_quantity) > 0 && (
+                <span className="block text-[10px] font-semibold text-violet-500 dark:text-violet-400">
+                  +{Number(sale.free_quantity).toLocaleString()} free
+                </span>
+              )}
+            </td>
             <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono text-slate-500" title="Rate charged on this order, stored with the transaction">
               {isMultiItem
                 ? (sale.sale_items || [])
@@ -1087,61 +1094,102 @@ export function SalesPage() {
         {/* STEP 3: Order details — fixed Production (MFC) / Resell (RSC) rows */}
         {step === 3 && (
           <div className="space-y-3 py-1">
-            {/* Column Headers */}
-            <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1">
-              <span>Cube Type</span>
-              <span>Rate / Cube (LKR)</span>
-              <span>Qty</span>
-              <span>Total</span>
+            {/* Live sellable pool — Production + Resell, the stock this order
+                actually draws on. Free cubes come out of it too. */}
+            <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
+                  No. of Total Cubes
+                </span>
+                <span className="text-[10px] text-slate-400 block mt-0.5 truncate">
+                  Production {stockMap.MFC.qty.toLocaleString()} + Resell {stockMap.RSC.qty.toLocaleString()} — sold Production first
+                </span>
+              </div>
+              <span className="text-lg sm:text-xl font-extrabold font-heading text-navy-600 dark:text-sky-400 shrink-0">
+                {totalAvailableCubes.toLocaleString()}
+              </span>
             </div>
 
-            {/* Order Rows — always both categories, no add/remove */}
+            {/* Ice Cubes — one rate, one quantity. The Production/Resell split
+                is worked out server-side, so there is no cube type to pick. */}
             <div className="space-y-2">
-              {orderRows.map((row) => {
-                const rowTotal = (parseInt(row.quantity, 10) || 0) * (parseFloat(row.pricePerCube) || 0);
-                const availableStock = row.cubeType === 'manufactured' ? stockMap.MFC.qty : stockMap.RSC.qty;
-                const rateIsCustom = hasCustomRate(row.cubeType);
-                return (
-                  <div key={row.id} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-start">
-                    <div className="flex items-center px-2 py-2">
-                      <Badge type={row.cubeType === 'manufactured' ? 'MFC' : 'RSC'} label={row.cubeType === 'manufactured' ? 'Production (MFC)' : 'Resell (RSC)'} />
-                    </div>
-                    <div className="flex flex-col space-y-0.5">
-                      <input
-                        type="number"
-                        step="0.01"
-                        disabled={!isAdmin}
-                        value={row.pricePerCube}
-                        onChange={(e) => updateRow(row.id, 'pricePerCube', e.target.value)}
-                        title={isAdmin ? 'Editable — overrides the auto-fetched rate for this order' : 'Auto-fetched rate — editable by Administrators only'}
-                        className={`px-2 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-navy-500 font-mono ${!isAdmin ? 'opacity-70' : ''}`}
-                      />
-                      <span className="text-[9px] uppercase tracking-wide font-semibold text-slate-400 px-0.5">
-                        {rateIsCustom ? 'Customer rate' : 'Inventory default'}
-                      </span>
-                    </div>
-                    <div>
-                      <input
-                        type="number"
-                        placeholder={`max ${availableStock}`}
-                        value={row.quantity}
-                        onChange={(e) => updateRow(row.id, 'quantity', e.target.value)}
-                        className="w-full px-2 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-navy-500 font-mono"
-                      />
-                    </div>
-                    <span className="text-xs font-bold font-mono text-navy-600 dark:text-sky-400 min-w-[70px] text-right py-2">
-                      LKR {rowTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                );
-              })}
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-1">
+                Ice Cubes
+              </span>
+              <div className="grid grid-cols-[1fr_1fr_auto] gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1">
+                <span>Cube Price (LKR)</span>
+                <span>Qty</span>
+                <span className="text-right">Total Price</span>
+              </div>
+              <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-start">
+                <div className="flex flex-col space-y-0.5">
+                  <input
+                    type="number"
+                    step="0.01"
+                    disabled={!isAdmin}
+                    value={cubePrice}
+                    onChange={(e) => setCubePrice(e.target.value)}
+                    title={isAdmin ? 'Editable — overrides the auto-fetched rate for this order' : 'Auto-fetched rate — editable by Administrators only'}
+                    className={`px-2 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-navy-500 font-mono ${!isAdmin ? 'opacity-70' : ''}`}
+                  />
+                  <span className="text-[9px] uppercase tracking-wide font-semibold text-slate-400 px-0.5">
+                    {hasCustomRate() ? 'Customer rate' : 'Inventory default'}
+                  </span>
+                </div>
+                <input
+                  type="number"
+                  placeholder={`max ${totalAvailableCubes}`}
+                  value={cubeQty}
+                  onChange={(e) => setCubeQty(e.target.value)}
+                  className="w-full px-2 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-navy-500 font-mono"
+                />
+                <span className="text-xs font-bold font-mono text-navy-600 dark:text-sky-400 min-w-[80px] text-right py-2">
+                  LKR {calculatedTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
             </div>
+
+            {/* Free Cubes — issued at no charge. They still leave the store,
+                so they are deducted from stock and logged in Inventory
+                History as their own Free Issue entry. */}
+            <div className="space-y-2 p-3 rounded-xl border border-violet-200 dark:border-violet-900/50 bg-violet-50/40 dark:bg-violet-950/10">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-400">
+                Free Cubes
+              </span>
+              <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
+                <input
+                  type="number"
+                  placeholder="Qty"
+                  value={freeQty}
+                  onChange={(e) => setFreeQty(e.target.value)}
+                  className="w-full px-2 py-2 text-xs bg-white dark:bg-slate-900 border border-violet-200 dark:border-violet-900/50 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-violet-500 font-mono"
+                />
+                <span className="text-[10px] text-violet-700/80 dark:text-violet-400/80 font-semibold col-span-2">
+                  Not billed — deducted from stock and logged as a Free Issue.
+                </span>
+              </div>
+            </div>
+
+            {/* Combined draw on the pool, so an over-order is obvious before
+                the operator reaches the confirm step. */}
+            {(paidQty + freeQtyNum) > 0 && (
+              <div className={`p-2.5 rounded-xl border text-[11px] font-semibold flex justify-between items-center ${
+                (paidQty + freeQtyNum) > totalAvailableCubes
+                  ? 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-400'
+                  : 'bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300'
+              }`}>
+                <span>Cubes leaving stock ({paidQty.toLocaleString()} billed + {freeQtyNum.toLocaleString()} free)</span>
+                <span className="font-mono font-bold">
+                  {(paidQty + freeQtyNum).toLocaleString()} / {totalAvailableCubes.toLocaleString()}
+                </span>
+              </div>
+            )}
 
             {/* Totals + Debt Summary */}
             <div className="space-y-2 pt-1">
-              {/* Auto-Calculated Total */}
+              {/* Order Total */}
               <div className="p-3 bg-navy-50/50 dark:bg-navy-950/20 border border-navy-100 dark:border-navy-900/50 rounded-xl flex justify-between items-center">
-                <span className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-300">Auto-Calculated Total:</span>
+                <span className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-300">Order Total:</span>
                 <span className="text-base sm:text-lg font-extrabold font-heading text-navy-600 dark:text-sky-400">
                   LKR {calculatedTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
@@ -1150,7 +1198,7 @@ export function SalesPage() {
               {/* Existing Debt Amount — shown whenever a customer is selected */}
               {(customerId || showMiniCustomerForm) && !oneTimeMode && (
                 <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-xl flex justify-between items-center">
-                  <span className="text-xs font-semibold text-red-600 dark:text-red-400">Existing Debt Amount:</span>
+                  <span className="text-xs font-semibold text-red-600 dark:text-red-400">Existing Debts:</span>
                   <span className="text-sm font-extrabold font-heading text-red-600 dark:text-red-400">
                     LKR {customerPendingDebt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
@@ -1180,13 +1228,21 @@ export function SalesPage() {
                 </div>
               )}
 
-              {/* Debt order — projected total debt after this order is added */}
+              {/* Debt order — what this order adds, then the projected total */}
               {paymentType === 'debt' && (
-                <div className="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 rounded-xl flex justify-between items-center">
-                  <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">Total Debt After Order:</span>
-                  <span className="text-sm font-extrabold font-heading text-amber-700 dark:text-amber-400">
-                    LKR {(customerPendingDebt + calculatedTotal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 rounded-xl space-y-1">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">New Debt:</span>
+                    <span className="text-sm font-extrabold font-heading text-amber-700 dark:text-amber-400">
+                      LKR {calculatedTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center pt-1 border-t border-dashed border-amber-200 dark:border-amber-900/50">
+                    <span className="text-[11px] text-amber-600/80 dark:text-amber-400/80">Total Debt After Order:</span>
+                    <span className="text-xs font-bold text-amber-600/80 dark:text-amber-400/80">
+                      LKR {(customerPendingDebt + calculatedTotal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
@@ -1238,19 +1294,31 @@ export function SalesPage() {
                   LKR {calculatedTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
               </div>
-              {/* Per-row summary — only rows the operator actually filled in */}
-              {orderRows.filter(row => (parseInt(row.quantity, 10) || 0) > 0).map((row, idx) => {
-                const rate = parseFloat(row.pricePerCube) || 0;
-                const rowTotal = (parseInt(row.quantity, 10) || 0) * rate;
-                return (
-                  <div key={row.id} className="grid grid-cols-2 gap-2 text-xs py-1">
-                    <span className="text-slate-400">Item {idx + 1} ({row.cubeType === 'manufactured' ? 'MFC' : 'RSC'})</span>
-                    <span className="font-mono text-right text-slate-800 dark:text-slate-200">
-                      {parseInt(row.quantity, 10).toLocaleString()} × LKR {rate.toFixed(2)} = LKR {rowTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                );
-              })}
+              {/* Ice Cubes line */}
+              {paidQty > 0 && (
+                <div className="grid grid-cols-2 gap-2 text-xs py-1">
+                  <span className="text-slate-400">Ice Cubes</span>
+                  <span className="font-mono text-right text-slate-800 dark:text-slate-200">
+                    {paidQty.toLocaleString()} × LKR {(parseFloat(cubePrice) || 0).toFixed(2)} = LKR {calculatedTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+              {/* Free cubes leave stock but are never billed, so they are
+                  listed with no amount rather than a zero-value line. */}
+              {freeQtyNum > 0 && (
+                <div className="grid grid-cols-2 gap-2 text-xs py-1">
+                  <span className="text-violet-500 dark:text-violet-400 font-semibold">Free Cubes</span>
+                  <span className="font-mono text-right text-violet-600 dark:text-violet-400 font-semibold">
+                    {freeQtyNum.toLocaleString()} cubes — no charge
+                  </span>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2 text-xs py-1">
+                <span className="text-slate-400">Cubes Leaving Stock</span>
+                <span className="font-mono text-right text-slate-800 dark:text-slate-200">
+                  {(paidQty + freeQtyNum).toLocaleString()} of {totalAvailableCubes.toLocaleString()} available
+                </span>
+              </div>
               <div className="grid grid-cols-2 gap-2 text-sm pt-2 font-bold text-navy-600 dark:text-sky-400">
                 <span>Invoiced Amount</span>
                 <span className="font-heading text-right">

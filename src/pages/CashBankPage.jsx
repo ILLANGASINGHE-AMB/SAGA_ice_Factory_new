@@ -28,6 +28,7 @@ const fmtDateTime = (iso) => {
 
 const ACTION_LABELS = {
   cash_receive: 'Cash Receive',
+  debt_settlement: 'Debt Settlement',
   bank_deposit: 'Bank Deposit',
   cheque_received: 'Cheque Received',
   withdrawal: 'Withdrawal'
@@ -85,6 +86,16 @@ export function CashBankPage() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   const [activeTab, setActiveTab] = useState('receives');
+
+  // Withdrawals take money OUT of the bank — an administrator's decision, so
+  // staff operators don't get the section at all (the "04. Total Withdrawn"
+  // and "02. Bank Balance" cards are hidden from them for the same reason:
+  // the bank position is not theirs to see). Recording cash receives,
+  // deposits and cheques stays open to everyone, since that's counter work.
+  const visibleTabs = useMemo(
+    () => SECTION_TABS.filter(tab => isAdmin || tab.value !== 'withdrawals'),
+    [isAdmin]
+  );
 
   // Cash Flow History view
   const [periodType, setPeriodType] = useState('all'); // 'all' | 'daily' | 'monthly' | 'yearly'
@@ -278,13 +289,21 @@ export function CashBankPage() {
     cheques: 'Cash Received From Cheques (Already Deposited)'
   };
 
+  // Cash Flow History follows the same rule as the section itself — a staff
+  // operator who can't open the Withdrawals ledger shouldn't be able to read
+  // every withdrawal (and add them up) out of the history instead.
+  const visibleHistory = useMemo(
+    () => isAdmin ? cb.historyEntries : cb.historyEntries.filter(e => e.actionType !== 'withdrawal'),
+    [cb.historyEntries, isAdmin]
+  );
+
   const historyUsers = useMemo(
-    () => Array.from(new Set(cb.historyEntries.map(e => e.doneBy))).sort(),
-    [cb.historyEntries]
+    () => Array.from(new Set(visibleHistory.map(e => e.doneBy))).sort(),
+    [visibleHistory]
   );
 
   const filteredHistory = useMemo(() => {
-    return cb.historyEntries.filter(e => {
+    return visibleHistory.filter(e => {
       if (periodType === 'daily' && toLocalDateStr(e.occurredAt) !== periodDate) return false;
       if (periodType === 'monthly' && toLocalDateStr(e.occurredAt).slice(0, 7) !== periodMonth) return false;
       if (periodType === 'yearly' && String(new Date(e.occurredAt).getFullYear()) !== periodYear) return false;
@@ -292,7 +311,7 @@ export function CashBankPage() {
       if (historyUserFilter !== 'all' && e.doneBy !== historyUserFilter) return false;
       return true;
     });
-  }, [cb.historyEntries, periodType, periodDate, periodMonth, periodYear, historyActionFilter, historyUserFilter]);
+  }, [visibleHistory, periodType, periodDate, periodMonth, periodYear, historyActionFilter, historyUserFilter]);
 
   return (
     <div className="space-y-6">
@@ -320,38 +339,48 @@ export function CashBankPage() {
           {/* Running balances — pinned above the tabs so they stay visible
               whichever ledger is open. The first three are balances (what is
               held right now); the fourth is a running total of money taken
-              out, which is why it reads differently from the others. */}
-          <div className="grid grid-cols-2 md:grid-cols-4 landscape:grid-cols-4 gap-2.5 sm:gap-4">
+              out, which is why it reads differently from the others.
+              Bank Balance and Total Withdrawn are administrator-only: the bank
+              position and what has been taken out of it aren't a staff
+              operator's business. Staff keep Cash Balance and Hand Cheques —
+              the two they physically handle at the counter. */}
+          <div className={`grid grid-cols-2 gap-2.5 sm:gap-4 ${
+            isAdmin ? 'md:grid-cols-4 landscape:grid-cols-4' : 'md:grid-cols-2 landscape:grid-cols-2'
+          }`}>
             <StatCard
               label="01. Cash Balance"
               icon={<Wallet className="w-4 h-4 sm:w-5 sm:h-5" />}
               value={cb.cashBalance}
-              subtitle="Cash in hand — updated by cash orders, settlements & receives"
+              subtitle="Cash in hand — cash orders, cash settlements & receives"
               tone="emerald"
             />
+            {isAdmin && (
             <StatCard
               label="02. Bank Balance"
               icon={<Landmark className="w-4 h-4 sm:w-5 sm:h-5 text-navy-600 dark:text-sky-400" />}
               value={cb.bankBalance}
-              subtitle={`Deposits less withdrawals · ${cb.bankDeposits.length} deposit${cb.bankDeposits.length !== 1 ? 's' : ''}`}
+              subtitle={`Deposits (incl. transfer settlements) less withdrawals · ${cb.bankDeposits.length} deposit${cb.bankDeposits.length !== 1 ? 's' : ''}`}
             />
+            )}
             <StatCard
               label="03. Hand Cheques"
               icon={<CreditCard className="w-4 h-4 sm:w-5 sm:h-5 text-amber-500" />}
               value={cb.handChequesTotal}
               subtitle={`Received but not yet banked · ${cb.chequesPending.length} cheque${cb.chequesPending.length !== 1 ? 's' : ''}`}
             />
+            {isAdmin && (
             <StatCard
               label="04. Total Withdrawn"
               icon={<ArrowDownLeft className="w-4 h-4 sm:w-5 sm:h-5 text-rose-500" />}
               value={cb.bankWithdrawalsTotal}
               subtitle={`Taken out of the bank for expenses · ${cb.bankWithdrawals.length} withdrawal${cb.bankWithdrawals.length !== 1 ? 's' : ''}`}
             />
+            )}
           </div>
 
           {/* Section tabs */}
           <div className="flex items-center gap-1 overflow-x-auto touch-scroll bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-1.5 shadow-xs">
-            {SECTION_TABS.map(tab => {
+            {visibleTabs.map(tab => {
               const Icon = tab.icon;
               return (
                 <button
@@ -642,7 +671,7 @@ export function CashBankPage() {
           </div>
           )}
 
-          {activeTab === 'withdrawals' && (
+          {activeTab === 'withdrawals' && isAdmin && (
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
             <div className="flex items-center space-x-2 border-b border-slate-100 dark:border-slate-800 pb-3">
               <ArrowDownLeft className="w-5 h-5 text-rose-500" />
@@ -770,9 +799,10 @@ export function CashBankPage() {
               options={[
                 { value: 'all', label: 'All Actions' },
                 { value: 'cash_receive', label: ACTION_LABELS.cash_receive },
+                { value: 'debt_settlement', label: ACTION_LABELS.debt_settlement },
                 { value: 'bank_deposit', label: ACTION_LABELS.bank_deposit },
                 { value: 'cheque_received', label: ACTION_LABELS.cheque_received },
-                { value: 'withdrawal', label: ACTION_LABELS.withdrawal }
+                ...(isAdmin ? [{ value: 'withdrawal', label: ACTION_LABELS.withdrawal }] : [])
               ]}
             />
 

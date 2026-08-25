@@ -32,10 +32,10 @@ export function DailyManagerReportView() {
   const { isAdmin, user } = useAuth();
   const toast = useToast();
 
-  // Local form state synced with manualInputs — only Free Issue and Damaged
-  // Cubes are manager-editable in Section 01; the rest there is read-only.
-  const [freeIssue, setFreeIssue] = useState(0);
-  const [damagedCubes, setDamagedCubes] = useState(0);
+  // Local form state synced with manualInputs. Free Issue and Damaged Cubes
+  // used to be typed in here; both are now real system data (a Free Cubes
+  // quantity on the order, and the Damaged Cubes inventory line), so Section
+  // 01 is fully read-only and only Section 02's Other Receipts is editable.
   const [otherReceipts, setOtherReceipts] = useState(0);
   const [otherDetails, setOtherDetails] = useState('');
   const [verifiedBy, setVerifiedBy] = useState('');
@@ -52,8 +52,6 @@ export function DailyManagerReportView() {
 
   useEffect(() => {
     if (manualInputs) {
-      setFreeIssue(manualInputs.freeIssue || 0);
-      setDamagedCubes(manualInputs.damagedCubes || 0);
       setOtherReceipts(manualInputs.otherReceipts || 0);
       setOtherDetails(manualInputs.otherDetails || '');
       setVerifiedBy(manualInputs.verifiedBy || user?.fullName || '');
@@ -65,8 +63,10 @@ export function DailyManagerReportView() {
     try {
       setIsSaving(true);
       await saveDailyReport({
-        freeIssue: Number(freeIssue) || 0,
-        damagedCubes: Number(damagedCubes) || 0,
+        // Persisted from the derived figures so a saved report keeps the
+        // numbers it was signed off on, even though they are no longer typed.
+        freeIssue: Number(reportData?.stockDetails?.freeIssue) || 0,
+        damagedCubes: Number(reportData?.stockDetails?.damagedCubes) || 0,
         otherReceipts: Number(otherReceipts) || 0,
         otherDetails,
         verifiedBy
@@ -216,26 +216,18 @@ export function DailyManagerReportView() {
                   </p>
                 </div>
 
-                <div className="bg-amber-50/50 dark:bg-amber-950/20 p-2 rounded-xl border border-amber-200 dark:border-amber-900/50">
-                  <label className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold uppercase block truncate">Free Issue</label>
-                  <input
-                    type="number"
-                    value={freeIssue}
-                    onChange={(e) => setFreeIssue(e.target.value)}
-                    disabled={isLocked}
-                    className="w-full mt-0.5 disabled:opacity-60 disabled:cursor-not-allowed bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
-                  />
+                <div className="bg-violet-50/50 dark:bg-violet-950/20 p-2.5 rounded-xl border border-violet-200 dark:border-violet-900/50" title="Free cubes issued on orders in this range — from Inventory History">
+                  <span className="text-[10px] text-violet-700 dark:text-violet-400 font-semibold uppercase block truncate">Free Issue</span>
+                  <p className="font-bold text-xs sm:text-sm text-violet-600 dark:text-violet-400 mt-0.5 truncate">
+                    {reportData.stockDetails.freeIssue.toLocaleString()}
+                  </p>
                 </div>
 
-                <div className="bg-rose-50/50 dark:bg-rose-950/20 p-2 rounded-xl border border-rose-200 dark:border-rose-900/50">
-                  <label className="text-[10px] text-rose-700 dark:text-rose-400 font-semibold uppercase block truncate">Damaged</label>
-                  <input
-                    type="number"
-                    value={damagedCubes}
-                    onChange={(e) => setDamagedCubes(e.target.value)}
-                    disabled={isLocked}
-                    className="w-full mt-0.5 disabled:opacity-60 disabled:cursor-not-allowed bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-800 rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none"
-                  />
+                <div className="bg-rose-50/50 dark:bg-rose-950/20 p-2.5 rounded-xl border border-rose-200 dark:border-rose-900/50" title="View only — a separate stock line, never included in Closing Balance">
+                  <span className="text-[10px] text-rose-700 dark:text-rose-400 font-semibold uppercase block truncate">Damaged (View Only)</span>
+                  <p className="font-bold text-xs sm:text-sm text-rose-600 dark:text-rose-400 mt-0.5 truncate">
+                    {reportData.stockDetails.damagedCubes.toLocaleString()}
+                  </p>
                 </div>
 
                 <div className="bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
