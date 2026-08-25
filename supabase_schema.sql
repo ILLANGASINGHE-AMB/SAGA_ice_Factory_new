@@ -2473,7 +2473,7 @@ begin
   end if;
 
   return query
-    select p.id, u.email, p.username, p.full_name, p.role, p.created_at
+    select p.id, u.email::text, p.username, p.full_name, p.role, p.created_at
     from public.profiles p
     join auth.users u on u.id = p.id
     order by p.created_at asc;
