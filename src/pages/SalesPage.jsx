@@ -60,11 +60,13 @@ export function SalesPage() {
   const [showMiniCustomerForm, setShowMiniCustomerForm] = useState(false);
   const [customerFieldFocused, setCustomerFieldFocused] = useState(false);
 
-  // One-time (walk-in) sale: a buyer who isn't a registered account and
-  // doesn't want to become one. Only a name is required — no phone, no
-  // registry entry cluttering the customer list.
+  // One-time (walk-in) sale: a buyer who isn't a registered account, doesn't
+  // want to become one, and doesn't need to be named — tapping "One-Time
+  // Sale" is enough to place the order. Saved as a real customers row (so the
+  // sale still has a customer_id to hang off) with a generic name; each row
+  // gets its own atomic OTC-#### code, so they never collide with each other
+  // regardless of sharing the same name.
   const [oneTimeMode, setOneTimeMode] = useState(false);
-  const [oneTimeName, setOneTimeName] = useState('');
 
   // One pooled Ice Cubes line. The operator enters a rate and a quantity and
   // the server draws Production first, falling back to Resell — so there is
@@ -133,7 +135,6 @@ export function SalesPage() {
     setNewCustPhone('');
     setShowMiniCustomerForm(false);
     setOneTimeMode(false);
-    setOneTimeName('');
     setCubePrice('');
     setCubeQty('');
     setFreeQty('');
@@ -219,18 +220,31 @@ export function SalesPage() {
     setTimeout(() => setStep(3), 180);
   };
 
+  // One-Time Sale — no name, no search, nothing to type: tapping it both
+  // selects the mode and carries the wizard straight to Order Details, same
+  // touch flow as selectCustomer above. The one exception is a DEBT order,
+  // where a one-time (unregistered, no phone) customer can't be chased for
+  // the money later — that combination stays on Step 2 so the warning below
+  // is seen before the operator can continue.
+  const selectOneTime = () => {
+    setOneTimeMode(true);
+    setCustomerId('');
+    setCustomerSearchQuery('');
+    setCubePrice(resolveDefaultRate());
+    if (paymentType !== 'debt') {
+      setTimeout(() => setStep(3), 180);
+    }
+  };
+
   // Wizard Navigation
   const nextStep = async () => {
     if (step === 1) {
       setStep(2);
     } else if (step === 2) {
-      // A one-time sale needs nothing but a name.
+      // One-Time Sale normally auto-advances from selectOneTime() above; this
+      // branch only runs for the debt-order case that deliberately stops here
+      // so the warning below is seen before continuing.
       if (oneTimeMode) {
-        if (!oneTimeName || oneTimeName.trim().length < 2) {
-          toast.error("Enter a name for the one-time customer (min 2 chars)");
-          return;
-        }
-        setCubePrice(resolveDefaultRate());
         setStep(3);
         return;
       }
@@ -285,8 +299,10 @@ export function SalesPage() {
 
       // 1. Create the customer record if one of the inline forms was used.
       if (oneTimeMode) {
+        // No name was ever asked for — a generic label plus this row's own
+        // atomic OTC-#### code is enough to tell walk-ins apart in the ledger.
         const createdCust = await addCustomer({
-          name: oneTimeName,
+          name: 'Walk-in Customer',
           is_one_time: true
         });
         finalCustomerId = createdCust.id;
@@ -958,27 +974,20 @@ export function SalesPage() {
                   One-Time (Walk-In) Sale
                 </h4>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  For a buyer who isn't a registered customer. Only a name is needed — they
-                  won't be added to the customer registry, and no WhatsApp notification is sent.
+                  For a buyer who isn't a registered customer — no name or number needed. They
+                  won't appear in the customer registry, and no WhatsApp notification is sent.
                 </p>
-                <Input
-                  label="Customer Name (Required)"
-                  name="oneTimeName"
-                  placeholder="e.g. Walk-in — Nimal"
-                  value={oneTimeName}
-                  onChange={(e) => setOneTimeName(e.target.value)}
-                />
                 {paymentType === 'debt' && (
                   <div className="bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 p-2.5 rounded-lg border border-amber-200/50 dark:border-amber-900/30 text-[11px]">
                     <strong>Heads up:</strong> this is a credit order. A one-time customer has no
                     contact number on file, so the debt can't be chased later. Go back to Step 1
-                    and choose Cash unless you're sure.
+                    and choose Cash, or tap Next if you're sure.
                   </div>
                 )}
                 <div className="text-center pt-1">
                   <button
                     type="button"
-                    onClick={() => { setOneTimeMode(false); setOneTimeName(''); }}
+                    onClick={() => setOneTimeMode(false)}
                     className="text-xs text-slate-400 font-bold hover:underline"
                   >
                     Back to Registry Search
@@ -1044,11 +1053,7 @@ export function SalesPage() {
                     <span className="text-xs text-slate-400">Just passing through?</span>{' '}
                     <button
                       type="button"
-                      onClick={() => {
-                        setOneTimeMode(true);
-                        setCustomerId('');
-                        setCustomerSearchQuery('');
-                      }}
+                      onClick={selectOneTime}
                       className="text-xs text-navy-600 dark:text-sky-400 font-bold hover:underline"
                     >
                       One-Time Sale
@@ -1260,7 +1265,7 @@ export function SalesPage() {
                 <span className="text-slate-400">Customer</span>
                 <span className="font-semibold text-right text-slate-800 dark:text-slate-200">
                   {oneTimeMode
-                    ? `${oneTimeName} (One-Time)`
+                    ? 'Walk-in Customer (One-Time)'
                     : showMiniCustomerForm
                       ? newCustName
                       : customers.find(c => c.id === Number(customerId))?.name}

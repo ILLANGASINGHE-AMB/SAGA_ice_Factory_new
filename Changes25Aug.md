@@ -1,6 +1,6 @@
 # Changes — 25 August 2026
 
-Six pieces of work:
+Seven pieces of work:
 
 1. **Dashboard "Settle Debts" quick action** — register a debt payment straight
    from the dashboard without first hunting the customer down in the ledger.
@@ -17,6 +17,9 @@ Six pieces of work:
    Collected on every cash order placed against an existing debt.
 6. **Daily Report "Other Receipts" is now derived from Cash & Bank** instead of
    being typed in.
+7. **One-Time Sale asks for nothing** — no name, no fields; tapping it goes
+   straight to Order Details with a normal bill PDF, saved as a one-time
+   customer.
 
 **Status:** production build passes (`npm run build`, ✓ built). ESLint reports
 the same problems as before the changes (`React` unused in both pages,
@@ -26,7 +29,7 @@ the same problems as before the changes (`React` unused in both pages,
 neither the settlement path nor the new ledger inserts were exercised at
 runtime.
 
-**22 files changed · 3 new migrations**
+**23 files changed · 3 new migrations**
 
 ---
 
@@ -590,6 +593,55 @@ manual.
 
 ---
 
+# Part 7 — One-Time Sale: no name, no fields
+
+**No migration.** UI/flow only.
+
+## Before
+
+Choosing "One-Time Sale" at Step 2 opened a form asking for a name (min 2
+characters) before the operator could continue — friction for what's meant to
+be the fast path for a walk-in buyer who isn't going to be a repeat customer.
+
+## Now — `src/pages/SalesPage.jsx`
+
+Tapping **One-Time Sale** both selects the mode and carries the wizard
+straight to **Step 3 (Order Details)** — the same one-tap-and-go pattern
+`selectCustomer()` already uses for picking a registry customer. Nothing is
+typed. The order is placed, the bill PDF generates and downloads exactly as
+for any other sale, and a customer row is saved with `is_one_time = true`, a
+generic name (`"Walk-in Customer"`), and its own atomically-issued `OTC-####`
+code — so distinct walk-ins never collide even though they now share a name.
+
+### The one case that still pauses: One-Time + Debt
+
+A one-time customer has no phone on file, so a debt against one can never be
+chased later. That combination alone stays on Step 2 with the existing
+warning, and now needs one tap of **Next** rather than a typed name — the
+friction removed was the name field, not the safety check. Cash orders skip
+this entirely.
+
+### `selectOneTime()`
+
+New handler, mirroring `selectCustomer()`:
+
+```js
+const selectOneTime = () => {
+  setOneTimeMode(true);
+  setCustomerId('');
+  setCustomerSearchQuery('');
+  setCubePrice(resolveDefaultRate());   // no customer_id -> falls back to the live rate
+  if (paymentType !== 'debt') {
+    setTimeout(() => setStep(3), 180);  // 180ms matches selectCustomer's tap feedback
+  }
+};
+```
+
+`oneTimeName` state, its validation in `nextStep`, and its `Input` field are
+all removed — there was nothing left to validate.
+
+---
+
 ## What was deliberately *not* changed
 
 - **No new settlement logic.** `handlePickCustomer` hands off to the existing
@@ -625,3 +677,10 @@ manual.
 - **Debt ledgers, customer statements and the Debts page are untouched by
   Part 5.** Auto-applied settlements count there exactly as before — the debt
   really was reduced.
+- **One-time customers still can't take debt without a tap past the warning**
+  (Part 7). Removing the name field doesn't remove the reason the warning
+  exists — no phone on file to chase the money.
+- **Every walk-in still gets its own customer row.** No dedup, no "reuse an
+  existing Walk-in Customer row" — each stays its own row with its own
+  `OTC-####` code, matching how the registry already treats one-time
+  customers (see `is_one_time` in the schema).
