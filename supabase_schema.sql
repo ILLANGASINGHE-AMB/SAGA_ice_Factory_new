@@ -3178,6 +3178,70 @@ returns table (check_name text, entity_id text, detail text) as $$
 
   union all
 
+  -- FIN-17: a cash order whose cash was diverted to the customer's older
+  -- invoices must carry a debt of exactly what was diverted.
+  --
+  -- The cap at the order total matters: cash cannot fund more of other
+  -- invoices than the customer actually handed over for this one, so an
+  -- `applied` above the order total is itself the bug being caught.
+  --
+  -- A cash order that diverted nothing must carry no debt, which the same
+  -- comparison covers -- least(0, total) is 0.
+  select 'cash_order_shortfall_debt'::text,
+         s.sale_code,
+         format('cash order %s diverted %s to older invoices but carries a debt of %s (expected %s)',
+                s.total_amount, coalesce(x.applied, 0), coalesce(d.total_amount, 0),
+                least(coalesce(x.applied, 0), s.total_amount))
+    from public.sales s
+    left join (
+      select source_sale_id, sum(amount_paid) as applied
+        from public.debt_settlements
+       where is_auto_applied and source_sale_id is not null
+       group by source_sale_id
+    ) x on x.source_sale_id = s.id
+    left join public.debts d on d.sale_id = s.id
+   where s.payment_type = 'cash'
+     and coalesce(d.total_amount, 0)
+         is distinct from least(coalesce(x.applied, 0), s.total_amount)
+
+  union all
+
+  -- FIN-17: the business rule itself. What a customer owes is the ice they
+  -- took on credit, less every rupee they actually handed over. Cash orders
+  -- appear on neither side -- they pay for themselves -- which is exactly why
+  -- one can never move the balance.
+  --
+  -- Auto-applied settlements are excluded from "handed over" on purpose: that
+  -- row is the FIFO offset moving a balance between two invoices, not new
+  -- money at the till. Counting it would credit the same rupees twice, which
+  -- is the original FIN-17 loss in a different guise.
+  --
+  -- Debts with no sale behind them (a hand-entered opening balance) count as
+  -- credit taken, or every such customer reports as broken.
+  select 'customer_outstanding_vs_ledger'::text,
+         coalesce(c.customer_code, c.id::text),
+         format('open debts %s, but credit taken %s - payments received %s = %s',
+                t.owed, t.credit_taken, t.payments, t.credit_taken - t.payments)
+    from public.customers c
+    join lateral (
+      select
+        coalesce((select sum(d.remaining_amount)
+                    from public.debts d
+                   where d.customer_id = c.id and d.status <> 'settled'), 0) as owed,
+        coalesce((select sum(s.total_amount)
+                    from public.sales s
+                   where s.customer_id = c.id and s.payment_type = 'debt'), 0)
+        + coalesce((select sum(d.total_amount)
+                      from public.debts d
+                     where d.customer_id = c.id and d.sale_id is null), 0) as credit_taken,
+        coalesce((select sum(ds.amount_paid)
+                    from public.debt_settlements ds
+                   where ds.customer_id = c.id and not ds.is_auto_applied), 0) as payments
+    ) t on true
+   where t.owed is distinct from (t.credit_taken - t.payments)
+
+  union all
+
   -- FIN-04: a settlement taken as a cheque or a bank transfer never touches
   -- the till, so the ONLY thing holding that money is its cheque_records /
   -- bank_deposits row. The code this replaces wrote that row in a separate
@@ -3212,7 +3276,88 @@ returns table (check_name text, entity_id text, detail text) as $$
           or not exists (select 1 from public.bank_deposits b where b.id = c.deposit_id));
 $$ language sql stable security definer set search_path = public;
 
+-- --------------------------------------------------------------------------
+-- One customer's receivables, event by event
+-- --------------------------------------------------------------------------
+-- What the report above cannot do is show WHERE a balance went wrong. This
+-- replays a single customer's orders and payments in the order they happened,
+-- so the chain can be read off directly:
+--
+--   select * from public.customer_debt_ledger(<customer_id>);
+--
+--   kind          code   order_total  cash_diverted  debt_opened  balance_after
+--   credit order  S0001       32,500              0       32,500         32,500
+--   cash order    S0002       40,000         32,500       32,500         32,500
+--   cash order    S0003       95,000         32,500       32,500         32,500
+--
+-- balance_after is derived from the business rule, NOT from the debts table:
+-- credit taken so far minus payments received so far. Where it stops agreeing
+-- with the debt rows on the same line is where the bug is. A cash order moves
+-- it by zero, every time -- that column IS the invariant.
+create or replace function public.customer_debt_ledger(p_customer_id bigint)
+returns table (
+  occurred_at    timestamptz,
+  kind           text,
+  code           text,
+  order_total    numeric,
+  cash_diverted  numeric,
+  debt_opened    numeric,
+  debt_remaining numeric,
+  balance_after  numeric
+) as $$
+  -- Every output column below is qualified with the `e.` alias on purpose.
+  -- In a SQL-language function the RETURNS TABLE names are parameters, and an
+  -- unqualified `occurred_at` in the outer select is ambiguous against them --
+  -- the kind of ambiguity that resolves to a column of NULLs rather than an
+  -- error. Qualifying leaves nothing to resolve.
+  with events as (
+    select
+      s.sale_date as ev_at,
+      case when s.payment_type = 'debt' then 'credit order' else 'cash order' end as ev_kind,
+      s.sale_code as ev_code,
+      s.total_amount as ev_order_total,
+      -- What this order's cash was pulled away to pay off elsewhere.
+      coalesce((select sum(ds.amount_paid)
+                  from public.debt_settlements ds
+                 where ds.source_sale_id = s.id and ds.is_auto_applied), 0) as ev_diverted,
+      coalesce((select d.total_amount from public.debts d
+                 where d.sale_id = s.id order by d.id limit 1), 0) as ev_debt_opened,
+      coalesce((select d.remaining_amount from public.debts d
+                 where d.sale_id = s.id order by d.id limit 1), 0) as ev_debt_remaining,
+      -- Only credit orders move the balance. This is the whole rule.
+      case when s.payment_type = 'debt' then s.total_amount else 0 end as ev_delta,
+      s.id as ev_tiebreak
+    from public.sales s
+    where s.customer_id = p_customer_id
+
+    union all
+
+    -- Real money handed over later. Auto-applied rows are deliberately absent:
+    -- they are an internal transfer between two of this customer's invoices,
+    -- already accounted for by the shortfall the funding order opened.
+    select
+      ds.settlement_date,
+      'payment (' || ds.payment_method || ')',
+      ds.settlement_code,
+      0, 0, 0, 0,
+      -ds.amount_paid,
+      ds.id
+    from public.debt_settlements ds
+    where ds.customer_id = p_customer_id
+      and not ds.is_auto_applied
+  )
+  select
+    e.ev_at, e.ev_kind, e.ev_code, e.ev_order_total,
+    e.ev_diverted, e.ev_debt_opened, e.ev_debt_remaining,
+    sum(e.ev_delta) over (order by e.ev_at, e.ev_tiebreak
+                          rows between unbounded preceding and current row)
+  from events e
+  order by e.ev_at, e.ev_tiebreak;
+$$ language sql stable security definer set search_path = public;
+
 grant execute on function public.ledger_consistency_report() to authenticated;
+grant execute on function public.customer_debt_ledger(bigint) to authenticated;
+
 
 -- ==========================================================================
 -- Settings → Clear Database
