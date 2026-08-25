@@ -804,27 +804,33 @@ export function DebtsPage() {
         onClose={closeCustomerPicker}
         title="Select Customer to Settle"
       >
-        <div className="space-y-3">
-          <div className="relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            <input
-              type="text"
-              autoFocus
-              value={pickerQuery}
-              onChange={(e) => setPickerQuery(e.target.value)}
-              placeholder="Search by name, customer ID or phone..."
-              className="w-full pl-9 pr-3 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-navy-500 focus:border-transparent"
-            />
+        <div className="flex flex-col">
+          {/* Search + running total stay pinned while the debtor list scrolls in
+              the modal's own scrollport. Previously the list had its own
+              max-h-[52vh] overflow-y-auto, which produced two nested scrollbars
+              and, on landscape tablets, a list taller than the modal itself. */}
+          <div className="sticky -top-1 z-10 bg-white dark:bg-slate-900 pt-1 pb-2 space-y-3">
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                autoFocus
+                value={pickerQuery}
+                onChange={(e) => setPickerQuery(e.target.value)}
+                placeholder="Search by name, customer ID or phone..."
+                className="w-full pl-9 pr-3 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-navy-500 focus:border-transparent"
+              />
+            </div>
+
+            <div className="flex justify-between items-center text-[11px] font-semibold text-slate-500 px-1">
+              <span>{pickerResults.length} debtor{pickerResults.length === 1 ? '' : 's'} with outstanding balance</span>
+              <span className="font-mono text-rose-600 dark:text-rose-400">
+                LKR {pickerResults.reduce((sum, g) => sum + g.total_debt, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </span>
+            </div>
           </div>
 
-          <div className="flex justify-between items-center text-[11px] font-semibold text-slate-500 px-1">
-            <span>{pickerResults.length} debtor{pickerResults.length === 1 ? '' : 's'} with outstanding balance</span>
-            <span className="font-mono text-rose-600 dark:text-rose-400">
-              LKR {pickerResults.reduce((sum, g) => sum + g.total_debt, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </span>
-          </div>
-
-          <div className="max-h-[52vh] overflow-y-auto touch-scroll space-y-2 pr-1">
+          <div className="space-y-2">
             {isLoading && (
               <p className="text-center text-xs text-slate-400 py-8">Loading debtors...</p>
             )}
@@ -863,7 +869,7 @@ export function DebtsPage() {
             ))}
           </div>
 
-          <div className="flex justify-end pt-3 border-t border-slate-100 dark:border-slate-800">
+          <div className="sticky -bottom-1 z-10 flex justify-end mt-3 pt-3 pb-1 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
             <Button variant="secondary" onClick={closeCustomerPicker}>
               Cancel
             </Button>

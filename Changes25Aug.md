@@ -1489,3 +1489,124 @@ create/update/delete action elsewhere in the app.
 - **The legacy `place_order_transaction` / `place_multi_item_order_transaction`
   functions still have their old admin-only price check** (Part 16, noted
   there too) — both are confirmed unused by the app.
+
+---
+
+# Part 17a — Fix: user directory returned HTTP 400 for every caller
+
+## ⚠️ Migration: `20260825070000_fix_user_directory_email_cast.sql`
+
+`list_user_directory()` threw on **every** invocation, including from a
+genuinely `admin` account, so the User Management table never populated and the
+console showed:
+
+```
+Failed to load resource: the server responded with a status of 400
+Failed to fetch user directory: Object
+```
+
+## Root cause: a column type mismatch, not a permissions problem
+
+`auth.users.email` is `character varying(255)`. Part 17's function declared its
+second output column as `text`. PL/pgSQL's `RETURN QUERY` enforces an *exact*
+type match against the declared result type and raised:
+
+```
+structure of query does not match function result type
+DETAIL: Returned type character varying(255) does not match expected type text in column 2
+```
+
+PostgREST surfaces a `RAISE` from inside a function as an HTTP 400 — the same
+status the function's own `Only administrators can view the user directory`
+guard produces. That coincidence made it look like a role/RLS failure, and sent
+the diagnosis down a dead end. Verified against the live DB that the migration
+had applied cleanly and that `admin@sagacious.com` really did have
+`role = 'admin'`; the function was failing *after* passing the admin check, on
+the return itself.
+
+## The fix
+
+One cast — `u.email` → `u.email::text`. The function's signature and its
+contract with `useUserManagement.js` are unchanged.
+
+`supabase_schema.sql` updated to match, so a fresh provision gets the cast too.
+
+## Note
+
+The `admin-users` Edge Function is a **separate** deploy step and was still
+undeployed at the time of this fix — that is what produced the *other* console
+error (`CORS policy: Response to preflight request doesn't pass access control
+check` / `net::ERR_FAILED`). A missing Edge Function cannot answer the browser's
+`OPTIONS` preflight, which the browser reports as a CORS failure rather than a
+404. Deploying the function resolves it; no code change was needed.
+
+---
+
+# Part 18 — Popup window UI/UX fixes
+
+Reported against the "Select Customer to Settle" dialog, but the primary bug was
+in the shared modal shell, so the fix reaches all 23 popups in the app.
+
+## Bug 1 — focus rings clipped on the first/last element in every modal
+
+`src/components/Modal.jsx`
+
+The modal body is `overflow-y-auto`, and `overflow` clips anything painted
+outside the padding box. Tailwind's `focus:ring-2` paints *outside* the
+element's border box, so the ring on whichever control sat flush against the
+body's edge got sliced off. Most visible on the debtor picker's search input,
+which autofocuses on open: the top ~2px of its ring was missing.
+
+Fixed with a `-m-1 p-1` pair on the scroll body — 4px of gutter inside the
+scrollport, pulled back by an equal negative margin so nothing shifts visually.
+
+## Bug 2 — background scroll unlocked early when modals stack
+
+`src/components/Modal.jsx`
+
+The open effect set `document.body.style.overflow = 'hidden'` and its cleanup
+cleared it unconditionally. With two modals open (a `ConfirmDialog` raised from
+inside a form modal), closing the *inner* one released the lock while the outer
+modal was still up, letting the page scroll behind it. Now tracked with an
+open-modal counter; the lock releases only when the last modal closes.
+
+## Bug 3 — nested scrollbars in the debtor picker
+
+`src/pages/DebtsPage.jsx`
+
+The debtor list carried its own `max-h-[52vh] overflow-y-auto` *inside* the
+modal body, which is already a scrollport. Two consequences:
+
+- Two scrollbars, with scroll chaining between them on trackpad/touch.
+- The `52vh` was picked independently of the modal's own `max-h-[92vh]` /
+  `landscape:max-h-[88vh]`. On landscape tablets — the shop's actual devices —
+  search + summary + a 52vh list + footer exceeds 88vh, so *both* scrollers
+  engaged at once.
+
+Now a single scrollport (the modal's own). Search + running total sit in a
+`sticky -top-1` band and the Cancel footer in a `sticky -bottom-1` band, so both
+stay reachable no matter how many debtors are listed. The negative offsets sit
+the sticky bands over the new 4px gutter from Bug 1's fix, so rows scroll
+cleanly underneath with no bleed-through.
+
+## Accessibility
+
+Added `role="dialog"`, `aria-modal="true"` and `aria-labelledby` (wired to the
+title via `useId`) to the modal content box. Screen readers previously announced
+modals as an unlabelled generic container.
+
+## What was deliberately *not* changed
+
+- **No focus trap was added.** Tab still reaches the page behind an open modal.
+  That's a real gap, but a correct trap (sentinels, restore-focus-on-close,
+  interaction with `autoFocus`) is a bigger change than this report warranted
+  and would touch all 23 popups' focus behaviour at once.
+- **Backdrop click still closes the modal**, including mid-edit on a form with
+  unsaved changes. Existing behaviour, consistent across the app, not raised.
+- **The in-page `max-h-[..vh]` scrollers in `ReportsPage`, `CashBankPage` and
+  `InventoryPage` are untouched.** Checked all three — none is inside a
+  `<Modal>`, so none has the nesting problem; they are ordinary page panels
+  where a bounded height is the intended behaviour.
+- **`GlobalSearchModal` and the `AppShell` bottom sheet keep their own
+  overlays.** Neither uses the shared `Modal` component, and neither was part
+  of the report.

@@ -1,5 +1,11 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useId } from 'react';
 import { X } from 'lucide-react';
+
+// Modals can stack (a ConfirmDialog opened from inside a form modal, for
+// example). Setting/clearing document.body.style.overflow directly would
+// release the background scroll lock as soon as the *inner* modal closed, so
+// count how many are open and only unlock when the last one goes away.
+let openModalCount = 0;
 
 export function Modal({
   isOpen,
@@ -8,17 +14,23 @@ export function Modal({
   children,
   size = 'md' // 'sm', 'md', 'lg', 'xl', '2xl'
 }) {
-  // Close modal on escape key press
+  const titleId = useId();
+
+  // Close modal on escape key press + lock background scrolling
   useEffect(() => {
+    if (!isOpen) return undefined;
+
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') onClose();
     };
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      window.addEventListener('keydown', handleKeyDown);
-    }
+
+    openModalCount += 1;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+
     return () => {
-      document.body.style.overflow = '';
+      openModalCount = Math.max(0, openModalCount - 1);
+      if (openModalCount === 0) document.body.style.overflow = '';
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, onClose]);
@@ -42,10 +54,15 @@ export function Modal({
       />
       
       {/* Modal Content Box */}
-      <div className={`relative w-full ${sizes[size]} max-h-[92vh] landscape:max-h-[88vh] flex flex-col rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-4 sm:p-6 landscape:p-4 transform transition-all duration-300 animate-in fade-in-50 zoom-in-95 my-auto z-10`}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className={`relative w-full ${sizes[size]} max-h-[92vh] landscape:max-h-[88vh] flex flex-col rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-4 sm:p-6 landscape:p-4 transform transition-all duration-300 animate-in fade-in-50 zoom-in-95 my-auto z-10`}
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 mb-3 shrink-0">
-          <h3 className="text-base sm:text-lg font-bold font-heading text-slate-900 dark:text-slate-50 truncate pr-2">
+          <h3 id={titleId} className="text-base sm:text-lg font-bold font-heading text-slate-900 dark:text-slate-50 truncate pr-2">
             {title}
           </h3>
           <button 
@@ -57,12 +74,16 @@ export function Modal({
           </button>
         </div>
         
-        {/* Body */}
-        <div className="overflow-y-auto touch-scroll pr-1 flex-1">
+        {/* Body.
+            The -m-1/p-1 pair keeps a 4px gutter inside the scrollport without
+            shifting content: overflow-y-auto clips anything painted outside the
+            padding box, which otherwise cut off the focus ring on the first and
+            last focusable elements (most visibly the top edge of a search input
+            sitting flush against the body). */}
+        <div className="overflow-y-auto touch-scroll flex-1 -m-1 p-1">
           {children}
         </div>
       </div>
     </div>
   );
 }
-
