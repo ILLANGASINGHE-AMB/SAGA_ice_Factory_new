@@ -58,6 +58,11 @@ export function EndTripModal({ isOpen, onClose, trip, onSubmit }) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="End Trip" size="sm">
       <form onSubmit={handleSubmit} className="space-y-3">
+        {trip && (
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Start KM: <span className="font-semibold text-slate-700 dark:text-slate-300">{Number(trip.start_odometer).toLocaleString()}</span>
+          </p>
+        )}
         <Input
           label="Final KM"
           name="end_odometer"
