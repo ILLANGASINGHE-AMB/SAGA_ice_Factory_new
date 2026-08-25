@@ -9,7 +9,7 @@ import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { Modal } from '../components/Modal';
 import { Input, Select, TextArea } from '../components/FormFields';
-import { generateSettlementReceiptPDF, generateDebtStatementPDF } from '../utils/pdfGenerator';
+import { generateDebtStatementPDF } from '../utils/pdfGenerator';
 import { buildSettlementNotification, notificationUrl, toWhatsAppNumber } from '../utils/notifications';
 import { SendNotificationDialog } from '../components/SendNotificationDialog';
 import { recordNotification } from '../hooks/useNotifications';
@@ -69,9 +69,9 @@ export function DebtsPage() {
   const [chequeNo, setChequeNo] = useState('');
   const [settlementBankName, setSettlementBankName] = useState('');
 
-  // Settlement receipt preview modal state (generated, not auto-downloaded)
-  const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false);
-  const [receiptPdfUrl, setReceiptPdfUrl] = useState(null);
+  // The just-completed settlement, kept only long enough to compose and send
+  // the WhatsApp/SMS notification below — no PDF is generated or shown for
+  // it any more (see pendingReceiptNotification / handleSendReceiptNotification).
   const [settlementReceiptRecord, setSettlementReceiptRecord] = useState(null);
 
   // Debt History bill preview modal state
@@ -176,11 +176,11 @@ export function DebtsPage() {
         }
       );
 
-      // Generate the receipt PDF and show it in-app for preview — download is
-      // an explicit user action from the preview modal, not automatic.
-      const receiptDoc = generateSettlementReceiptPDF(result, settings);
-      const blobUrl = receiptDoc.output('bloburl');
-      setReceiptPdfUrl(blobUrl);
+      // No PDF is generated or shown here any more — settlementReceiptRecord
+      // is kept only to compose the WhatsApp/SMS notification below. The
+      // operator can still get a payment record for this customer any time
+      // afterward via the "PDF" (Debt Statement) button in Debt History,
+      // which lists every settlement's date/amount/method/notes.
       setSettlementReceiptRecord(result);
 
       toast.success(`Settlement recorded! Code: ${result.settlement_code}`);
@@ -188,9 +188,6 @@ export function DebtsPage() {
       // money never made it into the Cash & Bank ledger.
       if (result.ledgerWarning) toast.error(result.ledgerWarning);
       closeSettleModal();
-      // Notification first: getting the confirmation out to the customer is
-      // the time-critical step, so it is the first thing the operator is
-      // asked about. The receipt preview follows once that's answered.
       setWhatsappPromptOpen(true);
     } catch (err) {
       toast.error(err.message || "Failed to settle debt");
@@ -199,24 +196,9 @@ export function DebtsPage() {
     }
   };
 
-  const downloadReceipt = () => {
-    if (!settlementReceiptRecord) return;
-    const doc = generateSettlementReceiptPDF(settlementReceiptRecord, settings);
-    doc.save(`${settlementReceiptRecord.settlement_code}_receipt.pdf`);
-  };
-
-  const closeReceiptPreview = () => {
-    if (receiptPdfUrl) URL.revokeObjectURL(receiptPdfUrl);
-    setReceiptPreviewOpen(false);
-    setReceiptPdfUrl(null);
-    setSettlementReceiptRecord(null);
-  };
-
-  // Both answers to the notification prompt lead to the receipt preview —
-  // skipping the notification shouldn't cost the operator the receipt.
   const dismissWhatsAppPrompt = () => {
     setWhatsappPromptOpen(false);
-    setReceiptPreviewOpen(true);
+    setSettlementReceiptRecord(null);
   };
 
   // The settlement receipt notification, composed once so the WhatsApp text,
@@ -1041,34 +1023,6 @@ export function DebtsPage() {
             </Button>
           </div>
         </form>
-      </Modal>
-
-      {/* --- Settlement Receipt Preview Modal --- */}
-      <Modal
-        isOpen={receiptPreviewOpen}
-        onClose={closeReceiptPreview}
-        title={`Settlement Receipt ${settlementReceiptRecord ? `— ${settlementReceiptRecord.settlement_code}` : ''}`}
-        size="2xl"
-      >
-        <div className="space-y-3">
-          {receiptPdfUrl && (
-            <iframe
-              src={receiptPdfUrl}
-              title="Settlement Receipt PDF Preview"
-              className="w-full h-[70vh] rounded-xl border border-slate-200 dark:border-slate-800"
-            />
-          )}
-          <div className="flex justify-end">
-            <Button
-              variant="primary"
-              onClick={downloadReceipt}
-              className="flex items-center space-x-1.5"
-            >
-              <FileDown size={16} />
-              <span>Download PDF</span>
-            </Button>
-          </div>
-        </div>
       </Modal>
 
       {/* --- Debt History Statement Preview Modal --- */}

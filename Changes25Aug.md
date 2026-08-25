@@ -1,6 +1,6 @@
 # Changes — 25 August 2026
 
-Thirteen pieces of work:
+Fourteen pieces of work:
 
 1. **Dashboard "Settle Debts" quick action** — register a debt payment straight
    from the dashboard without first hunting the customer down in the ledger.
@@ -36,6 +36,8 @@ Thirteen pieces of work:
     filter shown above them.
 13. **New Order no longer auto-downloads the invoice** — the bill is available
     on demand afterward, exactly like debt settlement already worked.
+14. **Settle Debt no longer auto-shows the receipt preview** either — the
+    modal that used to pop up right after the notification prompt is gone.
 
 **Status:** production build passes (`npm run build`, ✓ built). ESLint reports
 the same problems as before the changes (`React` unused in both pages,
@@ -1074,6 +1076,51 @@ flow requested.
 
 ---
 
+# Part 14 — Stop auto-showing the settlement receipt preview
+
+**No migration.** `src/pages/DebtsPage.jsx` only. Direct follow-up to Part 13
+— you flagged that the receipt *preview* popping up automatically was
+unwanted too, same as the auto-download.
+
+## What changed
+
+`handleConfirmSettlement` used to, right after a debt was settled: generate
+the receipt PDF, open the WhatsApp/SMS notification prompt, and then — once
+that prompt was answered either way — automatically pop open a **Settlement
+Receipt** modal with the PDF in an iframe. That auto-open is gone. Settling a
+debt now shows the success toast and the WhatsApp/SMS prompt (unchanged —
+that's notifying the *customer*, a separate concern from previewing the PDF
+for the operator) and stops there.
+
+Removed along with it, since nothing else referenced them: `receiptPreviewOpen`
+/ `receiptPdfUrl` state, `downloadReceipt()`, `closeReceiptPreview()`, the
+Settlement Receipt `<Modal>` block, and the now-unused
+`generateSettlementReceiptPDF` import (the function itself is untouched —
+`useDebts.js`'s single-debt `settleDebt()` path still uses it server-side for
+the storage-backed receipt, unrelated to this UI).
+
+## ⚠️ Trade-off worth knowing about
+
+Unlike Sales (where removing the auto-download in Part 13 was free — a
+persisted `bill_pdf_url` and per-row View/Download buttons in Sales History
+already existed), **there was no separate persistent way to retrieve the
+settlement-specific receipt** (with its settlement code, cheque/bank detail)
+— the auto-preview was the *only* place it was ever generated. Removing it
+means that document is no longer obtainable through the UI at all, before or
+after.
+
+What **does** remain, unaffected: the **Debt History → "PDF" button** on each
+row generates a *Debt Statement* (a different document — `generateDebtStatementPDF`)
+that lists every settlement against that debt with its date, amount, payment
+method and notes. That's the persistent proof-of-payment record going
+forward. If you want the settlement receipt itself to be retrievable later
+(e.g. stored server-side like Sales' invoices, with a button somewhere to
+pull it back up), say so and I'll add it — I didn't build that since it
+wasn't asked for and Debt Statement already covers "what did this customer
+pay and when."
+
+---
+
 ## What was deliberately *not* changed
 
 - **No new settlement logic.** `handlePickCustomer` hands off to the existing
@@ -1166,3 +1213,9 @@ flow requested.
   automatic, so it's outside what was asked — flagged in case it should be
   switched to a preview like Sales History's own View button for
   consistency.
+- **The WhatsApp/SMS notification prompt still opens automatically after
+  settling** (Part 14). That's asking whether to notify the *customer*, not
+  showing the operator a PDF — a different concern from the receipt preview
+  that was removed, and not something you asked to change.
+- **The New Order wizard's flow is unaffected by Part 14** — it never had a
+  preview step to begin with (Part 13 covered its auto-download only).
