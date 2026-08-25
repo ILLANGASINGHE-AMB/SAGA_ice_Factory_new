@@ -24,6 +24,20 @@ function getISOWeekString(date) {
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
 }
 
+// Report types offered in the Compile Report chip strip, in display order.
+// Kept as one list (rather than seven near-identical button blocks) so the
+// strip and its active/hover styling stay in one place, same pattern as the
+// section tabs on Cash & Bank / Transport.
+const REPORT_TYPES = [
+  { value: 'daily_manager', label: 'Daily Manager Report', icon: ClipboardCheck },
+  { value: 'weekly', label: 'Weekly Report', icon: Calendar },
+  { value: 'monthly', label: 'Monthly Report', icon: Calendar },
+  { value: 'full', label: 'Full Report (Date Range)', icon: Calendar },
+  { value: 'debtors', label: 'Debtors Report', icon: CreditCard },
+  { value: 'customers', label: 'Customer Details Report', icon: UserCheck },
+  { value: 'custom', label: 'Customized Report', icon: SlidersHorizontal }
+];
+
 export function ReportsPage() {
   const { settings } = useSettings();
   const toast = useToast();
@@ -512,124 +526,44 @@ export function ReportsPage() {
   };
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-3 landscape:grid-cols-3 gap-4 sm:gap-6">
-      
-      {/* 1. Selector Section */}
-      <div className="space-y-4 sm:space-y-6">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5 space-y-3">
-          <h3 className="text-sm sm:text-base font-bold font-heading text-slate-800 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800 pb-2.5">
-            Compile Report
-          </h3>
-          
-          <div className="space-y-2 sm:space-y-2.5">
-            <button
-              onClick={() => { setActiveReport('daily_manager'); setPreviewData(null); }}
-              className={`w-full text-left p-3 sm:p-3.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
-                activeReport === 'daily_manager'
-                  ? 'border-navy-500 bg-navy-50/50 dark:bg-navy-950/20 text-navy-800 dark:text-navy-300 font-semibold'
-                  : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
-              }`}
-            >
-              <div className="flex items-center space-x-2.5 sm:space-x-3">
-                <ClipboardCheck size={18} className="text-emerald-500 shrink-0" />
-                <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">Daily Manager Report</span>
-              </div>
-            </button>
+    <div className="space-y-4 sm:space-y-6">
 
-            <button
-              onClick={() => { setActiveReport('weekly'); setPreviewData(null); }}
-              className={`w-full text-left p-3 sm:p-3.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
-                activeReport === 'weekly'
-                  ? 'border-navy-500 bg-navy-50/50 dark:bg-navy-950/20 text-navy-800 dark:text-navy-300 font-semibold'
-                  : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
-              }`}
-            >
-              <div className="flex items-center space-x-2.5 sm:space-x-3">
-                <Calendar size={18} className="shrink-0" />
-                <span className="text-xs sm:text-sm">Weekly Report</span>
-              </div>
-            </button>
+      {/* 1. Compile Report */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5 space-y-4">
+        <h3 className="text-sm sm:text-base font-bold font-heading text-slate-800 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800 pb-2.5">
+          Compile Report
+        </h3>
 
-            <button
-              onClick={() => { setActiveReport('monthly'); setPreviewData(null); }}
-              className={`w-full text-left p-3 sm:p-3.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
-                activeReport === 'monthly'
-                  ? 'border-navy-500 bg-navy-50/50 dark:bg-navy-950/20 text-navy-800 dark:text-navy-300 font-semibold'
-                  : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
-              }`}
-            >
-              <div className="flex items-center space-x-2.5 sm:space-x-3">
-                <Calendar size={18} className="shrink-0" />
-                <span className="text-xs sm:text-sm">Monthly Report</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => { setActiveReport('full'); setPreviewData(null); }}
-              className={`w-full text-left p-3 sm:p-3.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
-                activeReport === 'full'
-                  ? 'border-navy-500 bg-navy-50/50 dark:bg-navy-950/20 text-navy-800 dark:text-navy-300 font-semibold'
-                  : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
-              }`}
-            >
-              <div className="flex items-center space-x-2.5 sm:space-x-3">
-                <Calendar size={18} className="shrink-0" />
-                <span className="text-xs sm:text-sm">Full Report (Date Range)</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => { setActiveReport('debtors'); setPreviewData(null); }}
-              className={`w-full text-left p-3 sm:p-3.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
-                activeReport === 'debtors'
-                  ? 'border-navy-500 bg-navy-50/50 dark:bg-navy-950/20 text-navy-800 dark:text-navy-300 font-semibold'
-                  : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
-              }`}
-            >
-              <div className="flex items-center space-x-2.5 sm:space-x-3">
-                <CreditCard size={18} className="shrink-0" />
-                <span className="text-xs sm:text-sm">Debtors Report</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => { setActiveReport('customers'); setPreviewData(null); }}
-              className={`w-full text-left p-3 sm:p-3.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
-                activeReport === 'customers'
-                  ? 'border-navy-500 bg-navy-50/50 dark:bg-navy-950/20 text-navy-800 dark:text-navy-300 font-semibold'
-                  : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
-              }`}
-            >
-              <div className="flex items-center space-x-2.5 sm:space-x-3">
-                <UserCheck size={18} className="shrink-0" />
-                <span className="text-xs sm:text-sm">Customer Details Report</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => { setActiveReport('custom'); setPreviewData(null); }}
-              className={`w-full text-left p-3 sm:p-3.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
-                activeReport === 'custom'
-                  ? 'border-navy-500 bg-navy-50/50 dark:bg-navy-950/20 text-navy-800 dark:text-navy-300 font-semibold'
-                  : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
-              }`}
-            >
-              <div className="flex items-center space-x-2.5 sm:space-x-3">
-                <SlidersHorizontal size={18} className="text-navy-500 shrink-0" />
-                <span className="text-xs sm:text-sm font-semibold">Customized Report</span>
-              </div>
-            </button>
-          </div>
+        {/* Report type — a horizontal chip strip rather than a tall stack of
+            full-width buttons, now that this card runs the page's full width. */}
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 bg-slate-50 dark:bg-slate-800/40 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800">
+          {REPORT_TYPES.map(rt => {
+            const Icon = rt.icon;
+            return (
+              <button
+                key={rt.value}
+                onClick={() => { setActiveReport(rt.value); setPreviewData(null); }}
+                className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+                  activeReport === rt.value
+                    ? 'bg-navy-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-white dark:hover:bg-slate-800'
+                }`}
+              >
+                <Icon size={14} />
+                <span>{rt.label}</span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Date parameters card depending on type */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5 space-y-3">
-          <h3 className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200">
-            Set Parameters
-          </h3>
-
-          
-          <div className="space-y-4">
+        {/* Parameters for the selected type. Daily Manager Report has none
+            here — its own date picker lives in the Previewed Report section
+            below (see DailyManagerReportView) — so the card ends at the type
+            strip above for that one. Capped at a reading width so a lone
+            field (e.g. "Select Week") doesn't stretch edge-to-edge now that
+            the card spans the full page. */}
+        {activeReport !== 'daily_manager' && (
+          <div className="max-w-2xl space-y-4">
             {activeReport === 'weekly' && (
               <Input
                 label="Select Week"
@@ -651,7 +585,7 @@ export function ReportsPage() {
             )}
 
             {activeReport === 'full' && (
-              <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Input
                   label="From Date"
                   name="fDate"
@@ -666,7 +600,7 @@ export function ReportsPage() {
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
                 />
-              </>
+              </div>
             )}
 
             {activeReport === 'custom' && (
@@ -740,28 +674,20 @@ export function ReportsPage() {
               </>
             )}
 
-            {activeReport === 'daily_manager' && (
-              <p className="text-xs text-slate-500">
-                Daily Manager Report auto-populates live stock balance, cash & credit income, debt recoveries, and operating expenses for any selected date with operational manager entries.
-              </p>
-            )}
-
-            {activeReport !== 'daily_manager' && (
-              <Button
-                variant="primary"
-                onClick={handleGenerateReport}
-                className="w-full flex items-center justify-center space-x-2 py-2 rounded-xl"
-              >
-                <FileBarChart2 size={16} />
-                <span>Compile Preview</span>
-              </Button>
-            )}
+            <Button
+              variant="primary"
+              onClick={handleGenerateReport}
+              className="w-full sm:w-auto flex items-center justify-center space-x-2 px-6 py-2 rounded-xl"
+            >
+              <FileBarChart2 size={16} />
+              <span>Compile Preview</span>
+            </Button>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* 2. Preview Panel Section */}
-      <div className="xl:col-span-2 space-y-6">
+      {/* 2. Previewed Report */}
+      <div className="space-y-6">
         {activeReport === 'daily_manager' ? (
           <DailyManagerReportView />
         ) : (

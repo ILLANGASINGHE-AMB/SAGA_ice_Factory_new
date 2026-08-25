@@ -1,6 +1,6 @@
 # Changes — 25 August 2026
 
-Nine pieces of work:
+Ten pieces of work:
 
 1. **Dashboard "Settle Debts" quick action** — register a debt payment straight
    from the dashboard without first hunting the customer down in the ledger.
@@ -26,6 +26,9 @@ Nine pieces of work:
    Start KM.
 9. **Daily Manager Report window is now fixed at 8AM-to-8AM** — the admin
    picks one date; the four independent date/time inputs are gone.
+10. **Reports page decluttered** — two full-width sections top to bottom
+    (Compile Report, then Previewed Report) in place of a lopsided narrow
+    sidebar next to an oversized preview.
 
 **Status:** production build passes (`npm run build`, ✓ built). ESLint reports
 the same problems as before the changes (`React` unused in both pages,
@@ -35,7 +38,7 @@ the same problems as before the changes (`React` unused in both pages,
 neither the settlement path nor the new ledger inserts were exercised at
 runtime.
 
-**30 files changed · 4 new migrations**
+**31 files changed · 4 new migrations**
 
 ---
 
@@ -817,6 +820,57 @@ and correctly rolls back across month and year boundaries — verified directly
 
 ---
 
+# Part 10 — Reports page layout: Compile Report, then Previewed Report
+
+**No migration, no behavior change.** Layout only — every report type, filter,
+button and preview table works exactly as before; only the arrangement on
+screen changed.
+
+## Before
+
+A `grid-cols-1 xl:grid-cols-3` split: a narrow 1/3-width left column stacked
+two separate cards (a **Compile Report** card with the seven report types as
+tall full-width buttons, then a **Set Parameters** card below it — which, for
+Daily Manager Report, held nothing but a paragraph of description text since
+its date picker lives inside `DailyManagerReportView` itself) against a 2/3
+-width preview on the right. On a wide screen the result was a cramped list of
+buttons dwarfed by a huge preview beside it — the "messy" in the request.
+
+## Now
+
+Two full-width sections, stacked top to bottom:
+
+1. **Compile Report** — the seven report types as a horizontal, wrapping chip
+   strip (same pattern as the section tabs on Cash & Bank / Transport — active
+   chip filled navy, others ghost/hover), followed by that type's parameters
+   (capped at `max-w-2xl` so a lone field like "Select Week" doesn't stretch
+   edge-to-edge now that the card spans the full page) and the **Compile
+   Preview** button. For Daily Manager Report the card ends at the chip strip
+   — nothing to configure there any more (see below).
+2. **Previewed Report** — the actual output, full width: `DailyManagerReportView`
+   for that type, or the existing Live Preview panel (table + summary strip +
+   Download PDF) for every other type.
+
+## Files
+
+- `src/pages/ReportsPage.jsx` — new module-level `REPORT_TYPES` array
+  (`value`/`label`/`icon`) replaces seven near-identical button blocks with one
+  `.map()`; the outer `grid-cols-3` / `xl:col-span-2` split is gone in favor of
+  a plain vertical stack; the "Full Report" From/To Date pair now sits in a
+  `grid-cols-2` row, matching the Custom report's existing date-pair layout.
+
+## Also removed: the redundant Daily Manager Report description
+
+The old "Set Parameters" card showed *"Daily Manager Report auto-populates
+live stock balance, cash & credit income…"* for that type — but
+`DailyManagerReportView`'s own header already carries almost the same line
+(*"Auto-populated from system sales, debts, and production logs with manager
+entries."*). Since Daily Manager Report's Compile Report card now has nothing
+else to show, this duplicate text was dropped rather than carried over as
+dead weight.
+
+---
+
 ## What was deliberately *not* changed
 
 - **No new settlement logic.** `handlePickCustomer` hands off to the existing
@@ -876,3 +930,7 @@ and correctly rolls back across month and year boundaries — verified directly
   Monthly / Yearly / Custom reports) are untouched by Part 9** — those are a
   separate report with a genuinely open-ended range, unlike the Daily Manager
   Report's fixed business-day window.
+- **No report logic touched in Part 10.** `handleGenerateReport`,
+  `handleDownloadPDF`, every table, every summary figure, every parameter
+  input's value/onChange — all identical to before. Only the surrounding
+  containers moved.
