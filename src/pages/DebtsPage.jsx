@@ -408,13 +408,31 @@ export function DebtsPage() {
     filteredDebts.forEach(debt => {
       const total = Number(debt.total_amount) || 0;
 
+      // A debt hanging off a CASH sale is not a credit sale — it is the
+      // shortfall FIN-17 opens when that order's cash was diverted to the
+      // customer's older invoices. Its total_amount is the shortfall alone,
+      // so what the customer was actually billed and what they handed over at
+      // the counter both have to come from the sale.
+      //
+      //   25,000 cash order, 17,500 diverted to an old debt
+      //   -> billed 25,000, paid 7,500 at the counter, 17,500 still owed
+      //
+      // Labelling that "Credit Sale +17,500" told the operator the customer
+      // had taken 17,500 on credit, when they had in fact paid 25,000 cash.
+      const isCashShortfall = debt.sale?.payment_type === 'cash';
+      const orderTotal = Number(debt.sale?.total_amount) || 0;
+      const paidAtCounter = isCashShortfall ? Math.max(0, orderTotal - total) : 0;
+
       rows.push({
         id: `debt-${debt.id}`,
         occurredAt: debt.created_at,
         kind: 'charge',
+        isCashShortfall,
         customerName: debt.customer?.name || 'Unknown',
         saleCode: debt.sale?.sale_code || '—',
-        reference: debt.sale?.sale_code || `DEBT-${debt.id}`,
+        reference: isCashShortfall
+          ? `Cash order LKR ${orderTotal.toLocaleString()} — LKR ${paidAtCounter.toLocaleString()} paid at counter`
+          : (debt.sale?.sale_code || `DEBT-${debt.id}`),
         amount: total,
         balanceAfter: total,
         status: debt.status,
@@ -769,7 +787,7 @@ export function DebtsPage() {
                       ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
                       : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
                   }`}>
-                    {row.kind === 'charge' ? 'Credit Sale' : 'Payment'}
+                    {row.kind !== 'charge' ? 'Payment' : row.isCashShortfall ? 'Cash Order Balance' : 'Credit Sale'}
                   </span>
                   <span className="block text-[10px] text-slate-400 mt-0.5">{row.reference}</span>
                 </td>

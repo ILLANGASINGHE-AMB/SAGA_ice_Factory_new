@@ -1503,6 +1503,15 @@ begin
       'price_per_cube', v_sale.price_per_cube,
       'total_amount', v_sale.total_amount,
       'payment_type', v_sale.payment_type,
+      -- FIN-17: a cash order can now carry a balance. When its cash was
+      -- diverted to the customer's older invoices, the shortfall is booked as
+      -- a debt against THIS sale — so a bill that simply says "Paid Cash"
+      -- tells the customer they owe nothing while the ledger says otherwise.
+      -- Both figures ship with the bill so it can state the truth.
+      'outstanding', coalesce(
+        (select d.remaining_amount from public.debts d where d.sale_id = v_sale.id), 0),
+      'amount_paid', v_sale.total_amount - coalesce(
+        (select d.remaining_amount from public.debts d where d.sale_id = v_sale.id), 0),
       'sale_date', v_sale.sale_date,
       'bill_pdf_url', v_sale.bill_pdf_url,
       'customer', case

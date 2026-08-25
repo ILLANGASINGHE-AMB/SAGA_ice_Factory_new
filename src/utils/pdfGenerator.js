@@ -324,8 +324,22 @@ export function generateBillPDF(sale, settings) {
   doc.roundedRect(14, finalY, 96, boxH, 2, 2, 'FD');
 
   const isDebt = sale.payment_type === 'debt';
-  const [pillBg, pillFg] = badgeColor(isDebt ? 'debt' : 'cash');
-  drawPill(doc, isDebt ? 'CREDIT / UNPAID' : 'PAID IN FULL', 33, finalY + 7, pillBg, pillFg, 7.5);
+  // FIN-17: a cash order is not automatically settled. When its cash was
+  // applied to the customer's older invoices first, a shortfall stays owing
+  // on this very bill — printing "PAID IN FULL" over it hands the customer a
+  // receipt that contradicts the ledger. `outstanding` is supplied by
+  // get_public_bill and by useSales after placing an order; anything without
+  // it (older callers, fully paid sales) reads 0 and prints as before.
+  const outstanding = Number(sale.outstanding) || 0;
+  const isPartPaid = !isDebt && outstanding > 0;
+  const paidHere = Math.max(0, (Number(sale.total_amount) || 0) - outstanding);
+
+  const [pillBg, pillFg] = badgeColor(isDebt ? 'debt' : isPartPaid ? 'partial' : 'cash');
+  drawPill(
+    doc,
+    isDebt ? 'CREDIT / UNPAID' : isPartPaid ? 'PART PAID' : 'PAID IN FULL',
+    33, finalY + 7, pillBg, pillFg, 7.5
+  );
 
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(7.5);
@@ -338,10 +352,15 @@ export function generateBillPDF(sale, settings) {
     doc.text(`${billedTotal.toLocaleString()} cubes billed + ${freeTotal.toLocaleString()} free = ${(billedTotal + freeTotal).toLocaleString()} issued.`, 19, finalY + 15);
     doc.text(isDebt
       ? 'Issued on credit terms; the amount is in the debts statement.'
-      : 'Thank you! This invoice has been settled in full.', 19, finalY + 19.5);
+      : isPartPaid
+        ? `Paid LKR ${paidHere.toLocaleString()} — LKR ${outstanding.toLocaleString()} still due.`
+        : 'Thank you! This invoice has been settled in full.', 19, finalY + 19.5);
   } else if (isDebt) {
     doc.text('This invoice was issued on credit terms. The amount is', 19, finalY + 15);
     doc.text('recorded in the customer’s pending debts statement.', 19, finalY + 19.5);
+  } else if (isPartPaid) {
+    doc.text(`Paid LKR ${paidHere.toLocaleString()} against this invoice; part of your`, 19, finalY + 15);
+    doc.text(`payment cleared an earlier bill. LKR ${outstanding.toLocaleString()} still due.`, 19, finalY + 19.5);
   } else {
     doc.text('Thank you! This invoice has been settled in full on the', 19, finalY + 15);
     doc.text('date of purchase.', 19, finalY + 19.5);

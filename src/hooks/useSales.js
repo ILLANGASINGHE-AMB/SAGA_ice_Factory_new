@@ -130,9 +130,19 @@ export function useSales() {
 
     let bill_pdf_url = null;
 
+    // FIN-17: whatever this order's cash was diverted to older invoices is an
+    // equal shortfall left owing on THIS bill, so the invoice must not print
+    // "PAID IN FULL". The RPC already returns the figure; passing it here is
+    // what lets generateBillPDF say "PART PAID" instead. A debt order's own
+    // total is not an FIN-17 shortfall and is labelled from payment_type.
+    const billSale = {
+      ...fullSale,
+      outstanding: fullSale?.payment_type === 'cash' ? appliedToOldDebt : 0
+    };
+
     // Generate PDF Blob and upload to private Supabase Storage 'bills' bucket
     try {
-      const pdfBlob = generateBillPDFBlob(fullSale, settings || {});
+      const pdfBlob = generateBillPDFBlob(billSale, settings || {});
       const fileName = `BILL_${sale_code}_${Date.now()}.pdf`;
 
       const { data: uploadData, error: uploadErr } = await supabase.storage

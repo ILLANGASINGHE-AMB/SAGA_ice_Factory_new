@@ -126,6 +126,12 @@ export function PublicBillPage() {
 
   if (!sale) return null;
 
+  // FIN-17: shipped by get_public_bill. Older bills (and any sale with no debt
+  // row) report 0, so a bill rendered before this change reads exactly as it
+  // did — fully paid.
+  const outstanding = Number(sale.outstanding) || 0;
+  const amountPaid = Number(sale.amount_paid ?? sale.total_amount) || 0;
+
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 flex flex-col items-center justify-center p-4 sm:p-6 font-sans">
       <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden">
@@ -203,17 +209,50 @@ export function PublicBillPage() {
               </div>
             </div>
 
-            {/* Total Amount Card */}
-            <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-between">
-              <div>
-                <span className="text-[10px] uppercase font-bold text-slate-400">Total Amount Due</span>
-                <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
-                  LKR {parseFloat(sale.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </h3>
+            {/* Total Amount Card.
+                FIN-17: a cash order can be only PART paid — when its cash was
+                applied to the customer's older invoices first, the shortfall
+                stays owing on this bill. A flat "Paid Cash" badge told the
+                customer the bill was settled while the ledger said otherwise,
+                so what was paid and what is still owed are both shown. */}
+            <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Total Amount</span>
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
+                    LKR {parseFloat(sale.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </h3>
+                </div>
+                <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold uppercase ${
+                  outstanding > 0
+                    ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
+                    : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                }`}>
+                  {outstanding <= 0
+                    ? (sale.payment_type === 'cash' ? 'Paid Cash' : 'Debit Account')
+                    : sale.payment_type === 'cash' ? 'Part Paid' : 'Debit Account'}
+                </span>
               </div>
-              <span className="text-[10px] px-2.5 py-1 rounded-full font-bold uppercase bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
-                {sale.payment_type === 'cash' ? 'Paid Cash' : 'Debit Account'}
-              </span>
+
+              {outstanding > 0 && sale.payment_type === 'cash' && (
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-700 space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500">Paid at counter</span>
+                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                      LKR {amountPaid.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500 font-semibold">Balance still due</span>
+                    <span className="font-bold text-amber-600 dark:text-amber-400">
+                      LKR {outstanding.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 pt-0.5">
+                    Part of your payment cleared an earlier outstanding bill first.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Download Button */}
