@@ -78,24 +78,30 @@ export function CustomerProfilePage() {
   const [priceModalOpen, setPriceModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Daily/Monthly/Yearly used to only resize the Graph View's buckets — the
-  // buttons highlighted but changed nothing in Sales History, Payment
-  // History, Cheques or Notifications, which made them look broken on every
-  // tab but the graph. They now also apply the matching date-range preset
-  // (same pattern as Employees/Transport's period buttons), so picking
-  // "Monthly" actually narrows every tab to this month, not just the chart.
+  // Daily/Monthly/Yearly sets both the bucket size AND a matching lookback
+  // window wide enough to actually show several buckets — "just today" (or
+  // "just this month"/"just this year") collapsed the window to exactly one
+  // bucket of its own granularity, so the graph could never draw more than a
+  // single point no matter which of the three was picked, and the list tabs
+  // often came back empty for a customer with no activity that exact day.
+  // That's what made the buttons look broken/ineffective.
   const applyPeriod = (period) => {
     setGranularity(period);
     const today = new Date();
     if (period === 'daily') {
-      const d = toLocalDateStr(today);
-      setDateFrom(d);
-      setDateTo(d);
+      // Last 30 days, bucketed by day.
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29);
+      setDateFrom(toLocalDateStr(start));
+      setDateTo(toLocalDateStr(today));
     } else if (period === 'monthly') {
-      setDateFrom(toLocalDateStr(new Date(today.getFullYear(), today.getMonth(), 1)));
+      // Last 12 months, bucketed by month.
+      const start = new Date(today.getFullYear(), today.getMonth() - 11, 1);
+      setDateFrom(toLocalDateStr(start));
       setDateTo(toLocalDateStr(today));
     } else {
-      setDateFrom(toLocalDateStr(new Date(today.getFullYear(), 0, 1)));
+      // Last 5 years, bucketed by year.
+      const start = new Date(today.getFullYear() - 4, 0, 1);
+      setDateFrom(toLocalDateStr(start));
       setDateTo(toLocalDateStr(today));
     }
   };
@@ -158,21 +164,68 @@ export function CustomerProfilePage() {
   const totalPayments = filteredPayments.reduce((sum, p) => sum + Number(p.amount_paid || 0), 0);
   const totalOutstandingDebt = customerDebts.reduce((sum, d) => sum + Number(d.remaining_amount || 0), 0);
 
-  // Graph data: buckets sized by the selected granularity (Daily/Monthly/Yearly)
+  // Graph data: one bucket per day/month/year across the active window,
+  // sized by the selected granularity (Daily/Monthly/Yearly). Buckets are
+  // pre-filled with zero across the WHOLE window and only then topped up
+  // from real transactions — a day/month/year with no activity still gets a
+  // point on the line (sitting at 0) instead of being skipped entirely.
+  // Skipping empty buckets was the actual bug behind both symptoms reported:
+  // with sparse data, most windows produced only one populated bucket, which
+  // recharts can only render as a single floating dot (a line needs 2+
+  // points to draw a segment) — so the chart looked broken, and switching
+  // Daily/Monthly/Yearly still produced the same "one dot" result every
+  // time, which read as the filter buttons doing nothing.
   const graphData = useMemo(() => {
-    let keyFn, labelFn;
+    let stepUnit, keyFn, labelFn;
     if (granularity === 'daily') {
+      stepUnit = 'day';
       keyFn = (d) => toLocalDateStr(d);
       labelFn = (d) => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     } else if (granularity === 'monthly') {
+      stepUnit = 'month';
       keyFn = (d) => `${d.getFullYear()}-${d.getMonth()}`;
       labelFn = (d) => d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
     } else {
+      stepUnit = 'year';
       keyFn = (d) => `${d.getFullYear()}`;
       labelFn = (d) => `${d.getFullYear()}`;
     }
 
+    // The window to fill: the active date filter if one is set (always true
+    // once Daily/Monthly/Yearly or a manual date has been picked); otherwise
+    // fall back to the actual span of this customer's own records, so a
+    // fresh, unfiltered profile still shows a real trend instead of nothing.
+    let start = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
+    let end = dateTo ? new Date(`${dateTo}T00:00:00`) : null;
+    if (!start || !end) {
+      const allDates = [
+        ...customerSales.map(s => new Date(s.sale_date)),
+        ...payments.map(p => new Date(p.settlement_date))
+      ].filter(d => !isNaN(d.getTime()));
+      if (allDates.length === 0) return [];
+      const minD = new Date(Math.min(...allDates));
+      const maxD = new Date(Math.max(...allDates));
+      if (!start) start = new Date(minD.getFullYear(), minD.getMonth(), minD.getDate());
+      if (!end) end = new Date(maxD.getFullYear(), maxD.getMonth(), maxD.getDate());
+    }
+
+    // Pre-fill every step from start to end. Capped as a safety net against
+    // an extreme manually-picked range (e.g. daily buckets over a decade) —
+    // not a limit that applies to the normal preset windows above.
     const buckets = new Map();
+    const cursor = new Date(start);
+    let guard = 0;
+    while (cursor <= end && guard < 500) {
+      const key = keyFn(cursor);
+      if (!buckets.has(key)) {
+        buckets.set(key, { key, label: labelFn(cursor), sortDate: new Date(cursor), Orders: 0, Payments: 0 });
+      }
+      if (stepUnit === 'day') cursor.setDate(cursor.getDate() + 1);
+      else if (stepUnit === 'month') cursor.setMonth(cursor.getMonth() + 1);
+      else cursor.setFullYear(cursor.getFullYear() + 1);
+      guard++;
+    }
+
     const ensureBucket = (dateObj) => {
       const key = keyFn(dateObj);
       if (!buckets.has(key)) {
@@ -189,7 +242,7 @@ export function CustomerProfilePage() {
     });
 
     return Array.from(buckets.values()).sort((a, b) => a.sortDate - b.sortDate);
-  }, [filteredSales, filteredPayments, granularity]);
+  }, [filteredSales, filteredPayments, granularity, dateFrom, dateTo, customerSales, payments]);
 
   const handleViewSale = (sale) => {
     const doc = generateBillPDF(sale, settings);

@@ -1,6 +1,6 @@
 # Changes — 25 August 2026
 
-Fourteen pieces of work:
+Fifteen pieces of work:
 
 1. **Dashboard "Settle Debts" quick action** — register a debt payment straight
    from the dashboard without first hunting the customer down in the ledger.
@@ -38,6 +38,10 @@ Fourteen pieces of work:
     on demand afterward, exactly like debt settlement already worked.
 14. **Settle Debt no longer auto-shows the receipt preview** either — the
     modal that used to pop up right after the notification prompt is gone.
+15. **Customer Profile's Orders vs Payments graph fixed** — it rendered as a
+    single floating dot instead of a trend line, and Daily/Monthly/Yearly
+    looked like they did nothing. Both traced back to a bug I introduced in
+    Part 12.
 
 **Status:** production build passes (`npm run build`, ✓ built). ESLint reports
 the same problems as before the changes (`React` unused in both pages,
@@ -1121,6 +1125,76 @@ pay and when."
 
 ---
 
+# Part 15 — Customer Profile graph: fixed a regression from Part 12
+
+**No migration.** `src/pages/CustomerProfilePage.jsx` only. You reported the
+Orders vs Payments graph rendering as a single dot with no line, and the
+Daily/Monthly/Yearly buttons looking ineffective on that tab — this traces
+straight back to Part 12's `applyPeriod` fix.
+
+## Root cause: Part 12's date-range presets collapsed the graph to one point
+
+Part 12 made Daily/Monthly/Yearly set `dateFrom`/`dateTo` to *exactly* one
+unit — "today", "this month", "this year" — so those buttons would actually
+narrow Sales History / Payment History / Cheques / Notifications, which they
+previously didn't. That part was correct.
+
+But the **same three buttons also control the graph's bucket size**
+(`granularity`), and a one-day window bucketed by day (or one-month window
+bucketed by month, or one-year window bucketed by year) can only ever produce
+**one bucket** — the window and the bucket width were always exactly equal.
+On top of that, `graphData` only ever created a bucket where a transaction
+actually existed, so a customer with one order and one payment landing on
+different days produced at most two isolated points with no bucket in
+between to draw a line through — recharts can't draw a line segment from a
+single point, so it fell back to rendering a lone dot. Switching between
+Daily/Monthly/Yearly kept reproducing the same "one dot" result no matter
+which was clicked, which is exactly why it looked like the buttons weren't
+doing anything.
+
+## The fix
+
+**1. Wider preset windows.** Daily/Monthly/Yearly now pair a bucket size with
+a window actually wide enough to show a trend across it:
+
+| Button | Window | Buckets |
+|---|---|---|
+| Daily | Last 30 days | up to 30, one per day |
+| Monthly | Last 12 months | up to 12, one per month |
+| Yearly | Last 5 years | up to 5, one per year |
+
+This also improves the list tabs — "last 30 days of sales" is a far more
+useful default than "just today", which was often empty for a customer
+without same-day activity.
+
+**2. Gap-free buckets.** `graphData` now pre-fills **every** step across the
+active window — every day/month/year, whether or not it has a transaction —
+before folding in real sales/payments. A day with no activity now shows as a
+flat point at 0 instead of not existing at all, so the line is continuous
+across the whole window rather than jumping between whichever scattered days
+happened to have data.
+
+Verified numerically: simulated the 30-day Daily window with a sale on one
+day and a payment the next (matching your screenshot's numbers) — the result
+is 30 continuous daily buckets, the two real transactions land in the right
+buckets with the right totals, and every other bucket is a clean, real zero.
+Also confirmed the Monthly and Yearly presets produce exactly 12 and 5
+buckets respectively.
+
+**3. Sensible fallback when no filter is active.** If `dateFrom`/`dateTo` are
+both empty (a fresh profile, before any preset or manual date is picked),
+the window now derives from the actual earliest/latest sale or settlement
+date on record for that customer, instead of the chart just being empty.
+
+## Note
+
+`typeFilter` (All / Debt Orders / Cash Orders) was already applied correctly
+upstream of the graph (via `filteredSales`/`filteredPayments`, unchanged) —
+that part was never the bug. Only the bucket generation and the window width
+were wrong.
+
+---
+
 ## What was deliberately *not* changed
 
 - **No new settlement logic.** `handlePickCustomer` hands off to the existing
@@ -1219,3 +1293,11 @@ pay and when."
   that was removed, and not something you asked to change.
 - **The New Order wizard's flow is unaffected by Part 14** — it never had a
   preview step to begin with (Part 13 covered its auto-download only).
+- **Sales/Payments/Cheques/Notifications tabs are otherwise unchanged by
+  Part 15** — the only difference there is that Daily/Monthly/Yearly now
+  scope to a 30-day/12-month/5-year window instead of a single day/month/
+  year, which is Part 12's mechanism doing what it was meant to, just with a
+  usable window this time.
+- **The 500-iteration bucket cap is a safety net, not an active limit** for
+  any of the normal presets (30/12/5 are all far under it) — it only matters
+  if someone manually types an extreme custom date range.
