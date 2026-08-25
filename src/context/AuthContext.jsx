@@ -42,6 +42,7 @@ export function AuthProvider({ children }) {
       if (error) throw error;
 
       setUserAndRef({
+        id: authUser.id,
         email: authUser.email,
         fullName: data.full_name,
         role: data.role
@@ -49,6 +50,7 @@ export function AuthProvider({ children }) {
     } catch (err) {
       console.warn("Failed to fetch profile, using metadata fallback:", err);
       setUserAndRef({
+        id: authUser.id,
         email: authUser.email,
         fullName: authUser.user_metadata?.full_name || 'Staff Operator',
         role: authUser.user_metadata?.role || 'user'
@@ -106,6 +108,7 @@ export function AuthProvider({ children }) {
       .single();
 
     const sessionData = {
+      id: data.user.id,
       email: data.user.email,
       fullName: profile?.full_name || 'Staff Operator',
       role: profile?.role || 'user'

@@ -7,6 +7,9 @@ create table public.profiles (
   id uuid references auth.users on delete cascade primary key,
   role text not null check (role in ('admin', 'user')),
   full_name text not null,
+  -- Distinct from both the sign-in email and full_name (display name) — a
+  -- short handle like "john_silva" set by whoever creates the account.
+  username text not null unique,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -1419,11 +1422,12 @@ create policy "Allow delete customer_cube_prices for admins" on public.customer_
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
-  insert into public.profiles (id, full_name, role)
+  insert into public.profiles (id, full_name, role, username)
   values (
     new.id,
     coalesce(new.raw_user_meta_data->>'full_name', 'New User'),
-    coalesce(new.raw_user_meta_data->>'role', 'user')
+    coalesce(new.raw_user_meta_data->>'role', 'user'),
+    coalesce(new.raw_user_meta_data->>'username', 'user_' || new.id::text)
   );
   return new;
 end;
@@ -2442,3 +2446,38 @@ create trigger trg_mark_auto_applied_settlement
 
 create index if not exists idx_debt_settlements_is_auto_applied
   on public.debt_settlements(is_auto_applied);
+
+-- ==========================================
+-- User directory (admin-only email lookup)
+-- ==========================================
+--
+-- Plain client queries can't read auth.users (not exposed via PostgREST), so
+-- this is the only client-safe way for Settings' User Management table to
+-- show what email each account signs in with.
+
+create or replace function public.list_user_directory()
+returns table (
+  id uuid,
+  email text,
+  username text,
+  full_name text,
+  role text,
+  created_at timestamp with time zone
+)
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'Only administrators can view the user directory';
+  end if;
+
+  return query
+    select p.id, u.email, p.username, p.full_name, p.role, p.created_at
+    from public.profiles p
+    join auth.users u on u.id = p.id
+    order by p.created_at asc;
+end;
+$$ language plpgsql;
+
+grant execute on function public.list_user_directory() to authenticated;

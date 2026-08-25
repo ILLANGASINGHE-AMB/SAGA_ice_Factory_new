@@ -1,6 +1,6 @@
 # Changes — 25 August 2026
 
-Sixteen pieces of work:
+Seventeen pieces of work:
 
 1. **Dashboard "Settle Debts" quick action** — register a debt payment straight
    from the dashboard without first hunting the customer down in the ledger.
@@ -45,6 +45,9 @@ Sixteen pieces of work:
 16. **Staff can now price Ice Cubes** — both the New Order rate override and
     Inventory's per-cube price, previously admin-only in the UI *and*
     enforced server-side.
+17. **New: User Management in Settings** — admins can create, edit and
+    delete login accounts, and reset any user's password, from a new table
+    on the Settings page. Needs a manual deploy step — see below.
 
 **Status:** production build passes (`npm run build`, ✓ built). ESLint reports
 the same problems as before the changes (`React` unused in both pages,
@@ -54,7 +57,7 @@ the same problems as before the changes (`React` unused in both pages,
 neither the settlement path nor the new ledger inserts were exercised at
 runtime.
 
-**37 files changed · 5 new migrations**
+**43 files changed · 6 new migrations · 1 new Edge Function**
 
 ---
 
@@ -67,9 +70,14 @@ runtime.
 | `20260825030000_auto_applied_settlement_flag.sql` | 5 |
 | `20260825040000_transport_trip_guards.sql` | 8 |
 | `20260825050000_staff_can_price_ice_cubes.sql` | 16 |
+| `20260825060000_user_management.sql` | 17 |
 
 Each is detailed in its section below. `supabase_schema.sql` has been updated
-to match all five, so a fresh provision already includes them.
+to match all six, so a fresh provision already includes them.
+
+**Part 17 also needs an Edge Function deployed — this is the one piece of
+this entire changelog that will not work until you do that yourself; I have
+no way to deploy it from here.** See Part 17 for the exact command.
 
 ## ⚠️ Part 2 needs a migration
 
@@ -1240,6 +1248,121 @@ noise.
 
 ---
 
+# Part 17 — User Management in Settings
+
+New feature, not a fix. Lets an admin manage every login account — create,
+edit (including email/username/display name/role), delete, and **reset any
+user's password** — from a table in Settings, matching the fields and layout
+you specified.
+
+## ⚠️ Two deploy steps required — this part will not work until both are done
+
+I can write code and migrations from here, but I cannot run the Supabase CLI
+or deploy an Edge Function myself. Until both steps below are done, **Add
+User / Edit / Delete will fail** (the table itself will load fine, and
+existing accounts will show with an auto-generated username — see the
+migration note).
+
+**1. Apply the migration** — `20260825060000_user_management.sql`.
+
+**2. Deploy the new Edge Function**, from the project root:
+```
+supabase functions deploy admin-users
+```
+No secrets need to be set manually for it — `SUPABASE_URL` and
+`SUPABASE_SERVICE_ROLE_KEY` are provided automatically to every Edge
+Function by Supabase (unlike the existing `saga-ai-proxy` function, which
+*does* need `GEMINI_API_KEY` set by hand — this one needs nothing extra).
+
+## Why a whole Edge Function was necessary
+
+Creating a user with a chosen password, and resetting another user's
+password, both require the Supabase **Admin Auth API**
+(`supabase.auth.admin.createUser` / `.updateUserById` / `.deleteUser`).
+That API only works with the project's `service_role` key — a key that must
+never be shipped to the browser (anyone could extract it from the page and
+gain full database + auth control). The only safe place to hold it is a
+server-side Edge Function, so `supabase/functions/admin-users/index.ts` is a
+new function, following the same pattern as the existing `saga-ai-proxy`,
+that:
+
+1. Reads the caller's JWT from the request's `Authorization` header.
+2. Verifies it belongs to a real, currently-admin user (`profiles.role =
+   'admin'`) — **checked on every single call**, since this function can
+   create, delete, and reset the password of any account. Get this wrong and
+   any logged-in staff member could grant themselves admin or lock everyone
+   else out.
+3. Only then performs the requested `create` / `update` / `delete` using the
+   service-role client.
+
+Listing users doesn't need any of this — `list_user_directory()` is a plain,
+admin-gated Postgres function (`supabase.rpc('list_user_directory')`,
+no Edge Function round-trip), since a `security definer` function can safely
+read `auth.users.email` (which a normal client query can't see at all —
+PostgREST never exposes that table) without ever touching the service role
+key.
+
+## ⚠️ Migration: `20260825060000_user_management.sql`
+
+| Change | Purpose |
+|---|---|
+| `profiles.username text not null unique` | New field, distinct from both the sign-in email and the display name — e.g. email `j.silva@sagacious.com`, display name "John Silva", username `john_silva` |
+| Backfill of existing rows | Derives a username from each account's current email (the part before `@`), de-duplicated by appending the row's id on collision, so the `NOT NULL UNIQUE` constraint can be applied without breaking your existing admin/user logins |
+| `handle_new_user()` extended | Picks up `username` from the new auth user's metadata, alongside the `full_name`/`role` it already handled |
+| New `list_user_directory()` | Admin-gated; the only client-safe way to see login emails (see above) |
+
+**Existing accounts get an auto-generated username** from this backfill
+(e.g. `admin` from `admin@sagacious.com`) — you can rename them to whatever
+you'd prefer via **Edit** once the feature is live; nothing about their
+email or password changes.
+
+## The User Management table — `src/pages/SettingsPage.jsx`
+
+Added as its own full-width card, above Company Branding (Settings is
+already entirely admin-gated as a page, so no extra role check was needed
+here). Columns: **User** (username) · **Email** · **Display Name** · **Role**
+(badge) · **Actions** (Edit / Delete), plus an **Add User** button — exactly
+as specified.
+
+- **Delete** is disabled, with an explanatory tooltip, on the row matching
+  the currently signed-in admin — can't delete the account you're using
+  right now. (`AuthContext`'s session object gained an `id` field to make
+  this comparison possible — it previously only carried
+  email/fullName/role.) The Edge Function enforces the same rule
+  server-side regardless, so this is a convenience, not the actual guard.
+- Delete asks for confirmation via the same `ConfirmDialog` pattern used for
+  Branches, warning that the person can no longer sign in.
+
+## Add / Edit form — `src/components/UserFormModal.jsx`
+
+Built with `react-hook-form` + `zod`, the same pattern as
+`CustomerFormModal.jsx`. Fields exactly as specified:
+
+| Field | Add mode | Edit mode |
+|---|---|---|
+| Email Address (Used to sign in) | required, validated as an email | required |
+| Username | required, min 2 chars | required |
+| Display Name | optional | optional |
+| Password | **required**, min 6 chars, "Set secure password" | **optional** — "New Password (Leave blank to keep current)", min 6 chars *only if typed* |
+| System Role | User / Admin toggle | User / Admin toggle |
+
+**Admin can update any user's password** through the Edit form's password
+field — leaving it blank keeps the account's current password untouched;
+typing a new one (6+ characters) replaces it immediately via the Edge
+Function's `updateUserById` call. No confirmation of the *old* password is
+needed since the caller is a verified admin acting on someone else's
+account, not the account holder resetting their own.
+
+## `src/hooks/useUserManagement.js`
+
+`users` (live, realtime-subscribed to `profiles` changes) plus
+`addUser` / `updateUser` / `deleteUser`, each a thin wrapper over
+`supabase.functions.invoke('admin-users', { body: { action, ... } })`. All
+three log to the activity log (`entityType: 'user'`), matching every other
+create/update/delete action elsewhere in the app.
+
+---
+
 ## What was deliberately *not* changed
 
 - **No new settlement logic.** `handlePickCustomer` hands off to the existing
@@ -1356,3 +1479,13 @@ noise.
   Customer Profile) are untouched.** That's a different feature from the
   per-order override or Inventory's base price, and wasn't part of this
   request.
+- **Username is not the sign-in credential** (Part 17) — email still is,
+  unchanged. Username is a separate, additional identifier shown in the
+  directory table, not something typed at the login screen.
+- **No self-service "forgot password" flow was added.** Password resets in
+  this feature are exclusively an admin acting on someone else's account
+  through Edit; a user resetting their own forgotten password is a different
+  feature (typically Supabase's email-based reset flow) and wasn't asked for.
+- **The legacy `place_order_transaction` / `place_multi_item_order_transaction`
+  functions still have their old admin-only price check** (Part 16, noted
+  there too) — both are confirmed unused by the app.

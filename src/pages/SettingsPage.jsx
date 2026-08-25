@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSettings } from '../hooks/useSettings';
 import { useCustomers } from '../hooks/useCustomers';
+import { useUserManagement } from '../hooks/useUserManagement';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { Button } from '../components/Button';
 import { Input, TextArea } from '../components/FormFields';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { UserFormModal } from '../components/UserFormModal';
+import { Badge } from '../components/Badge';
 import { supabase } from '../lib/supabase';
 import { logActivity } from '../lib/activityLog';
 import { testGeminiApiKey } from '../services/sagaAiService';
@@ -27,14 +30,64 @@ import {
   CheckCircle2,
   Plus,
   Edit2,
-  X
+  X,
+  Users
 } from 'lucide-react';
 
 export function SettingsPage() {
   const { settings, isLoading, updateSettings } = useSettings();
   const { customers, addCustomer: addCustomerRecord, updateCustomer: updateCustomerRecord, deleteCustomer: deleteCustomerRecord } = useCustomers();
-  const { isAdmin } = useAuth();
+  const { users, isLoading: usersLoading, addUser, updateUser, deleteUser } = useUserManagement();
+  const { isAdmin, user: currentUser } = useAuth();
   const toast = useToast();
+
+  // User Management (login accounts) — mirrors the Branch section's own
+  // form-modal + delete-confirm pattern just below.
+  const [userFormOpen, setUserFormOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [userDeleteTarget, setUserDeleteTarget] = useState(null);
+  const [userDeleteConfirmOpen, setUserDeleteConfirmOpen] = useState(false);
+  const [userDeleteLoading, setUserDeleteLoading] = useState(false);
+
+  const openAddUserModal = () => {
+    setEditingUser(null);
+    setUserFormOpen(true);
+  };
+
+  const openEditUserModal = (u) => {
+    setEditingUser(u);
+    setUserFormOpen(true);
+  };
+
+  const handleUserSaved = ({ mode, username, error }) => {
+    if (mode === 'error') {
+      toast.error(error);
+    } else if (mode === 'add') {
+      toast.success(`User account created: ${username}`);
+    } else {
+      toast.success(`User account updated: ${username}`);
+    }
+  };
+
+  const handleDeleteUserClick = (u) => {
+    setUserDeleteTarget(u);
+    setUserDeleteConfirmOpen(true);
+  };
+
+  const handleConfirmDeleteUser = async () => {
+    if (!userDeleteTarget) return;
+    setUserDeleteLoading(true);
+    try {
+      await deleteUser(userDeleteTarget.id, userDeleteTarget.username);
+      toast.success(`User account "${userDeleteTarget.username}" deleted.`);
+      setUserDeleteConfirmOpen(false);
+      setUserDeleteTarget(null);
+    } catch (err) {
+      toast.error(err.message || "Failed to delete user account");
+    } finally {
+      setUserDeleteLoading(false);
+    }
+  };
 
   // Branch customers: permanent "customers" flagged is_branch, managed here
   const branches = useMemo(() => (customers || []).filter(c => c.is_branch), [customers]);
@@ -567,7 +620,79 @@ export function SettingsPage() {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      
+
+      {/* 0. User Management — full width, above the two-column sections below */}
+      <div className="md:col-span-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="flex items-center space-x-2">
+            <Users className="text-navy-500" size={20} />
+            <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100">
+              User Management
+            </h3>
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={openAddUserModal}
+            className="flex items-center space-x-1.5"
+          >
+            <Plus size={14} />
+            <span>Add User</span>
+          </Button>
+        </div>
+
+        {usersLoading ? (
+          <p className="text-xs text-slate-400 py-6 text-center">Loading user accounts...</p>
+        ) : users.length === 0 ? (
+          <p className="text-xs text-slate-400 py-6 text-center">No user accounts found.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="text-slate-400 uppercase text-[10px] border-b border-slate-100 dark:border-slate-800">
+                <tr>
+                  <th className="py-2.5 pr-3 font-semibold">User</th>
+                  <th className="py-2.5 pr-3 font-semibold">Email</th>
+                  <th className="py-2.5 pr-3 font-semibold">Display Name</th>
+                  <th className="py-2.5 pr-3 font-semibold">Role</th>
+                  <th className="py-2.5 pr-3 font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {users.map((u) => (
+                  <tr key={u.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10">
+                    <td className="py-2.5 pr-3 font-mono font-medium text-navy-600 dark:text-navy-400">{u.username}</td>
+                    <td className="py-2.5 pr-3 text-slate-600 dark:text-slate-300">{u.email}</td>
+                    <td className="py-2.5 pr-3 text-slate-800 dark:text-slate-200 font-semibold">{u.full_name}</td>
+                    <td className="py-2.5 pr-3"><Badge type={u.role} label={u.role === 'admin' ? 'Admin' : 'User'} /></td>
+                    <td className="py-2.5 pr-3">
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={() => openEditUserModal(u)}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                          title="Edit User"
+                          aria-label="Edit User"
+                        >
+                          <Edit2 size={15} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteUserClick(u)}
+                          disabled={u.id === currentUser?.id}
+                          title={u.id === currentUser?.id ? "You can't delete the account you're signed in as" : "Delete User"}
+                          aria-label="Delete User"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* 1. Company Branding Settings Form */}
       <div className="md:col-span-2 space-y-6">
         <form onSubmit={handleSaveBranding} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 space-y-4">
@@ -1028,6 +1153,30 @@ export function SettingsPage() {
           )}
         </div>
       )}
+
+      {/* --- Add/Edit User Modal --- */}
+      <UserFormModal
+        isOpen={userFormOpen}
+        onClose={() => setUserFormOpen(false)}
+        editingUser={editingUser}
+        addUser={addUser}
+        updateUser={updateUser}
+        onSaved={handleUserSaved}
+      />
+
+      {/* --- Delete User Confirmation Modal --- */}
+      <ConfirmDialog
+        isOpen={userDeleteConfirmOpen}
+        onClose={() => {
+          setUserDeleteConfirmOpen(false);
+          setUserDeleteTarget(null);
+        }}
+        onConfirm={handleConfirmDeleteUser}
+        title="Delete User Account?"
+        message={`Are you sure you want to permanently delete the login account "${userDeleteTarget?.username}"? They will no longer be able to sign in. This action cannot be undone.`}
+        confirmLabel="Delete User"
+        isLoading={userDeleteLoading}
+      />
 
       {/* --- Import Confirmation Modal --- */}
       <ConfirmDialog
