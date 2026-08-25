@@ -272,9 +272,7 @@ export function SalesPage() {
         return;
       }
       if (paidQty > 0 && !(parseFloat(cubePrice) > 0)) {
-        toast.error(isAdmin
-          ? "Enter a cube price before continuing."
-          : "No cube price set. Ask an admin to set it in Inventory or the customer's Custom Prices.");
+        toast.error("Enter a cube price before continuing.");
         return;
       }
       // Paid and free cubes come out of the same pool, so they are checked
@@ -1132,11 +1130,10 @@ export function SalesPage() {
                   <input
                     type="number"
                     step="0.01"
-                    disabled={!isAdmin}
                     value={cubePrice}
                     onChange={(e) => setCubePrice(e.target.value)}
-                    title={isAdmin ? 'Editable — overrides the auto-fetched rate for this order' : 'Auto-fetched rate — editable by Administrators only'}
-                    className={`px-2 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-navy-500 font-mono ${!isAdmin ? 'opacity-70' : ''}`}
+                    title="Editable — overrides the auto-fetched rate for this order"
+                    className="px-2 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-navy-500 font-mono"
                   />
                   <span className="text-[9px] uppercase tracking-wide font-semibold text-slate-400 px-0.5">
                     {hasCustomRate() ? 'Customer rate' : 'Inventory default'}

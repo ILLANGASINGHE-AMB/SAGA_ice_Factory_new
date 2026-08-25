@@ -1196,10 +1196,6 @@ $$ language plpgsql security definer;
 create or replace function public.update_inventory_price(p_id bigint, p_price numeric)
 returns void as $$
 begin
-  if not public.is_admin() then
-    raise exception 'Only administrators can update inventory prices';
-  end if;
-  
   if p_price <= 0 then
     raise exception 'Price must be a positive value';
   end if;
@@ -2185,7 +2181,7 @@ begin
   from public.customer_cube_prices
   where customer_id = p_customer_id and cube_type = 'manufactured';
 
-  if public.is_admin() and p_price_per_cube is not null and p_price_per_cube > 0 then
+  if p_price_per_cube is not null and p_price_per_cube > 0 then
     v_resolved_price := p_price_per_cube;
   else
     v_resolved_price := coalesce(v_customer_price, v_mfc_price);

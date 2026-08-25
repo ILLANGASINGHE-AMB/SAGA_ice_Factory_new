@@ -1,6 +1,6 @@
 # Changes — 25 August 2026
 
-Fifteen pieces of work:
+Sixteen pieces of work:
 
 1. **Dashboard "Settle Debts" quick action** — register a debt payment straight
    from the dashboard without first hunting the customer down in the ledger.
@@ -42,6 +42,9 @@ Fifteen pieces of work:
     single floating dot instead of a trend line, and Daily/Monthly/Yearly
     looked like they did nothing. Both traced back to a bug I introduced in
     Part 12.
+16. **Staff can now price Ice Cubes** — both the New Order rate override and
+    Inventory's per-cube price, previously admin-only in the UI *and*
+    enforced server-side.
 
 **Status:** production build passes (`npm run build`, ✓ built). ESLint reports
 the same problems as before the changes (`React` unused in both pages,
@@ -51,7 +54,7 @@ the same problems as before the changes (`React` unused in both pages,
 neither the settlement path nor the new ledger inserts were exercised at
 runtime.
 
-**34 files changed · 4 new migrations**
+**37 files changed · 5 new migrations**
 
 ---
 
@@ -63,9 +66,10 @@ runtime.
 | `20260825020000_damaged_cubes_and_pooled_orders.sql` | 4 |
 | `20260825030000_auto_applied_settlement_flag.sql` | 5 |
 | `20260825040000_transport_trip_guards.sql` | 8 |
+| `20260825050000_staff_can_price_ice_cubes.sql` | 16 |
 
 Each is detailed in its section below. `supabase_schema.sql` has been updated
-to match all four, so a fresh provision already includes them.
+to match all five, so a fresh provision already includes them.
 
 ## ⚠️ Part 2 needs a migration
 
@@ -1195,6 +1199,47 @@ were wrong.
 
 ---
 
+# Part 16 — Staff can price Ice Cubes
+
+## ⚠️ Migration: `20260825050000_staff_can_price_ice_cubes.sql`
+
+Both places a cube rate is set were blocked for non-admins **at the
+database**, not just in the UI — unlocking the input alone wouldn't have
+worked without this:
+
+| Function | Before | After |
+|---|---|---|
+| `place_pooled_order_transaction` | Silently discarded a non-admin's typed price and used the customer/inventory default instead — the UI would show whatever they typed, but the saved sale used a different number | Honors any authenticated caller's price override |
+| `update_inventory_price` | `raise exception 'Only administrators can update inventory prices'` | No role check; still requires a positive price |
+
+**Deliberately not touched**: `place_order_transaction` and
+`place_multi_item_order_transaction` still carry the same admin-only check.
+Both are legacy, superseded by `place_pooled_order_transaction` (Part 4) and
+already confirmed unused by the app — updating dead code here would be pure
+noise.
+
+## Frontend
+
+- **`src/pages/SalesPage.jsx`** — the Cube Price field in the New Order
+  wizard (Step 3) is no longer `disabled={!isAdmin}`; the "editable by
+  Administrators only" tooltip and dimmed styling are gone. The "no rate set"
+  validation toast no longer branches on role ("Ask an admin to set it…") —
+  everyone just gets "Enter a cube price before continuing."
+- **`src/pages/InventoryPage.jsx`** — each sellable cube's **Price** button
+  (Production/Resell — Brine and Damaged have no price to edit either way)
+  is available to everyone, matching the existing **Add** button. **Remove**
+  stays admin-only, unchanged — deleting stock is a different, more
+  destructive privilege than setting a rate, and wasn't part of this request.
+
+## What staff can now do
+
+- Override the per-cube rate on a New Order line before placing it (was
+  previously stuck with the auto-fetched customer/inventory rate).
+- Set/update Production and Resell's price directly from the Inventory page,
+  the same "Price" button admins always had.
+
+---
+
 ## What was deliberately *not* changed
 
 - **No new settlement logic.** `handlePickCustomer` hands off to the existing
@@ -1301,3 +1346,13 @@ were wrong.
 - **The 500-iteration bucket cap is a safety net, not an active limit** for
   any of the normal presets (30/12/5 are all far under it) — it only matters
   if someone manually types an extreme custom date range.
+- **Editing a past sale (the Sales History row's Pencil/Trash actions) is
+  still admin-only** (Part 16). Correcting an already-placed order's
+  quantity/type/payment terms after the fact is a different, more sensitive
+  capability than setting a rate on a fresh order, and wasn't asked for.
+- **Removing inventory stock is still admin-only** (Part 16). Only pricing
+  changed — deducting stock outright is a separate, more destructive action.
+- **Per-customer custom cube prices (`customer_cube_prices`, set from a
+  Customer Profile) are untouched.** That's a different feature from the
+  per-order override or Inventory's base price, and wasn't part of this
+  request.

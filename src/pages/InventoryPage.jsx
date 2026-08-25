@@ -507,30 +507,17 @@ export function InventoryPage() {
                   </Button>
                 )}
 
-                {/* Edit Price admin only — Brine and Damaged have no price */}
+                {/* Edit Price — everyone; Brine and Damaged have no price */}
                 {!isStockOnly ? (
-                  isAdmin ? (
-                    <Button 
-                      variant="primary" 
-                      size="sm"
-                      onClick={() => openModal('editPrice', item)}
-                      className="flex items-center justify-center space-x-1"
-                    >
-                      <Edit size={14} />
-                      <span>Price</span>
-                    </Button>
-                  ) : (
-                    <Button 
-                      variant="primary" 
-                      size="sm"
-                      disabled
-                      className="flex items-center justify-center space-x-1 opacity-40 cursor-not-allowed bg-slate-300 text-slate-500 border-none hover:bg-slate-300"
-                      title="Admin privilege required"
-                    >
-                      <Edit size={14} />
-                      <span>Price</span>
-                    </Button>
-                  )
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => openModal('editPrice', item)}
+                    className="flex items-center justify-center space-x-1"
+                  >
+                    <Edit size={14} />
+                    <span>Price</span>
+                  </Button>
                 ) : (
                   <div />
                 )}
