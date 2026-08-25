@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { logActivity, currentActor } from '../lib/activityLog';
 
 // Vehicle No format: xx0000 or xxx0000 (2-3 letters followed by 4 digits)
@@ -41,6 +42,7 @@ export function useVehicles() {
   };
 
   useEffect(() => {
+    const refetchVehicles = coalesceRefetch(fetchVehicles);
     fetchVehicles();
 
     const channel = supabase
@@ -48,13 +50,12 @@ export function useVehicles() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'vehicles' },
-        () => {
-          fetchVehicles();
-        }
+        refetchVehicles
       )
       .subscribe();
 
     return () => {
+      refetchVehicles.cancel();
       supabase.removeChannel(channel);
     };
   }, []);

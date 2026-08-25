@@ -23,6 +23,61 @@ const STATUS_OPTIONS = [
 
 const VEHICLE_LINE_COLORS = ['#22c55e', '#0ea5e9', '#f59e0b', '#a855f7', '#ef4444', '#14b8a6', '#eab308', '#ec4899', '#6366f1', '#84cc16'];
 
+// --- Graph bucketing -------------------------------------------------------
+// The distance chart plots one point per time bucket across the *whole*
+// selected date range, not just the dates that happen to have trips. Recharts
+// needs at least two points to draw a line segment, so a range that collapses
+// to a single bucket renders as a lone floating dot.
+const GRANULARITY_ORDER = ['daily', 'monthly', 'yearly'];
+const GRANULARITY_UNIT = { daily: 'day', monthly: 'month', yearly: 'year' };
+const MAX_GRAPH_BUCKETS = 400;
+
+function startOfBucket(date, granularity) {
+  if (granularity === 'daily') return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  if (granularity === 'monthly') return new Date(date.getFullYear(), date.getMonth(), 1);
+  return new Date(date.getFullYear(), 0, 1);
+}
+
+function nextBucket(date, granularity) {
+  if (granularity === 'daily') return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
+  if (granularity === 'monthly') return new Date(date.getFullYear(), date.getMonth() + 1, 1);
+  return new Date(date.getFullYear() + 1, 0, 1);
+}
+
+function bucketKey(date, granularity) {
+  if (granularity === 'daily') return toLocalDateStr(date);
+  if (granularity === 'monthly') return `${date.getFullYear()}-${date.getMonth()}`;
+  return `${date.getFullYear()}`;
+}
+
+function bucketLabel(date, granularity) {
+  if (granularity === 'daily') return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  if (granularity === 'monthly') return date.toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
+  return `${date.getFullYear()}`;
+}
+
+// How many buckets the window spans. Stops counting just past the cap so an
+// absurd custom range can't spin here.
+function countBuckets(start, end, granularity) {
+  let count = 0;
+  let cursor = startOfBucket(start, granularity);
+  const last = startOfBucket(end, granularity);
+  while (cursor <= last && count <= MAX_GRAPH_BUCKETS) {
+    count += 1;
+    cursor = nextBucket(cursor, granularity);
+  }
+  return count;
+}
+
+// Parses a yyyy-mm-dd date input as a *local* calendar date (new Date(str)
+// would read it as UTC midnight and shift the day in negative-offset zones).
+function parseDateInput(value) {
+  if (!value) return null;
+  const [y, m, d] = value.split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+
 function formatDateTime(value) {
   if (!value) return '—';
   return new Date(value).toLocaleString(undefined, {
@@ -109,36 +164,90 @@ export function TransportPage() {
     return vehicles.filter(v => idsWithDistance.has(Number(v.id)));
   }, [historyTrips, vehicles]);
 
-  const graphData = useMemo(() => {
-    let keyFn, labelFn;
-    if (graphGranularity === 'daily') {
-      keyFn = (d) => toLocalDateStr(d);
-      labelFn = (d) => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    } else if (graphGranularity === 'monthly') {
-      keyFn = (d) => `${d.getFullYear()}-${d.getMonth()}`;
-      labelFn = (d) => d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
-    } else {
-      keyFn = (d) => `${d.getFullYear()}`;
-      labelFn = (d) => `${d.getFullYear()}`;
+  // The window the chart covers: the filter bar's range when one is set,
+  // otherwise the span of the trips actually being charted.
+  const graphWindow = useMemo(() => {
+    let start = parseDateInput(dateFrom);
+    let end = parseDateInput(dateTo);
+
+    if (!start || !end) {
+      const times = historyTrips
+        .filter(t => t.distance_travelled != null && t.start_datetime)
+        .map(t => new Date(t.start_datetime).getTime())
+        .filter(n => Number.isFinite(n));
+      if (times.length === 0) return null;
+      if (!start) start = new Date(Math.min(...times));
+      if (!end) end = new Date(Math.max(...times));
     }
 
+    return start <= end ? { start, end } : null;
+  }, [historyTrips, dateFrom, dateTo]);
+
+  // Granularity that the selected range can actually render. Bucketing
+  // Aug 1-25 by year gives one point, which draws as a dot with no line, so
+  // step to a finer bucket until the window yields at least two. Conversely a
+  // multi-year range bucketed daily blows past the point cap, so coarsen.
+  const effectiveGranularity = useMemo(() => {
+    if (!graphWindow) return graphGranularity;
+    const counts = GRANULARITY_ORDER.map(g => countBuckets(graphWindow.start, graphWindow.end, g));
+    const requested = GRANULARITY_ORDER.indexOf(graphGranularity);
+
+    if (counts[requested] > MAX_GRAPH_BUCKETS) {
+      for (let i = requested + 1; i < GRANULARITY_ORDER.length; i += 1) {
+        if (counts[i] <= MAX_GRAPH_BUCKETS) return GRANULARITY_ORDER[i];
+      }
+    }
+    if (counts[requested] < 2) {
+      for (let i = requested - 1; i >= 0; i -= 1) {
+        if (counts[i] >= 2 && counts[i] <= MAX_GRAPH_BUCKETS) return GRANULARITY_ORDER[i];
+      }
+    }
+    return graphGranularity;
+  }, [graphWindow, graphGranularity]);
+
+  const graphData = useMemo(() => {
+    if (!graphWindow) return [];
+    const granularity = effectiveGranularity;
+
+    // Seed every bucket across the window up front so the series has no holes:
+    // a vehicle that didn't run in a given period travelled 0 km, which is a
+    // real data point, not a gap. Previously only dates with trips produced a
+    // bucket, so the line jumped straight between distant dates - or, with a
+    // single qualifying date, had nothing to connect to at all.
     const buckets = new Map();
+    let cursor = startOfBucket(graphWindow.start, granularity);
+    const last = startOfBucket(graphWindow.end, granularity);
+    while (cursor <= last && buckets.size < MAX_GRAPH_BUCKETS) {
+      const seed = { key: bucketKey(cursor, granularity), label: bucketLabel(cursor, granularity), sortDate: cursor };
+      graphVehicles.forEach(v => { seed[v.vehicle_no] = 0; });
+      buckets.set(seed.key, seed);
+      cursor = nextBucket(cursor, granularity);
+    }
+
     historyTrips.forEach(t => {
-      if (t.distance_travelled == null) return;
+      if (t.distance_travelled == null || !t.start_datetime) return;
       const vehicle = vehicleById.get(Number(t.vehicle_id));
       if (!vehicle) return;
-
-      const dateObj = new Date(t.start_datetime);
-      const key = keyFn(dateObj);
-      if (!buckets.has(key)) {
-        buckets.set(key, { key, label: labelFn(dateObj), sortDate: dateObj });
-      }
-      const bucket = buckets.get(key);
+      const bucket = buckets.get(bucketKey(new Date(t.start_datetime), granularity));
+      if (!bucket) return;
       bucket[vehicle.vehicle_no] = (bucket[vehicle.vehicle_no] || 0) + Number(t.distance_travelled);
     });
 
     return Array.from(buckets.values()).sort((a, b) => a.sortDate - b.sortDate);
-  }, [historyTrips, graphGranularity, vehicleById]);
+  }, [historyTrips, effectiveGranularity, graphWindow, graphVehicles, vehicleById]);
+
+  // A single-day range (the filter bar's "Daily" preset) yields one bucket at
+  // every granularity, so there is no trend to draw. Say so rather than
+  // rendering a lone dot that looks like a broken chart.
+  const graphNotice = useMemo(() => {
+    if (graphVehicles.length === 0 || graphData.length === 0) {
+      return 'No completed trips match your filter criteria.';
+    }
+    if (graphData.length < 2) {
+      return 'The selected date range covers a single period, so there is no trend to plot. Widen the date range to chart distance over time.';
+    }
+    return null;
+  }, [graphVehicles, graphData]);
 
   const handleStartTrip = async (data) => {
     await startTrip(data, user?.fullName || 'Operator');
@@ -263,7 +372,7 @@ export function TransportPage() {
           emptyMessage="No ongoing trips match your filter criteria."
           renderRow={(trip) => (
             <tr key={trip.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
-              <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono font-medium text-navy-600 dark:text-navy-400">TRP-{String(trip.id).padStart(6, '0')}</td>
+              <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono font-medium text-navy-600 dark:text-navy-400">{trip.trip_code || '—'}</td>
               <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono font-semibold text-slate-900 dark:text-slate-100">{vehicleById.get(Number(trip.vehicle_id))?.vehicle_no || '—'}</td>
               <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-slate-700 dark:text-slate-300">{employeeById.get(Number(trip.employee_id))?.name || '—'}</td>
               <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-slate-500 whitespace-nowrap">{formatDateTime(trip.start_datetime)}</td>
@@ -331,7 +440,7 @@ export function TransportPage() {
             emptyMessage="No trip records match your filter criteria."
             renderRow={(trip) => (
               <tr key={trip.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
-                <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono font-medium text-navy-600 dark:text-navy-400">TRP-{String(trip.id).padStart(6, '0')}</td>
+                <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono font-medium text-navy-600 dark:text-navy-400">{trip.trip_code || '—'}</td>
                 <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 font-mono font-semibold text-slate-900 dark:text-slate-100">{vehicleById.get(Number(trip.vehicle_id))?.vehicle_no || '—'}</td>
                 <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-slate-700 dark:text-slate-300">{employeeById.get(Number(trip.employee_id))?.name || '—'}</td>
                 <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 text-slate-500 whitespace-nowrap">{formatDateTime(trip.start_datetime)}</td>
@@ -357,24 +466,37 @@ export function TransportPage() {
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <h4 className="text-sm font-bold font-heading text-slate-800 dark:text-slate-100">Distance Travelled per Vehicle</h4>
               <div className="flex items-center gap-2">
-                {['daily', 'monthly', 'yearly'].map(opt => (
-                  <button
-                    key={opt}
-                    onClick={() => setGraphGranularity(opt)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border ${
-                      graphGranularity === opt
-                        ? 'bg-navy-600 text-white border-navy-600 shadow-xs'
-                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                    }`}
-                  >
-                    {opt === 'daily' ? 'Daily' : opt === 'monthly' ? 'Monthly' : 'Yearly'}
-                  </button>
-                ))}
+                {GRANULARITY_ORDER.map(opt => {
+                  // A bucket size the selected range can't plot is disabled rather
+                  // than silently rendering a single dot.
+                  const count = graphWindow ? countBuckets(graphWindow.start, graphWindow.end, opt) : 0;
+                  const unusable = Boolean(graphWindow) && (count < 2 || count > MAX_GRAPH_BUCKETS);
+                  const unit = GRANULARITY_UNIT[opt];
+                  return (
+                    <button
+                      key={opt}
+                      onClick={() => setGraphGranularity(opt)}
+                      disabled={unusable}
+                      title={unusable
+                        ? (count < 2
+                            ? `The selected date range spans less than two ${unit}s, so there is nothing to plot a trend across.`
+                            : `The selected date range spans too many ${unit}s to chart. Narrow the range or use a larger bucket.`)
+                        : undefined}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border ${
+                        effectiveGranularity === opt
+                          ? 'bg-navy-600 text-white border-navy-600 shadow-xs'
+                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                      } ${unusable ? 'opacity-40 cursor-not-allowed' : ''}`}
+                    >
+                      {opt === 'daily' ? 'Daily' : opt === 'monthly' ? 'Monthly' : 'Yearly'}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {graphVehicles.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-16">No completed trips match your filter criteria.</p>
+            {graphNotice ? (
+              <p className="text-xs text-slate-400 text-center py-16 max-w-md mx-auto">{graphNotice}</p>
             ) : (
               <div className="h-64 sm:h-80">
                 <ResponsiveContainer width="100%" height="100%">

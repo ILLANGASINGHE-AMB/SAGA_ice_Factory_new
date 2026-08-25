@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { logActivity } from '../lib/activityLog';
 
 export function useSettings() {
@@ -24,6 +25,7 @@ export function useSettings() {
   };
 
   useEffect(() => {
+    const refetchSettings = coalesceRefetch(fetchSettings);
     fetchSettings();
 
     const channel = supabase
@@ -31,11 +33,12 @@ export function useSettings() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'settings' },
-        () => fetchSettings()
+        refetchSettings
       )
       .subscribe();
 
     return () => {
+      refetchSettings.cancel();
       supabase.removeChannel(channel);
     };
   }, []);

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { computeCashBankBalances } from '../utils/cashBankMath';
 import { logActivity, currentActor } from '../lib/activityLog';
 
@@ -60,20 +61,22 @@ export function useCashBank() {
   };
 
   useEffect(() => {
+    const refetchAll = coalesceRefetch(fetchAll);
     fetchAll();
 
     const channel = supabase
       .channel(`cash-bank-realtime-${Math.random()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => fetchAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'debt_settlements' }, () => fetchAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_receives' }, () => fetchAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bank_deposits' }, () => fetchAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cheque_records' }, () => fetchAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bank_withdrawals' }, () => fetchAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'opening_balances' }, () => fetchAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, refetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'debt_settlements' }, refetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_receives' }, refetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bank_deposits' }, refetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cheque_records' }, refetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bank_withdrawals' }, refetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'opening_balances' }, refetchAll)
       .subscribe();
 
     return () => {
+      refetchAll.cancel();
       supabase.removeChannel(channel);
     };
   }, []);

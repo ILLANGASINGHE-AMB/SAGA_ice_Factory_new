@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { logActivity, currentActor } from '../lib/activityLog';
 
 export function useTransportTrips() {
@@ -22,6 +23,7 @@ export function useTransportTrips() {
   };
 
   useEffect(() => {
+    const refetchTrips = coalesceRefetch(fetchTrips);
     fetchTrips();
 
     const channel = supabase
@@ -29,13 +31,12 @@ export function useTransportTrips() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'transport_trips' },
-        () => {
-          fetchTrips();
-        }
+        refetchTrips
       )
       .subscribe();
 
     return () => {
+      refetchTrips.cancel();
       supabase.removeChannel(channel);
     };
   }, []);
@@ -76,7 +77,7 @@ export function useTransportTrips() {
         created_by: createdBy,
         created_at: new Date().toISOString()
       })
-      .select('id')
+      .select('id, trip_code')
       .single();
 
     if (error) {

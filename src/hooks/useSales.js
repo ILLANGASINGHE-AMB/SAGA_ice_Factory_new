@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { generateBillPDFBlob } from '../utils/pdfGenerator';
 import { logActivity, currentActor } from '../lib/activityLog';
 
@@ -24,6 +25,7 @@ export function useSales() {
   };
 
   useEffect(() => {
+    const refetchSales = coalesceRefetch(fetchSales);
     fetchSales();
 
     const channelSales = supabase
@@ -31,21 +33,22 @@ export function useSales() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sales' },
-        () => fetchSales()
+        refetchSales
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'customers' },
-        () => fetchSales()
+        refetchSales
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sale_items' },
-        () => fetchSales()
+        refetchSales
       )
       .subscribe();
 
     return () => {
+      refetchSales.cancel();
       supabase.removeChannel(channelSales);
     };
   }, []);

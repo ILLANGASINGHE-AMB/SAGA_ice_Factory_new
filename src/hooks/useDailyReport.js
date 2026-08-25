@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { todayStr, previousLocalDateStr } from '../utils/date';
 import { computeCashBankBalances } from '../utils/cashBankMath';
 import { logActivity } from '../lib/activityLog';
@@ -170,30 +171,32 @@ export function useDailyReport(selectedDateStr) {
   }, [targetToStr]);
 
   useEffect(() => {
+    const refetchData = coalesceRefetch(fetchData);
     fetchData();
 
     const channel = supabase
       .channel(`daily-report-realtime-${Math.random()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'debts' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'debt_settlements' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_ledger_rows' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_amounts' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_transactions' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_attendance' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'transport_trips' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_receives' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bank_deposits' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cheque_records' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bank_withdrawals' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_manager_reports' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, refetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'debts' }, refetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'debt_settlements' }, refetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, refetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, refetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_ledger_rows' }, refetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_amounts' }, refetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_transactions' }, refetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, refetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_attendance' }, refetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transport_trips' }, refetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, refetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_receives' }, refetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bank_deposits' }, refetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cheque_records' }, refetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bank_withdrawals' }, refetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_manager_reports' }, refetchData)
       .subscribe();
 
     return () => {
+      refetchData.cancel();
       supabase.removeChannel(channel);
     };
   }, [fetchData]);
@@ -471,7 +474,7 @@ export function useDailyReport(selectedDateStr) {
     const vehicleTripList = transportTrips
       .filter(t => isInRange(t.start_datetime))
       .map(t => ({
-        tripId: `TRIP-${String(t.id).padStart(4, '0')}`,
+        tripId: t.trip_code || `SIFT_${String(t.id).padStart(4, '0')}`,
         date: t.start_datetime ? t.start_datetime.slice(0, 10) : '',
         description: t.description || t.end_description || '',
         startKm: Number(t.start_odometer) || 0,

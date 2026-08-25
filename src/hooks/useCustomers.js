@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { logActivity, currentActor } from '../lib/activityLog';
 
 export function useCustomers() {
@@ -22,6 +23,7 @@ export function useCustomers() {
   };
 
   useEffect(() => {
+    const refetchCustomers = coalesceRefetch(fetchCustomers);
     fetchCustomers();
 
     const channel = supabase
@@ -29,13 +31,12 @@ export function useCustomers() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'customers' },
-        () => {
-          fetchCustomers();
-        }
+        refetchCustomers
       )
       .subscribe();
 
     return () => {
+      refetchCustomers.cancel();
       supabase.removeChannel(channel);
     };
   }, []);
@@ -69,24 +70,14 @@ export function useCustomers() {
       }
     }
 
-    // Auto-generate atomic customer_code. No count(*)-based fallback — a
-    // deleted customer makes the count under-represent the highest code
-    // already issued, so it can regenerate a code that collides with the
-    // `unique` constraint. Refuse cleanly instead of guessing.
-    const { data: codeData, error: codeErr } = await supabase.rpc('get_next_code', {
-      p_entity: is_one_time ? 'one_time_customer' : 'customer',
-      p_prefix: is_one_time ? 'OTC' : 'CUST'
-    });
-
-    if (codeErr || !codeData) {
-      throw new Error("Unable to generate a customer code. Please try again.");
-    }
-    const customer_code = codeData;
-
+    // customer_code (SIFC_0001 / SIFO_0001) is assigned by a BEFORE INSERT
+    // trigger. Doing it server-side keeps the code and the row atomic — the
+    // old two-step burned a counter value whenever the insert that followed
+    // failed — and saves a round-trip, which is the slowest part of a create
+    // on a weak connection.
     const { data, error: insertErr } = await supabase
       .from('customers')
       .insert({
-        customer_code,
         name: name.trim(),
         whatsapp_number: whatsapp_number || null,
         contact_number: contact_number || null,
@@ -96,10 +87,11 @@ export function useCustomers() {
         is_one_time,
         created_at: new Date().toISOString()
       })
-      .select('id')
+      .select('id, customer_code')
       .single();
 
     if (insertErr) throw new Error(insertErr.message);
+    const customer_code = data.customer_code;
 
     logActivity({
       action: 'create',

@@ -146,9 +146,13 @@ create table if not exists public.notification_log (
 );
 
 -- Code Counters (Atomic Sequential Code Generator)
+-- Sequences restart per `period` (MMYY) for dated codes; period is '' for the
+-- continuous ones (customers, employees, expenses).
 create table if not exists public.code_counters (
-  entity text primary key,
-  last_value bigint not null default 0
+  entity text not null,
+  period text not null default '',
+  last_value bigint not null default 0,
+  primary key (entity, period)
 );
 
 -- Inventory Transactions Audit Log
@@ -237,6 +241,8 @@ create table if not exists public.transport_trips (
   status text not null default 'ongoing' check (status in ('ongoing', 'completed')),
   created_by text not null default 'Operator',
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  -- SIFT_0001_0826. Filled by trg_assign_trip_code on insert.
+  trip_code text unique,
   -- Strictly greater — a trip covering zero distance isn't a real trip.
   constraint transport_trips_odometer_order check (end_odometer is null or end_odometer > start_odometer)
 );
@@ -283,11 +289,14 @@ insert into public.settings (company_name, company_address, company_phone, compa
 ('Sagacious Ice Factory', '102 Industrial Zone, Colombo, Sri Lanka', '0771234567', 'info@sagaciousice.com')
 on conflict do nothing;
 
-insert into public.code_counters (entity, last_value) values
-('sale', 0),
-('customer', 0),
-('settlement', 0)
-on conflict (entity) do nothing;
+insert into public.code_counters (entity, period, last_value) values
+('sale', to_char(now() at time zone 'Asia/Colombo', 'MMYY'), 0),
+('settlement', to_char(now() at time zone 'Asia/Colombo', 'MMYY'), 0),
+('trip', to_char(now() at time zone 'Asia/Colombo', 'MMYY'), 0),
+('customer', '', 0),
+('one_time_customer', '', 0),
+('employee', '', 0)
+on conflict (entity, period) do nothing;
 
 -- Performance Database Indexes
 create index if not exists idx_sales_customer_id on public.sales(customer_id);
@@ -349,27 +358,102 @@ end;
 $$ language plpgsql security definer;
 
 -- Atomic Sequential Code Generator
+-- SIF_0001_0826 (sale) / SIFD_ (debt) / SIFT_ (trip) / SIFC_ (customer) /
+-- SIFO_ (one-time customer) / SIFE_ (employee). Dated codes restart each
+-- calendar month; the MMYY suffix is what makes them unique, so the reset is
+-- monthly rather than daily. p_prefix is a fallback for entities not listed.
 create or replace function public.get_next_code(p_entity text, p_prefix text)
 returns text as $$
 declare
-  v_next bigint;
-  v_date_suffix text;
+  v_period text;
+  v_prefix text;
+  v_next   bigint;
 begin
-  insert into public.code_counters (entity, last_value)
-  values (p_entity, 1)
-  on conflict (entity) do update set last_value = public.code_counters.last_value + 1
+  v_prefix := case p_entity
+    when 'sale'               then 'SIF'
+    when 'settlement'         then 'SIFD'
+    when 'trip'               then 'SIFT'
+    when 'customer'           then 'SIFC'
+    when 'one_time_customer'  then 'SIFO'
+    when 'employee'           then 'SIFE'
+    else p_prefix
+  end;
+
+  if p_entity in ('expense_category', 'expense_item') then
+    insert into public.code_counters (entity, period, last_value)
+    values (p_entity, '', 1)
+    on conflict (entity, period) do update set last_value = public.code_counters.last_value + 1
+    returning last_value into v_next;
+    return v_prefix || '-' || lpad(v_next::text, 5, '0');
+  end if;
+
+  if p_entity in ('customer', 'one_time_customer', 'employee') then
+    v_period := '';
+  else
+    v_period := to_char(now() at time zone 'Asia/Colombo', 'MMYY');
+  end if;
+
+  insert into public.code_counters (entity, period, last_value)
+  values (p_entity, v_period, 1)
+  on conflict (entity, period) do update set last_value = public.code_counters.last_value + 1
   returning last_value into v_next;
 
-  if p_entity = 'customer' then
-    return p_prefix || '-' || lpad(v_next::text, 4, '0');
-  elsif p_entity in ('expense_category', 'expense_item') then
-    return p_prefix || '-' || lpad(v_next::text, 5, '0');
-  else
-    v_date_suffix := to_char(now(), 'DDMMYY');
-    return p_prefix || '-' || v_next::text || '-' || v_date_suffix;
+  if v_period = '' then
+    return v_prefix || '_' || lpad(v_next::text, 4, '0');
   end if;
+  return v_prefix || '_' || lpad(v_next::text, 4, '0') || '_' || v_period;
 end;
 $$ language plpgsql security definer;
+
+-- Codes are assigned by BEFORE INSERT triggers so the code and the row are
+-- atomic, and so a create costs one round-trip instead of two.
+create or replace function public.assign_customer_code()
+returns trigger as $$
+begin
+  if new.customer_code is null or new.customer_code = '' then
+    new.customer_code := public.get_next_code(
+      case when coalesce(new.is_one_time, false) then 'one_time_customer' else 'customer' end,
+      'SIFC'
+    );
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+create or replace function public.assign_employee_code()
+returns trigger as $$
+begin
+  if new.employee_code is null or new.employee_code = '' then
+    new.employee_code := public.get_next_code('employee', 'SIFE');
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+create or replace function public.assign_trip_code()
+returns trigger as $$
+begin
+  if new.trip_code is null or new.trip_code = '' then
+    new.trip_code := public.get_next_code('trip', 'SIFT');
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists trg_assign_customer_code on public.customers;
+create trigger trg_assign_customer_code
+  before insert on public.customers
+  for each row execute function public.assign_customer_code();
+
+drop trigger if exists trg_assign_employee_code on public.employees;
+create trigger trg_assign_employee_code
+  before insert on public.employees
+  for each row execute function public.assign_employee_code();
+
+drop trigger if exists trg_assign_trip_code on public.transport_trips;
+create trigger trg_assign_trip_code
+  before insert on public.transport_trips
+  for each row execute function public.assign_trip_code();
 
 -- Atomic Inventory Add Stock
 create or replace function public.add_inventory_stock(p_id bigint, p_amount integer, p_created_by text default 'Operator')

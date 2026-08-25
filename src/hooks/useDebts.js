@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { generateSettlementReceiptPDF } from '../utils/pdfGenerator';
 import { logActivity } from '../lib/activityLog';
 
@@ -24,6 +25,7 @@ export function useDebts() {
   };
 
   useEffect(() => {
+    const refetchDebts = coalesceRefetch(fetchDebts);
     fetchDebts();
 
     const channel = supabase
@@ -31,26 +33,27 @@ export function useDebts() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'debts' },
-        () => fetchDebts()
+        refetchDebts
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'customers' },
-        () => fetchDebts()
+        refetchDebts
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sales' },
-        () => fetchDebts()
+        refetchDebts
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'debt_settlements' },
-        () => fetchDebts()
+        refetchDebts
       )
       .subscribe();
 
     return () => {
+      refetchDebts.cancel();
       supabase.removeChannel(channel);
     };
   }, []);

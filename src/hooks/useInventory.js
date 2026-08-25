@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { logActivity } from '../lib/activityLog';
 
 export function useInventory() {
@@ -43,6 +44,8 @@ export function useInventory() {
   }, []);
 
   useEffect(() => {
+    const refetchInventory = coalesceRefetch(fetchInventory);
+    const refetchTransactions = coalesceRefetch(fetchTransactions);
     fetchInventory();
     fetchTransactions();
 
@@ -51,20 +54,18 @@ export function useInventory() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'inventory' },
-        () => {
-          fetchInventory();
-        }
+        refetchInventory
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'inventory_transactions' },
-        () => {
-          fetchTransactions();
-        }
+        refetchTransactions
       )
       .subscribe();
 
     return () => {
+      refetchInventory.cancel();
+      refetchTransactions.cancel();
       supabase.removeChannel(channel);
     };
   }, [fetchTransactions]);

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 
 // Cheques received from one customer. cheque_records.customer_id is the link
 // added so a cheque taken at the counter shows up against the account it
@@ -30,16 +31,18 @@ export function useCustomerCheques(customerId) {
   }, [customerId]);
 
   useEffect(() => {
+    const refetchCheques = coalesceRefetch(fetchCheques);
     fetchCheques();
 
     if (!customerId) return;
 
     const channel = supabase
       .channel(`customer-cheques-realtime-${customerId}-${Math.random()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cheque_records' }, () => fetchCheques())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cheque_records' }, refetchCheques)
       .subscribe();
 
     return () => {
+      refetchCheques.cancel();
       supabase.removeChannel(channel);
     };
   }, [customerId, fetchCheques]);

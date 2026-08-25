@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { logActivity, currentActor } from '../lib/activityLog';
 
 export function useExpenses() {
@@ -39,17 +40,19 @@ export function useExpenses() {
   };
 
   useEffect(() => {
+    const refetchAll = coalesceRefetch(fetchAll);
     fetchAll();
 
     const channel = supabase
       .channel(`expenses-realtime-${Math.random()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_categories' }, () => fetchAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_items' }, () => fetchAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_ledger_rows' }, () => fetchAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_amounts' }, () => fetchAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_categories' }, refetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_items' }, refetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_ledger_rows' }, refetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_amounts' }, refetchAll)
       .subscribe();
 
     return () => {
+      refetchAll.cancel();
       supabase.removeChannel(channel);
     };
   }, []);

@@ -167,19 +167,21 @@ export function AppShell({ children }) {
   }, [isProfileOpen]);
 
   const navItems = [
+    // Order per System_Functions.md — daily-use screens first, reference and
+    // admin screens last.
     { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} />, adminOnly: false },
+    { name: 'Sales', path: '/sales', icon: <ShoppingCart size={20} />, adminOnly: false },
+    { name: 'Transport', path: '/transport', icon: <Route size={20} />, adminOnly: false },
     { name: 'Inventory', path: '/inventory', icon: <Package size={20} />, adminOnly: false },
     { name: 'Customers', path: '/customers', icon: <Users size={20} />, adminOnly: false },
+    { name: 'Debts', path: '/debts', icon: <DollarSign size={20} />, adminOnly: false },
+    { name: 'Cash & Bank Details', path: '/cash-bank', icon: <Landmark size={20} />, adminOnly: false },
+    { name: 'Expenses', path: '/expenses', icon: <Receipt size={20} />, adminOnly: false },
     { name: 'Employees', path: '/employees', icon: <Contact size={20} />, adminOnly: false },
     { name: 'Vehicles', path: '/vehicles', icon: <Truck size={20} />, adminOnly: false },
-    { name: 'Transport', path: '/transport', icon: <Route size={20} />, adminOnly: false },
-    { name: 'Sales', path: '/sales', icon: <ShoppingCart size={20} />, adminOnly: false },
-    { name: 'Debts', path: '/debts', icon: <DollarSign size={20} />, adminOnly: false },
-    { name: 'Expenses', path: '/expenses', icon: <Receipt size={20} />, adminOnly: false },
-    { name: 'Cash & Bank Details', path: '/cash-bank', icon: <Landmark size={20} />, adminOnly: false },
+    { name: 'Reports', path: '/reports', icon: <FileBarChart size={20} />, adminOnly: true },
     { name: 'Notes & Messages', path: '/notes', icon: <StickyNote size={20} />, adminOnly: false },
-    { name: 'Notifications', path: '/notifications', icon: <Send size={20} />, adminOnly: false },
-    { name: 'Reports', path: '/reports', icon: <FileBarChart size={20} />, adminOnly: true }
+    { name: 'Notifications', path: '/notifications', icon: <Send size={20} />, adminOnly: false }
   ];
 
   const visibleNavItems = navItems.filter(item => !item.adminOnly || isAdmin);

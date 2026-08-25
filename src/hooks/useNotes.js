@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { logActivity, currentActor } from '../lib/activityLog';
 
 export function useNotes() {
@@ -17,14 +18,18 @@ export function useNotes() {
   }, []);
 
   useEffect(() => {
+    const refetchNotes = coalesceRefetch(fetchNotes);
     fetchNotes();
 
     const channel = supabase
       .channel('notes-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, fetchNotes)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, refetchNotes)
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    return () => {
+      refetchNotes.cancel();
+      supabase.removeChannel(channel);
+    };
   }, [fetchNotes]);
 
   const addNote = async (noteText, createdBy) => {

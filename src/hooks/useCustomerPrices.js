@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { logActivity, currentActor } from '../lib/activityLog';
 
 // Per-customer custom cube prices — one row per (customer, cube_type). The
@@ -24,6 +25,7 @@ export function useCustomerPrices() {
   };
 
   useEffect(() => {
+    const refetchCustomerPrices = coalesceRefetch(fetchCustomerPrices);
     fetchCustomerPrices();
 
     const channel = supabase
@@ -31,13 +33,12 @@ export function useCustomerPrices() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'customer_cube_prices' },
-        () => {
-          fetchCustomerPrices();
-        }
+        refetchCustomerPrices
       )
       .subscribe();
 
     return () => {
+      refetchCustomerPrices.cancel();
       supabase.removeChannel(channel);
     };
   }, []);

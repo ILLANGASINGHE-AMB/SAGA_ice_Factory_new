@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { toLocalDateStr } from '../utils/date';
 
 const defaultDashboardData = {
@@ -302,19 +303,21 @@ export function useDashboard() {
   };
 
   useEffect(() => {
+    const refetchDashboardData = coalesceRefetch(fetchDashboardData);
     fetchDashboardData();
 
     const channel = supabase
       .channel(`dashboard-realtime-${Math.random()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => fetchDashboardData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'debts' }, () => fetchDashboardData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'debt_settlements' }, () => fetchDashboardData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => fetchDashboardData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => fetchDashboardData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_transactions' }, () => fetchDashboardData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, refetchDashboardData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'debts' }, refetchDashboardData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'debt_settlements' }, refetchDashboardData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, refetchDashboardData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, refetchDashboardData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_transactions' }, refetchDashboardData)
       .subscribe();
 
     return () => {
+      refetchDashboardData.cancel();
       supabase.removeChannel(channel);
     };
   }, []);

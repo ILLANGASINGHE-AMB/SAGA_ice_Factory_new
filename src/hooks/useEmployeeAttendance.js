@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { logActivity, currentActor } from '../lib/activityLog';
 
 export function useEmployeeAttendance() {
@@ -23,6 +24,7 @@ export function useEmployeeAttendance() {
   };
 
   useEffect(() => {
+    const refetchAttendance = coalesceRefetch(fetchAttendance);
     fetchAttendance();
 
     const channel = supabase
@@ -30,13 +32,12 @@ export function useEmployeeAttendance() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'employee_attendance' },
-        () => {
-          fetchAttendance();
-        }
+        refetchAttendance
       )
       .subscribe();
 
     return () => {
+      refetchAttendance.cancel();
       supabase.removeChannel(channel);
     };
   }, []);

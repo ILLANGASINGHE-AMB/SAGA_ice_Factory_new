@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 
 // Read/write access to notification_log — the record of every invoice and
 // settlement receipt actually dispatched to a customer.
@@ -29,15 +30,17 @@ export function useNotifications({ customerId = null, autoLoad = true } = {}) {
   }, [customerId]);
 
   useEffect(() => {
+    const refetchNotifications = coalesceRefetch(fetchNotifications);
     if (!autoLoad) return;
     fetchNotifications();
 
     const channel = supabase
       .channel(`notification-log-realtime-${Math.random()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notification_log' }, () => fetchNotifications())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notification_log' }, refetchNotifications)
       .subscribe();
 
     return () => {
+      refetchNotifications.cancel();
       supabase.removeChannel(channel);
     };
   }, [autoLoad, fetchNotifications]);

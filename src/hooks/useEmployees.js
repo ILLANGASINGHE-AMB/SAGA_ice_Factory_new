@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { logActivity, currentActor } from '../lib/activityLog';
 
 // Sri Lankan NIC: old format (9 digits + V/X) or new format (12 digits)
@@ -38,6 +39,7 @@ export function useEmployees() {
   };
 
   useEffect(() => {
+    const refetchEmployees = coalesceRefetch(fetchEmployees);
     fetchEmployees();
 
     const channel = supabase
@@ -45,13 +47,12 @@ export function useEmployees() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'employees' },
-        () => {
-          fetchEmployees();
-        }
+        refetchEmployees
       )
       .subscribe();
 
     return () => {
+      refetchEmployees.cancel();
       supabase.removeChannel(channel);
     };
   }, []);
@@ -70,23 +71,12 @@ export function useEmployees() {
       throw new Error("An employee with this NIC already exists");
     }
 
-    // Auto-generate atomic employee_code, same pattern as customer_code —
-    // no count(*)-based fallback so a deleted employee can't cause a
-    // regenerated code to collide with the `unique` constraint.
-    const { data: codeData, error: codeErr } = await supabase.rpc('get_next_code', {
-      p_entity: 'employee',
-      p_prefix: 'EMP'
-    });
-
-    if (codeErr || !codeData) {
-      throw new Error("Unable to generate an employee code. Please try again.");
-    }
-    const employee_code = codeData;
-
+    // employee_code (SIFE_0001) is assigned by a BEFORE INSERT trigger — same
+    // reasoning as customer_code: atomic with the row, and one fewer
+    // round-trip.
     const { data, error: insertErr } = await supabase
       .from('employees')
       .insert({
-        employee_code,
         name: name.trim(),
         nic: normalizedNic,
         phone: phone.trim(),
@@ -95,10 +85,11 @@ export function useEmployees() {
         status,
         created_at: new Date().toISOString()
       })
-      .select('id')
+      .select('id, employee_code')
       .single();
 
     if (insertErr) throw new Error(insertErr.message);
+    const employee_code = data.employee_code;
 
     logActivity({ action: 'create', entityType: 'employee', entityId: data.id, entityLabel: employee_code, description: `Added employee ${employee_code} (${name.trim()})` });
     return { id: data.id, employee_code };

@@ -1610,3 +1610,261 @@ modals as an unlabelled generic container.
 - **`GlobalSearchModal` and the `AppShell` bottom sheet keep their own
   overlays.** Neither uses the shared `Modal` component, and neither was part
   of the report.
+
+---
+
+# Part 19 — Transport "Distance Travelled per Vehicle" graph rendered a single dot
+
+`src/pages/TransportPage.jsx`
+
+Reported as "Trip History graphs are not previewing as for date filters". With
+the range set to 2026-08-01 → 2026-08-25, the chart drew one floating green dot
+at "2026" and no line. Two separate bugs compounded.
+
+## Bug 1 — granularity was never reconciled with the date range
+
+The graph's own Daily/Monthly/Yearly control (`graphGranularity`) sets bucket
+size, while the filter bar above sets the date window. Nothing tied them
+together. In the screenshot the window was a 25-day span and the bucket size was
+**Yearly** — 25 days collapses into exactly one yearly bucket, and recharts
+cannot draw a line segment through a single point, so it rendered the point
+alone. Same failure mode as Part 15 on the Customer Profile graph, reached by a
+different route: there the preset narrowed the window, here the bucket size was
+too coarse for it.
+
+Now an `effectiveGranularity` is derived from the window:
+
+- Fewer than 2 buckets → step to a **finer** bucket until at least 2 exist.
+  Yearly on Aug 1–25 → monthly (still 1) → daily (25). ✅
+- More than `MAX_GRAPH_BUCKETS` (400) → step **coarser**. Daily over a 5-year
+  range would be 1,826 points; it now charts 72 monthly points instead.
+
+The granularity buttons highlight whichever bucket size is actually in effect,
+and any option the current range cannot render is disabled with a `title`
+explaining why, rather than silently producing a dot.
+
+Derived with `useMemo`, not written back into state — assigning to
+`graphGranularity` from an effect would trip this repo's
+`react-hooks/set-state-in-effect` rule and would also overwrite what the user
+picked when they later widen the range.
+
+## Bug 2 — buckets existed only for dates that had trips
+
+`graphData` built its `Map` by iterating trips, so a bucket was created only
+where a trip fell. Two consequences: the line jumped in a straight diagonal
+between distant dates as though distance accrued steadily across the gap, and a
+range containing one qualifying date produced a one-element series.
+
+Every bucket across the window is now seeded up front and zero-filled per
+vehicle before trips are added — a vehicle that didn't run in a period travelled
+0 km, which is a real reading rather than a gap.
+
+## Verified numerically
+
+Simulated the screenshot's exact case before wiring it up:
+
+```
+bucket counts: daily=25  monthly=1  yearly=1
+requested=yearly -> effective = daily
+points: 25 | nonzero: Aug 12=310 | first/last: Aug 1 -> Aug 25
+total km preserved: 310
+```
+
+Plus the surrounding cases — monthly on a 1-year range stays monthly (12
+points), yearly on a 3-year range stays yearly (3 points), daily on a 5-year
+range coarsens to monthly (72 points).
+
+## Single-day ranges
+
+The filter bar's **Daily** preset sets `dateFrom === dateTo`, which is one bucket
+at *every* granularity — there is genuinely no trend to draw. Instead of a lone
+dot the chart now explains: "The selected date range covers a single period, so
+there is no trend to plot. Widen the date range to chart distance over time."
+
+## Also fixed in passing
+
+`new Date('2026-08-01')` parses as UTC midnight, which lands on the previous day
+in negative-offset zones. The new `parseDateInput` helper reads the date inputs
+as local calendar dates, consistent with `src/utils/date.js` and the rest of the
+codebase.
+
+## What was deliberately *not* changed
+
+- **The filter bar's Daily/Monthly/Yearly presets still set the ranges they
+  always did** (today / month-to-date / year-to-date). Widening them the way
+  Part 15 widened the Customer Profile presets was tempting, but this filter bar
+  also drives the Trip History **table**, where "Daily" must keep meaning today.
+  The graph adapts to the range instead of the range bending for the graph.
+- **Ongoing trips are still excluded from the chart.** It plots
+  `distance_travelled`, which only exists once a trip is ended — an ongoing trip
+  has no distance yet. That is why the one ongoing trip in the screenshot
+  (TRP-000008) contributes nothing.
+- **`connectNulls` is left on the `<Line>`.** Zero-filling means there are no
+  nulls to bridge any more, but the prop is harmless and removing it would be an
+  unrelated change.
+- **The `Table` view of Trip History is untouched** — it was filtering
+  correctly; only the graph misread the range.
+
+---
+
+# Part 20 — SAGA code formats + navigation order (System_Functions.md)
+
+## ⚠️ Migration: `20260826000000_saga_code_formats.sql`
+
+| Entity | Was | Now |
+|---|---|---|
+| Sale | `S-1-250826` | `SIF_0001_0826` |
+| Debt settlement | `D-1-250826` | `SIFD_0001_0826` |
+| Trip | *(none — UI showed `TRP-000008` from the row id)* | `SIFT_0001_0826` |
+| Customer | `CUST-0001` | `SIFC_0001` |
+| One-time customer | `OTC-0001` | `SIFO_0001` |
+| Employee | `EMP-0001` | `SIFE_0001` |
+| Expense category / item | `CAT-00001` / `EXP-00001` | *unchanged* |
+
+## The counter resets monthly, not daily
+
+The spec says "0001 – First Sale on that Date", but the suffix carries only
+month and year. A daily reset therefore collides on a `unique` column: the 1st
+sale of Aug 25 and the 1st sale of Aug 26 would both be `SIF_0001_0826`, and the
+second insert would fail outright. Monthly reset is the only reading consistent
+with the documented format; **confirmed before implementing**.
+
+`code_counters` gained a `period` column and its primary key became
+`(entity, period)`. Dated entities use `MMYY` as the period; customers and
+employees use `''` and run one continuous sequence.
+
+Month boundaries are evaluated in `Asia/Colombo`, not the server's UTC. A sale
+entered at 9pm local on the 31st belongs to that month — under UTC it would have
+rolled into the next one and restarted the counter early.
+
+## Trips got a real code
+
+`transport_trips` had no code column at all; the UI rendered `TRP-` plus the
+zero-padded primary key. That is not a business identifier — it leaks row ids and
+skips numbers whenever a trip is deleted. Added `trip_code text unique`,
+backfilled in start-date order per month, with the counters advanced past the
+backfill so new trips continue rather than collide. The Transport table and the
+Daily Manager Report's Trip ID column both read `trip_code` now.
+
+## Codes are assigned by triggers, not by the client
+
+`addCustomer` and `addEmployee` previously called `get_next_code()` over the
+network, then sent a second request to insert the row. That is two round-trips
+per create, and it burns a counter value whenever the insert that follows fails
+(a duplicate NIC, a dropped connection), leaving permanent gaps in the sequence.
+
+Three `BEFORE INSERT` triggers — `trg_assign_customer_code`,
+`trg_assign_employee_code`, `trg_assign_trip_code` — now fill the code in the
+same statement that writes the row. The client just inserts and reads the code
+back from the returning row. Atomic, and one fewer round-trip on every create.
+
+`get_next_code(p_entity, p_prefix)` keeps its signature; the prefix for every
+known entity is now decided inside the function, so the six RPCs that call it
+(`place_pooled_order_transaction`, `settle_debt_transaction`,
+`edit_sale_transaction`, and the legacy order functions) did not each have to be
+re-issued just to pass a different string. `p_prefix` remains the fallback for
+anything not listed.
+
+## Navigation order
+
+Reordered to the list in System_Functions.md — Dashboard, Sales, Transport,
+Inventory, Customers, Debts, Cash & Bank Details, Expenses, Employees, Vehicles,
+Reports, Notes & Messages, Notifications. One `navItems` array in `AppShell.jsx`
+feeds the sidebar, the mobile nav and the page-title lookup, so this is a single
+edit.
+
+## What was deliberately *not* changed
+
+- **Expense codes keep `CAT-00001` / `EXP-00001`.** System_Functions.md does not
+  define a format for them, and they are internal ledger codes rather than
+  customer-facing documents.
+- **One-time customers get `SIFO_`, not `SIFC_`.** They have their own counter,
+  so sharing the `SIFC` prefix would produce two different customers with the
+  same code. A distinct letter was the smallest change that keeps them unique —
+  say the word if you would rather they consume the main customer sequence.
+- **No renumbering of existing rows.** These formats apply from the migration
+  forward. That is fine given the database is being cleared; had it not been,
+  old and new codes are different enough in shape that they cannot collide.
+
+---
+
+# Part 21 — Performance on slow connections
+
+## The problem: one order triggered a hundred queries
+
+Every hook followed the same shape — subscribe to the tables it cares about, and
+run a **full refetch on every event**. Two things made that expensive:
+
+1. Supabase realtime emits **per changed row**, not per statement. One pooled
+   debt order writes to `sales`, `sale_items`, `inventory`,
+   `inventory_transactions`, `debts` and `debt_settlements` — commonly 8–10 row
+   events.
+2. Several hooks listen to many of those tables at once, and their "refetch" is
+   not one query. `useDailyReport` subscribes to **17** tables and each refetch
+   is a `Promise.all` of **19** unbounded selects.
+
+So placing a single order while the Reports page was open fired roughly *170
+queries*, all at once, all re-downloading the same data. On a fast connection
+that is invisible. On a weak one they queue behind each other and the screen
+stays blank until the last one lands — the symptom reported.
+
+Listener counts per hook: `useDailyReport` 17, `useCashBank` 7, `useDashboard`
+6, `useDebts` 4, `useExpenses` 4, `useSales` 3, `useInventory` 2.
+
+## The fix: coalesce refetches — `src/lib/realtimeRefetch.js`
+
+`coalesceRefetch(fn, delay = 350)` wraps a hook's fetch function so that:
+
+- a **burst of events collapses into one refetch** (trailing edge, 350ms);
+- **only one refetch is ever in flight** — events arriving mid-flight schedule
+  exactly one follow-up instead of piling on;
+- `cancel()` in the effect cleanup kills any pending timer, so a refetch can't
+  fire after unmount and call `setState` on a dead component;
+- a thrown fetch is swallowed so one bad response can't break the timer chain
+  for the rest of the session.
+
+Applied to **all 20 hooks** that subscribe to realtime. The Reports-page example
+above goes from ~170 queries to 19.
+
+Verified with a standalone harness before wiring it up:
+
+```
+burst of 5 events        -> 1 refetch  PASS  (was 5 before)
+4 events mid-flight      -> 2 refetches, max 1 concurrent  PASS
+cancel() before firing   -> 0 refetches  PASS
+throwing fetch recovers  -> 2 refetches  PASS
+3 well-spaced events     -> 3 refetches  PASS
+```
+
+The last case is the important one: coalescing must not *lose* updates. Events
+that are genuinely far apart still each trigger their own refetch.
+
+## Cost
+
+Data now lands up to 350ms later than before after a change — including your own
+actions, since the app relies on realtime rather than optimistic updates. That is
+a good trade against re-downloading the database ten times, and it is well under
+the threshold where an interface feels unresponsive.
+
+## What was deliberately *not* changed
+
+- **The unbounded `select('*')` queries stay unbounded.** This is the *other*
+  half of the slowness — `useSales` fetches every sale ever made, each with the
+  full customer row embedded and all line items, with no `limit` or pagination,
+  and it will keep growing. Fixing it properly means paginating the fetch *and*
+  moving every total, chart and report that currently derives from the complete
+  in-memory array onto server-side aggregates. That is a substantial redesign of
+  how each page computes its numbers, and getting it wrong silently produces
+  wrong money figures — not something to bundle into this pass. **This is the
+  single biggest remaining performance item**, and worth planning properly.
+- **Pages were already code-split.** Every route is a `lazy()` import and the
+  heavy libraries (`pdfGenerator` 453kB, `LineChart` 343kB, `html2canvas`
+  199kB) already build as separate chunks, so they are not downloaded until a
+  page that needs them is opened. Nothing to gain here.
+- **No optimistic UI updates were added.** They would hide the remaining latency
+  on your own actions, but a wrong optimistic guess about stock levels or debt
+  balances shows the operator a number that never existed. Not worth it without
+  a specific request.
+- **No loading skeletons were added.** Worth doing — a blank panel on a slow
+  connection reads as broken — but it is a visual change across many pages and
+  was not what was asked for.

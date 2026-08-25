@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 
 export function useActivityLog() {
   const [entries, setEntries] = useState([]);
@@ -16,14 +17,18 @@ export function useActivityLog() {
   }, []);
 
   useEffect(() => {
+    const refetchEntries = coalesceRefetch(fetchEntries);
     fetchEntries();
 
     const channel = supabase
       .channel('activity-log-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_log' }, fetchEntries)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_log' }, refetchEntries)
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    return () => {
+      refetchEntries.cancel();
+      supabase.removeChannel(channel);
+    };
   }, [fetchEntries]);
 
   return { entries, isLoading, refresh: fetchEntries };

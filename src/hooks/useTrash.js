@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { currentActor } from '../lib/activityLog';
 
 export function useTrash() {
@@ -21,14 +22,18 @@ export function useTrash() {
   }, []);
 
   useEffect(() => {
+    const refetchTrash = coalesceRefetch(fetchTrash);
     fetchTrash();
 
     const channel = supabase
       .channel('trash-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'trash' }, fetchTrash)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trash' }, refetchTrash)
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    return () => {
+      refetchTrash.cancel();
+      supabase.removeChannel(channel);
+    };
   }, [fetchTrash]);
 
   const restoreItem = async (trashId) => {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 
 // Debt settlements for a single customer — this is the app's "payments"
 // concept (see useDebts.js); there is no separate payments table.
@@ -64,6 +65,7 @@ export function useCustomerPayments(customerId) {
   }, [customerId]);
 
   useEffect(() => {
+    const refetchPayments = coalesceRefetch(fetchPayments);
     fetchPayments();
 
     if (!customerId) return;
@@ -73,11 +75,12 @@ export function useCustomerPayments(customerId) {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'debt_settlements' },
-        () => fetchPayments()
+        refetchPayments
       )
       .subscribe();
 
     return () => {
+      refetchPayments.cancel();
       supabase.removeChannel(channel);
     };
   }, [customerId, fetchPayments]);

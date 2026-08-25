@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { logActivity, currentActor } from '../lib/activityLog';
 
 export function useVehicleTrips(vehicleId) {
@@ -27,6 +28,7 @@ export function useVehicleTrips(vehicleId) {
   }, [vehicleId]);
 
   useEffect(() => {
+    const refetchTrips = coalesceRefetch(fetchTrips);
     let cancelled = false;
     setIsLoading(true);
 
@@ -42,11 +44,12 @@ export function useVehicleTrips(vehicleId) {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'vehicle_trips', filter: `vehicle_id=eq.${vehicleId}` },
-        () => fetchTrips()
+        refetchTrips
       )
       .subscribe();
 
     return () => {
+      refetchTrips.cancel();
       cancelled = true;
       supabase.removeChannel(channel);
     };

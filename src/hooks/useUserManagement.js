@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { logActivity, currentActor } from '../lib/activityLog';
 
 // Login accounts (Settings > User Management). Listing is a plain RPC —
@@ -25,14 +26,16 @@ export function useUserManagement() {
   }, []);
 
   useEffect(() => {
+    const refetchUsers = coalesceRefetch(fetchUsers);
     fetchUsers();
 
     const channel = supabase
       .channel(`user-directory-realtime-${Math.random()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => fetchUsers())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, refetchUsers)
       .subscribe();
 
     return () => {
+      refetchUsers.cancel();
       supabase.removeChannel(channel);
     };
   }, [fetchUsers]);
