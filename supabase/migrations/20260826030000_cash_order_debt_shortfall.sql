@@ -536,3 +536,12 @@ begin
   );
 end;
 $$ language plpgsql security definer set search_path = public;
+
+-- Re-granted here rather than relying on 20260826010000. `create or replace`
+-- preserves existing grants, so these are normally redundant -- but if either
+-- function has been DROPped at any point its privileges went with it, and a
+-- re-run of this file alone would restore the logic while leaving the app
+-- unable to call it. Making the migration self-contained means it can always
+-- be re-applied on its own to get back to a working state.
+grant execute on function public.place_pooled_order_transaction(bigint, integer, numeric, integer, text, text) to authenticated;
+grant execute on function public.edit_sale_transaction(bigint, integer, numeric, integer, text, text) to authenticated;
