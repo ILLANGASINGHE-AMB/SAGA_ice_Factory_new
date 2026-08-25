@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useVehicles } from '../hooks/useVehicles';
 import { useEmployees } from '../hooks/useEmployees';
 import { useTransportTrips } from '../hooks/useTransportTrips';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { Table } from '../components/Table';
 import { Button } from '../components/Button';
@@ -36,6 +37,7 @@ export function TransportPage() {
   const { vehicles, isLoading: vehiclesLoading } = useVehicles();
   const { employees, isLoading: employeesLoading } = useEmployees();
   const { trips, isLoading: tripsLoading, startTrip, endTrip } = useTransportTrips();
+  const { user, isAdmin } = useAuth();
   const toast = useToast();
 
   const [statusFilter, setStatusFilter] = useState('all');
@@ -139,7 +141,7 @@ export function TransportPage() {
   }, [historyTrips, graphGranularity, vehicleById]);
 
   const handleStartTrip = async (data) => {
-    await startTrip(data, 'Operator');
+    await startTrip(data, user?.fullName || 'Operator');
     toast.success("Trip started successfully");
   };
 
@@ -418,6 +420,7 @@ export function TransportPage() {
         employees={employees}
         trips={trips}
         onSubmit={handleStartTrip}
+        isAdmin={isAdmin}
       />
 
       {/* End Trip Modal */}

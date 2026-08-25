@@ -48,6 +48,22 @@ export function useTransportTrips() {
     if (!start_datetime) throw new Error("Start Date and Time is required");
     if (isNaN(start) || start < 0) throw new Error("Start KM must be a valid non-negative number");
 
+    // A vehicle can only be on one trip at a time. Checked here for a clear,
+    // immediate error message; a partial unique index on
+    // (vehicle_id) where status = 'ongoing' is the actual guarantee — it
+    // catches the race if two operators start the same vehicle at once,
+    // which this pre-check alone cannot.
+    const { data: existingOngoing } = await supabase
+      .from('transport_trips')
+      .select('id')
+      .eq('vehicle_id', vehicle_id)
+      .eq('status', 'ongoing')
+      .limit(1)
+      .maybeSingle();
+    if (existingOngoing) {
+      throw new Error("This vehicle already has a trip in progress. End it before starting a new one.");
+    }
+
     const { data, error } = await supabase
       .from('transport_trips')
       .insert({
@@ -63,7 +79,15 @@ export function useTransportTrips() {
       .select('id')
       .single();
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      // 23505 = unique_violation — the partial unique index caught a race
+      // the pre-check above missed (two operators starting the same vehicle
+      // within the same instant).
+      if (error.code === '23505') {
+        throw new Error("This vehicle already has a trip in progress. End it before starting a new one.");
+      }
+      throw new Error(error.message);
+    }
     logActivity({ action: 'create', entityType: 'transport_trip', entityId: data.id, description: `Started a transport trip`, performedBy: createdBy });
     return data;
   };
@@ -73,8 +97,10 @@ export function useTransportTrips() {
 
     if (!end_datetime) throw new Error("End Date and Time is required");
     if (isNaN(end) || end < 0) throw new Error("Final KM must be a valid non-negative number");
-    if (startOdometer !== undefined && end < Number(startOdometer)) {
-      throw new Error("Final KM cannot be less than the Start KM");
+    // Strictly greater — a trip covering zero distance isn't a real trip, and
+    // the odometer only ever moves forward.
+    if (startOdometer !== undefined && end <= Number(startOdometer)) {
+      throw new Error("Final KM must be greater than the Start KM");
     }
 
     const { error } = await supabase

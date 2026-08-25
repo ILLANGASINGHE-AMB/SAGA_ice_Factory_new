@@ -16,7 +16,7 @@ const emptyValues = {
   description: ''
 };
 
-export function TransportTripFormModal({ isOpen, onClose, vehicles, employees, trips, onSubmit }) {
+export function TransportTripFormModal({ isOpen, onClose, vehicles, employees, trips, onSubmit, isAdmin = false }) {
   const [values, setValues] = useState(emptyValues);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -28,10 +28,26 @@ export function TransportTripFormModal({ isOpen, onClose, vehicles, employees, t
     }
   }, [isOpen]);
 
+  // A vehicle already mid-trip can't be started again — offered in the list
+  // but disabled, so the operator sees why rather than the option silently
+  // missing. The database enforces this too (partial unique index on
+  // (vehicle_id) where status = 'ongoing'), so this is UX, not the guarantee.
+  const vehiclesWithOngoingTrip = useMemo(
+    () => new Set(trips.filter(t => t.status === 'ongoing').map(t => Number(t.vehicle_id))),
+    [trips]
+  );
+
   const vehicleOptions = useMemo(() => [
     { value: '', label: 'Select Vehicle' },
-    ...vehicles.map(v => ({ value: String(v.id), label: `${v.vehicle_no} — ${v.vehicle_model}` }))
-  ], [vehicles]);
+    ...vehicles.map(v => {
+      const isOngoing = vehiclesWithOngoingTrip.has(Number(v.id));
+      return {
+        value: String(v.id),
+        label: `${v.vehicle_no} — ${v.vehicle_model}${isOngoing ? ' (Trip In Progress)' : ''}`,
+        disabled: isOngoing
+      };
+    })
+  ], [vehicles, vehiclesWithOngoingTrip]);
 
   const driverOptions = useMemo(() => [
     { value: '', label: 'Select Driver' },
@@ -63,6 +79,10 @@ export function TransportTripFormModal({ isOpen, onClose, vehicles, employees, t
 
     if (!values.vehicle_id) {
       setError("Please select a Vehicle");
+      return;
+    }
+    if (vehiclesWithOngoingTrip.has(Number(values.vehicle_id))) {
+      setError("This vehicle already has a trip in progress. End it before starting a new one.");
       return;
     }
     if (!values.employee_id) {
@@ -125,16 +145,25 @@ export function TransportTripFormModal({ isOpen, onClose, vehicles, employees, t
         />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Input
-            label="Start KM"
-            name="start_odometer"
-            type="number"
-            min="0"
-            required
-            placeholder="e.g. 12000"
-            value={values.start_odometer}
-            onChange={handleChange('start_odometer')}
-          />
+          <div className="w-full flex flex-col space-y-1.5">
+            <Input
+              label="Start KM"
+              name="start_odometer"
+              type="number"
+              min="0"
+              required
+              disabled={!isAdmin}
+              title={isAdmin
+                ? 'Editable — overrides the auto-fetched last ended KM for this vehicle'
+                : "Auto-fetched from this vehicle's last ended trip — editable by Administrators only"}
+              placeholder="e.g. 12000"
+              value={values.start_odometer}
+              onChange={handleChange('start_odometer')}
+            />
+            <span className="text-[9px] uppercase tracking-wide font-semibold text-slate-400 px-0.5">
+              {isAdmin ? 'Auto-fetched — editable' : 'Auto-fetched from last ended trip'}
+            </span>
+          </div>
           <Input
             label="Start Date and Time"
             name="start_datetime"

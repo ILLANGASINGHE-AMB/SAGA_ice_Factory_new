@@ -35,8 +35,8 @@ export function EndTripModal({ isOpen, onClose, trip, onSubmit }) {
       setError("Final KM must be a valid non-negative number");
       return;
     }
-    if (trip && end < Number(trip.start_odometer)) {
-      setError(`Final KM cannot be less than the Start KM (${Number(trip.start_odometer).toLocaleString()})`);
+    if (trip && end <= Number(trip.start_odometer)) {
+      setError(`Final KM must be greater than the Start KM (${Number(trip.start_odometer).toLocaleString()})`);
       return;
     }
     if (!values.end_datetime) {

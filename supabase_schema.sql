@@ -234,11 +234,20 @@ create table if not exists public.transport_trips (
   status text not null default 'ongoing' check (status in ('ongoing', 'completed')),
   created_by text not null default 'Operator',
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  constraint transport_trips_odometer_order check (end_odometer is null or end_odometer >= start_odometer)
+  -- Strictly greater — a trip covering zero distance isn't a real trip.
+  constraint transport_trips_odometer_order check (end_odometer is null or end_odometer > start_odometer)
 );
+-- Applied NOT VALID in the migration (see 20260825040000) so it doesn't
+-- retroactively reject historical rows; a fresh provision from this file has
+-- no historical rows to worry about, so it's created VALID here directly.
 
 create index if not exists idx_transport_trips_vehicle_id on public.transport_trips(vehicle_id);
 create index if not exists idx_transport_trips_employee_id on public.transport_trips(employee_id);
+-- One ongoing trip per vehicle, enforced atomically — not just in the UI, so
+-- two operators racing to start the same vehicle can't both succeed.
+create unique index if not exists idx_transport_trips_one_ongoing_per_vehicle
+  on public.transport_trips(vehicle_id)
+  where status = 'ongoing';
 create index if not exists idx_transport_trips_status on public.transport_trips(status);
 create index if not exists idx_transport_trips_start_datetime on public.transport_trips(start_datetime);
 

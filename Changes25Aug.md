@@ -1,6 +1,6 @@
 # Changes — 25 August 2026
 
-Seven pieces of work:
+Eight pieces of work:
 
 1. **Dashboard "Settle Debts" quick action** — register a debt payment straight
    from the dashboard without first hunting the customer down in the ledger.
@@ -20,6 +20,10 @@ Seven pieces of work:
 7. **One-Time Sale asks for nothing** — no name, no fields; tapping it goes
    straight to Order Details with a normal bill PDF, saved as a one-time
    customer.
+8. **Transport trip guards** — one ongoing trip per vehicle at a time (enforced
+   in the database, not just the UI), Start KM locked to staff and auto-fetched
+   from the vehicle's last ended trip, End KM must be strictly greater than
+   Start KM.
 
 **Status:** production build passes (`npm run build`, ✓ built). ESLint reports
 the same problems as before the changes (`React` unused in both pages,
@@ -29,20 +33,21 @@ the same problems as before the changes (`React` unused in both pages,
 neither the settlement path nor the new ledger inserts were exercised at
 runtime.
 
-**23 files changed · 3 new migrations**
+**28 files changed · 4 new migrations**
 
 ---
 
-## ⚠️ Three migrations to apply, in order
+## ⚠️ Four migrations to apply, in order
 
 | Migration | Part |
 |---|---|
 | `20260825010000_debt_settlement_payment_routing.sql` | 2 |
 | `20260825020000_damaged_cubes_and_pooled_orders.sql` | 4 |
 | `20260825030000_auto_applied_settlement_flag.sql` | 5 |
+| `20260825040000_transport_trip_guards.sql` | 8 |
 
 Each is detailed in its section below. `supabase_schema.sql` has been updated
-to match all three, so a fresh provision already includes them.
+to match all four, so a fresh provision already includes them.
 
 ## ⚠️ Part 2 needs a migration
 
@@ -642,6 +647,83 @@ all removed — there was nothing left to validate.
 
 ---
 
+# Part 8 — Transport trip guards
+
+Scoped to the **Transport tab** (`transport_trips` table, `TransportPage.jsx` /
+`TransportTripFormModal.jsx` / `EndTripModal.jsx` / `useTransportTrips.js`).
+The Vehicle Profile page's trip log (`vehicle_trips`, a different table with no
+ongoing/completed concept — start and end KM are both entered at once as a
+historical entry) is a separate feature and was left untouched.
+
+## ⚠️ Migration: `20260825040000_transport_trip_guards.sql`
+
+| Change | Purpose |
+|---|---|
+| Partial unique index `(vehicle_id) where status = 'ongoing'` | One ongoing trip per vehicle, enforced atomically |
+| `transport_trips_odometer_order` check tightened from `>=` to `>` | End KM must be strictly greater than Start KM |
+
+**If the unique index fails to create**, duplicate ongoing trips already exist
+for some vehicle — end (or soft-delete) the extras for that vehicle, then
+re-run the migration. The migration does not auto-resolve this; guessing which
+of two live "ongoing" trips is the real one isn't a call to make silently.
+
+## 1. One ongoing trip per vehicle
+
+**Database**: the partial unique index above — the actual guarantee. Two
+operators racing to start the same vehicle can't both succeed; the loser gets
+a real database error, not a lost update.
+
+**UI** (`TransportTripFormModal.jsx`): the Vehicle dropdown shows a vehicle
+already mid-trip as `Vehicle No — Model (Trip In Progress)` and **disabled**
+(new `disabled` support added to the shared `Select` component), so the
+operator sees why rather than the option silently disappearing.
+
+**App-level check** (`useTransportTrips.js` `startTrip()`): queries for an
+existing ongoing trip for the vehicle before inserting, for a clean, immediate
+error message — *"This vehicle already has a trip in progress. End it before
+starting a new one."* If the pre-check and the unique index still race (two
+requests within the same instant), the insert's `23505` unique-violation is
+caught and turned into the same friendly message rather than a raw Postgres
+error.
+
+## 2. Start KM: staff can't edit it, admin can
+
+`TransportTripFormModal.jsx` gained an `isAdmin` prop, wired from
+`useAuth()` in `TransportPage.jsx`. The Start KM field:
+
+- **Staff**: `disabled`, showing whatever the auto-fetch below resolved. A
+  caption underneath reads *"Auto-fetched from last ended trip"*.
+- **Admin**: fully editable, with the auto-fetched value as the starting point
+  — same override pattern already used for cube rates in the New Order wizard
+  (Part 4).
+
+## 3. Last ended trip's KM feeds the next Start KM
+
+**Already existed** — an effect in `TransportTripFormModal.jsx` looks up the
+selected vehicle's most recently completed trip and pre-fills Start KM from
+its `end_odometer`, falling back to the vehicle's `initial_odometer` if it has
+never completed a trip. Part 8 doesn't change this logic, only who can
+override it (see #2).
+
+## 4. End KM must be strictly greater than Start KM
+
+Was `>=` (a zero-distance trip was accepted) in three places, all now `>`:
+
+- **Database**: `transport_trips_odometer_order` check constraint (above).
+- **`useTransportTrips.js` `endTrip()`**: `end <= startOdometer` throws *"Final
+  KM must be greater than the Start KM."*
+- **`EndTripModal.jsx`**: same client-side check, same message.
+
+## Also fixed while in this code: trip creator was always "Operator"
+
+`handleStartTrip` in `TransportPage.jsx` hardcoded `'Operator'` as the trip's
+`created_by`/activity-log actor regardless of who was actually logged in — the
+one place in this flow not already using `user?.fullName`, unlike every other
+wizard in the app. Now passes `user?.fullName || 'Operator'`, matching the
+Debts/Sales pattern, so "who started this trip" is accurate in the audit trail.
+
+---
+
 ## What was deliberately *not* changed
 
 - **No new settlement logic.** `handlePickCustomer` hands off to the existing
@@ -684,3 +766,11 @@ all removed — there was nothing left to validate.
   existing Walk-in Customer row" — each stays its own row with its own
   `OTC-####` code, matching how the registry already treats one-time
   customers (see `is_one_time` in the schema).
+- **Vehicle Profile page's trip log (`vehicle_trips`) is untouched by Part 8.**
+  Different table, different shape (both odometer readings entered at once,
+  no ongoing/completed status) — the "one ongoing trip" and "admin-only Start
+  KM" rules don't map onto it as written. Say the word if you want equivalent
+  guards there.
+- **Existing trips are not retroactively validated** against the new "must be
+  strictly greater" rule — a historical trip that happens to have End KM equal
+  to Start KM is left as recorded; the constraint only blocks new writes.
