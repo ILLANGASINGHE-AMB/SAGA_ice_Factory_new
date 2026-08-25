@@ -140,7 +140,13 @@ export function ReportsPage() {
     let mfcSold = 0;
     let rscSold = 0;
     let newCustomersCount = 0;
+    // "Settlements Collected" is money COLLECTED, so it excludes settlements
+    // the system applied automatically when a cash order paid down existing
+    // debt — that cash is already counted in cashRevenue as the sale.
+    // The debt reduction is still real, so it is tallied separately and used
+    // where debt BALANCES are worked out (see totalDebtReduced below).
     let totalSettled = 0;
+    let totalAutoApplied = 0;
     let debtorsList = [];
     let customerListWithDetails = [];
 
@@ -164,7 +170,8 @@ export function ReportsPage() {
       settlements.forEach(setl => {
         const d = new Date(setl.settlement_date);
         if (d >= start && d <= end) {
-          totalSettled += setl.amount_paid;
+          if (setl.is_auto_applied) totalAutoApplied += setl.amount_paid;
+          else totalSettled += setl.amount_paid;
         }
       });
 
@@ -192,7 +199,8 @@ export function ReportsPage() {
       settlements.forEach(setl => {
         const d = new Date(setl.settlement_date);
         if (d >= start && d <= end) {
-          totalSettled += setl.amount_paid;
+          if (setl.is_auto_applied) totalAutoApplied += setl.amount_paid;
+          else totalSettled += setl.amount_paid;
         }
       });
 
@@ -222,7 +230,8 @@ export function ReportsPage() {
       settlements.forEach(setl => {
         const d = new Date(setl.settlement_date);
         if (d >= start && d <= end) {
-          totalSettled += setl.amount_paid;
+          if (setl.is_auto_applied) totalAutoApplied += setl.amount_paid;
+          else totalSettled += setl.amount_paid;
         }
       });
 
@@ -353,7 +362,10 @@ export function ReportsPage() {
         if (customCustomerId !== 'all') {
           if (setl.customer_id !== parseInt(customCustomerId, 10)) inRange = false;
         }
-        if (inRange) totalSettled += setl.amount_paid;
+        if (inRange) {
+          if (setl.is_auto_applied) totalAutoApplied += setl.amount_paid;
+          else totalSettled += setl.amount_paid;
+        }
       });
 
       // If Include Debts option is active
@@ -416,7 +428,11 @@ export function ReportsPage() {
         mfcSold,
         rscSold,
         newCustomersCount,
-        totalSettled
+        totalSettled,
+        // Everything that actually reduced debt in the period — collections
+        // plus cash-order offsets. Debt-balance math needs this; "money in"
+        // figures need totalSettled.
+        totalDebtReduced: totalSettled + totalAutoApplied
       }
     });
 

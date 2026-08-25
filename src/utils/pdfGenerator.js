@@ -604,10 +604,16 @@ export function generateReportPDF(reportTitle, dateStr, salesData, summaryData, 
     doc.text(`LKR ${summaryData.cashRevenue.toLocaleString()}`, cols[1], valueY);
 
     // debtRevenue is gross credit sales issued in the period — it must be
-    // netted against settlements collected in that same period, or this
+    // netted against everything that reduced debt in that same period, or this
     // overstates the true outstanding balance whenever some of the period's
     // credit sales were already paid off within the period.
-    const netOutstandingCredit = Math.max(0, (summaryData.debtRevenue || 0) - (summaryData.totalSettled || 0));
+    //
+    // Note this nets against totalDebtReduced, NOT totalSettled: a cash order
+    // auto-applied against old debt reduces the balance just as a collection
+    // does, even though it isn't money collected. (Falls back to totalSettled
+    // for report payloads built before the split.)
+    const debtReduced = summaryData.totalDebtReduced ?? summaryData.totalSettled ?? 0;
+    const netOutstandingCredit = Math.max(0, (summaryData.debtRevenue || 0) - debtReduced);
     fieldLabel(doc, 'Debt Balance', cols[2], labelY);
     doc.setFont('Helvetica', 'bold');
     doc.setFontSize(9.5);

@@ -39,11 +39,20 @@ export function computeCashBankBalances({
   // well would book the same money into two stores of value at once.
   // Anything else ('card', 'other', legacy rows with no method) keeps the
   // original cash treatment so historical balances are unchanged.
+  // A settlement created automatically by a cash order paying down the
+  // customer's existing debt is NOT money arriving at the till — that cash was
+  // already counted in cashSalesTotal above as the sale itself. Counting it
+  // here too inflated Cash Balance by the offset amount on every such order.
+  // The debt reduction it represents is real and untouched; only the "cash in"
+  // reading of it is wrong.
+  const settlementsAutoApplied = settlementRows.filter(s => s.is_auto_applied);
+  const settlementAutoAppliedTotal = settlementsAutoApplied.reduce((sum, s) => sum + (Number(s.amount_paid) || 0), 0);
+
   const settlementsToCash = settlementRows.filter(
-    s => s.payment_method !== 'bank_transfer' && s.payment_method !== 'cheque'
+    s => !s.is_auto_applied && s.payment_method !== 'bank_transfer' && s.payment_method !== 'cheque'
   );
-  const settlementsToBank = settlementRows.filter(s => s.payment_method === 'bank_transfer');
-  const settlementsToCheques = settlementRows.filter(s => s.payment_method === 'cheque');
+  const settlementsToBank = settlementRows.filter(s => !s.is_auto_applied && s.payment_method === 'bank_transfer');
+  const settlementsToCheques = settlementRows.filter(s => !s.is_auto_applied && s.payment_method === 'cheque');
 
   const settlementCashTotal = settlementsToCash.reduce((sum, s) => sum + (Number(s.amount_paid) || 0), 0);
   const settlementBankTotal = settlementsToBank.reduce((sum, s) => sum + (Number(s.amount_paid) || 0), 0);
@@ -83,6 +92,7 @@ export function computeCashBankBalances({
     settlementCashTotal,
     settlementBankTotal,
     settlementChequeTotal,
+    settlementAutoAppliedTotal,
     cashReceivesTotal,
     cashDepositedTotal,
     bankDepositsTotal,

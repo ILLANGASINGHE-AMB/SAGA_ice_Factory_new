@@ -98,6 +98,11 @@ create table public.debt_settlements (
   customer_id bigint references public.customers(id) on delete cascade,
   amount_paid numeric(10, 2) not null,
   payment_method text not null default 'cash' check (payment_method in ('cash', 'bank_transfer', 'cheque', 'other', 'card')),
+  -- True when a cash order's payment was applied against this customer's
+  -- existing debt automatically (FIFO), rather than someone taking a payment.
+  -- Such a row reduces debt but is NOT new money at the till — the cash was
+  -- already counted as the sale, so every "cash in" figure must exclude it.
+  is_auto_applied boolean not null default false,
   notes text,
   settlement_date timestamp with time zone default timezone('utc'::text, now()) not null,
   bill_pdf_url text,
@@ -2219,9 +2224,12 @@ begin
           created_at       = case when v_old_new_remaining > 0 then v_now else created_at end
       where id = v_old_debt.id;
 
-      insert into public.debt_settlements (debt_id, customer_id, amount_paid, settlement_date, created_by)
+      -- is_auto_applied: this reduces the debt but is NOT new money at the
+      -- till — the cash was already counted as this sale. See
+      -- 20260825030000_auto_applied_settlement_flag.sql.
+      insert into public.debt_settlements (debt_id, customer_id, amount_paid, settlement_date, created_by, is_auto_applied)
       values (v_old_debt.id, p_customer_id, v_apply_amt, v_now,
-              p_created_by || ' (auto-applied from sale ' || v_sale_code || ')');
+              p_created_by || ' (auto-applied from sale ' || v_sale_code || ')', true);
 
       v_applied_to_old_debt := v_applied_to_old_debt + v_apply_amt;
       v_cash_remaining := v_cash_remaining - v_apply_amt;
@@ -2401,3 +2409,31 @@ $$ language plpgsql security definer set search_path = public;
 -- Anonymous access is the entire point — this is the link a customer opens
 -- from WhatsApp without logging in.
 grant execute on function public.get_public_bill(text) to anon, authenticated;
+
+
+-- ==========================================
+-- Auto-applied settlement marker
+-- ==========================================
+--
+-- Safety net for order RPCs that write the '(auto-applied from sale …)' marker
+-- into created_by but don't stamp is_auto_applied themselves. Never overrides
+-- an explicit true, so explicit stamping always wins.
+
+create or replace function public.mark_auto_applied_settlement()
+returns trigger as $$
+begin
+  if new.is_auto_applied is not true
+     and new.created_by like '%(auto-applied from sale %' then
+    new.is_auto_applied := true;
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_mark_auto_applied_settlement on public.debt_settlements;
+create trigger trg_mark_auto_applied_settlement
+  before insert on public.debt_settlements
+  for each row execute function public.mark_auto_applied_settlement();
+
+create index if not exists idx_debt_settlements_is_auto_applied
+  on public.debt_settlements(is_auto_applied);

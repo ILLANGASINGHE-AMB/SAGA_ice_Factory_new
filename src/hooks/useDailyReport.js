@@ -321,7 +321,18 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
     const creditSalesAmount = creditSalesRecords.reduce((sum, s) => sum + (Number(s.total_amount) || 0), 0);
 
     const todaysSettlements = settlements.filter(setl => isInRange(setl.settlement_date));
-    const creditAmountReceived = todaysSettlements.reduce((sum, setl) => sum + (Number(setl.amount_paid) || 0), 0);
+
+    // "Credit Amount Received" is money COLLECTED, so it must exclude
+    // settlements the system applied automatically when a cash order paid down
+    // the customer's existing debt: that cash is already in cashSalesAmount as
+    // the sale, and adding it again overstated Total Income by the offset.
+    const autoAppliedSettlements = todaysSettlements.filter(setl => setl.is_auto_applied);
+    const collectedSettlements = todaysSettlements.filter(setl => !setl.is_auto_applied);
+
+    const creditAmountReceived = collectedSettlements.reduce((sum, setl) => sum + (Number(setl.amount_paid) || 0), 0);
+    // Debt genuinely written down by cash orders in range — a real reduction,
+    // just not a collection. Reported separately rather than folded into income.
+    const debtOffsetByCashOrders = autoAppliedSettlements.reduce((sum, setl) => sum + (Number(setl.amount_paid) || 0), 0);
 
     const otherReceipts = Number(manualInputs.otherReceipts) || 0;
     const totalIncome = cashSalesAmount + creditAmountReceived + otherReceipts;
@@ -357,7 +368,11 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
       const matchingDebt = debts.find(d => Number(d.id) === Number(setl.debt_id));
       return {
         name: cust?.name || 'Customer',
-        method: PAYMENT_METHOD_LABELS[setl.payment_method] || 'Cash',
+        // An auto-applied row isn't a payment method the customer chose — it
+        // is this system offsetting a cash order against their old debt.
+        method: setl.is_auto_applied
+          ? 'Applied from Cash Order'
+          : (PAYMENT_METHOD_LABELS[setl.payment_method] || 'Cash'),
         settlementDate: setl.settlement_date ? setl.settlement_date.slice(0, 10) : '',
         debtAmount: matchingDebt ? Number(matchingDebt.total_amount) : 0,
         amountReceived: Number(setl.amount_paid),
@@ -482,6 +497,7 @@ export function useDailyReport(fromDateStr, toDateStr, fromTime, toTime) {
         cashSalesAmount,
         creditSalesAmount,
         creditAmountReceived,
+        debtOffsetByCashOrders,
         otherReceipts,
         totalIncome
       },

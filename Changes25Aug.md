@@ -1,6 +1,6 @@
 # Changes — 25 August 2026
 
-Four pieces of work:
+Five pieces of work:
 
 1. **Dashboard "Settle Debts" quick action** — register a debt payment straight
    from the dashboard without first hunting the customer down in the ledger.
@@ -12,6 +12,9 @@ Four pieces of work:
 4. **Damaged Cubes + pooled ordering with Free Cubes** (`v2_NewChanges.md`) —
    a fourth inventory line, a Total Cubes figure, and a New Order form that
    takes one quantity at one rate plus free cubes, drawn Production-first.
+5. **Auto-applied settlements no longer double-count as income** — a
+   long-standing bug that inflated Cash Balance, Total Income and Settlements
+   Collected on every cash order placed against an existing debt.
 
 **Status:** production build passes (`npm run build`, ✓ built). ESLint reports
 the same problems as before the changes (`React` unused in both pages,
@@ -21,16 +24,20 @@ the same problems as before the changes (`React` unused in both pages,
 neither the settlement path nor the new ledger inserts were exercised at
 runtime.
 
-**17 files changed · 2 new migrations**
+**21 files changed · 3 new migrations**
 
 ---
 
-## ⚠️ Two migrations to apply
+## ⚠️ Three migrations to apply, in order
 
-`20260825010000_debt_settlement_payment_routing.sql` (Part 2) and
-`20260825020000_damaged_cubes_and_pooled_orders.sql` (Part 4). Both are
-detailed in their sections below. `supabase_schema.sql` has been updated to
-match both, so a fresh provision already includes them.
+| Migration | Part |
+|---|---|
+| `20260825010000_debt_settlement_payment_routing.sql` | 2 |
+| `20260825020000_damaged_cubes_and_pooled_orders.sql` | 4 |
+| `20260825030000_auto_applied_settlement_flag.sql` | 5 |
+
+Each is detailed in its section below. `supabase_schema.sql` has been updated
+to match all three, so a fresh provision already includes them.
 
 ## ⚠️ Part 2 needs a migration
 
@@ -223,16 +230,31 @@ Cash / Bank / Hand Cheques figures pick this up automatically.
 
 ## Cash & Bank history — `src/hooks/useCashBank.js`, `src/pages/CashBankPage.jsx`
 
-- The settlements query now selects `settlement_code`, `payment_method`,
-  `created_by` and the customer (it previously fetched only amount and date).
+- The settlements query now selects `payment_method`, `created_by` and the
+  customer (it previously fetched only amount and date). It deliberately does
+  **not** select `settlement_code` — see the fix note below.
 - New **Debt Settlement** history action type, with a matching filter option
   in the History section.
 - **Cash** settlements appear as their own entry (`+LKR …`, *"Debt Settlement
-  (Cash) — Customer — SETL-code"*), since they have no ledger row of their own.
+  (Cash) — Customer"*), since they have no ledger row of their own.
 - **Bank-transfer and cheque** settlements are deliberately **not** listed
   twice — each already appears as the bank deposit or received cheque it
   produced. Those entries now name the settlement that created them
-  (*"Debt Settlement (Bank / Online Transfer) — BOC — Settlement SETL-…"*).
+  (*"Debt Settlement (Bank / Online Transfer) — BOC — Debt settlement — J. Perera"*).
+
+### Fix: `settlement_code` is not a column (regression from this part)
+
+The first version of the query above selected `settlement_code`. That column
+**does not exist**: `settle_debt_transaction` generates the code with
+`get_next_code('settlement', 'D')` and returns it in its JSON result, but never
+writes it to the row. PostgREST rejected the request with
+`42703 column debt_settlements.settlement_code does not exist`, and because the
+whole page loads through one `Promise.all`, that single 400 blanked **every**
+balance on Cash & Bank (all cards showed LKR 0.00).
+
+Fixed by selecting only real columns. History entries now reference a
+settlement by customer name, falling back to the settlement id, instead of by
+code.
 - Card subtitles corrected: Cash Balance now reads *"cash orders, cash
   settlements & receives"*, Bank Balance *"Deposits (incl. transfer
   settlements) less withdrawals"*.
@@ -437,6 +459,99 @@ derived Free Issue / Damaged figures, so a signed-off report keeps its numbers.
 
 ---
 
+# Part 5 — Auto-applied settlements double-counted as income
+
+**Pre-existing bug**, found while working on Part 2. Not introduced by any of
+the work above.
+
+## The bug
+
+When a **cash** order is placed for a customer who already owes money,
+`place_*_order_transaction` applies that cash against their oldest debts FIFO
+and writes a `debt_settlements` row per debt covered. Those rows never set
+`payment_method`, so it defaults to `'cash'`.
+
+Every figure that adds *cash sales + cash settlements* therefore counted the
+same money twice:
+
+```
+LKR 1,000 cash order, customer already owed LKR 400
+
+  cash sales total         1,000     (the sale)
+  cash settlements total   +  400     (the auto-applied offset)
+  ─────────────────────────────────
+  reported cash in         1,400     <- but only 1,000 was handed over
+```
+
+Affected **Cash Balance** (Cash & Bank), **Total Income** (Daily Manager
+Report) and **Settlements Collected** (analytical reports).
+
+## ⚠️ Migration: `20260825030000_auto_applied_settlement_flag.sql`
+
+Adds `debt_settlements.is_auto_applied boolean not null default false`, and:
+
+- **Backfills** existing rows from the `(auto-applied from sale …)` marker the
+  order RPCs have always written into `created_by`.
+- **A `BEFORE INSERT` trigger** sets the flag from that same marker. This
+  covers both legacy order functions without restating ~150 lines of each, and
+  any future one following the convention. It never overrides an explicit
+  `true`, so explicit stamping always wins.
+- `place_pooled_order_transaction` (Part 4, the live order path) **stamps the
+  flag explicitly**, so the path that matters doesn't rely on the trigger at
+  all. Belt and braces, deliberately.
+
+**Existing balances will change when this is applied.** Cash Balance drops by
+the historical total of auto-applied offsets. That is the correction — the old
+figure was overstating the till.
+
+## The distinction being drawn
+
+These settlements are **real**. The debt genuinely was reduced and they must
+keep counting toward debt balances. They simply are not *money arriving at the
+till*, because it already arrived as the sale. Everywhere the two readings
+diverge, they are now separated:
+
+| Figure | Includes auto-applied? |
+|---|---|
+| Cash Balance | **No** — the cash is already in via the sale |
+| Daily Report **Total Income** / Credit Received | **No** — same reason |
+| Reports **Settlements Collected** | **No** — nothing was collected |
+| Reports **Debt Balance** (`debtRevenue − debt reduced`) | **Yes** — the debt really did go down |
+| Debts page, customer statements, debt ledger | **Yes**, unchanged |
+
+## Files
+
+- `src/utils/cashBankMath.js` — `settlementCashTotal` (and the bank/cheque
+  splits) exclude auto-applied rows; new `settlementAutoAppliedTotal` exported
+  for transparency.
+- `src/hooks/useCashBank.js` — selects the flag. Auto-applied rows still appear
+  in Cash Flow History, because they explain a debt reduction the operator
+  would otherwise see no reason for — but as **neutral** entries with no `+`,
+  labelled *"Debt Settlement (applied from a cash order — no new cash)"*.
+- `src/hooks/useDailyReport.js` — `creditAmountReceived` counts collections
+  only; new `debtOffsetByCashOrders` reports the offsets separately. The credit
+  collection table labels those rows *"Applied from Cash Order"* rather than
+  showing a payment method the customer never chose.
+- `src/components/DailyManagerReportView.jsx` — a **Debt Offset (Not Income)**
+  tile appears when there is one, so the number is visible without being
+  folded into Total Income.
+- `src/pages/ReportsPage.jsx` — `totalSettled` (collections) and
+  `totalAutoApplied` tallied separately across all four report modes; summary
+  gains `totalDebtReduced = totalSettled + totalAutoApplied`.
+- `src/utils/pdfGenerator.js` — the report's Debt Balance nets against
+  `totalDebtReduced`, not `totalSettled`, so excluding offsets from
+  collections doesn't overstate outstanding credit. Falls back to
+  `totalSettled` for payloads built before the split.
+
+## Verified
+
+`computeCashBankBalances` run against the scenario above (1,000 cash sale, 400
+auto-applied offset, plus a 250 cash collection, a 300 transfer and a 150
+cheque): Cash Balance 1,250, Bank 300, Hand Cheques 150 — 1,700 total, exactly
+the money that changed hands. It was 1,650 in cash alone before the fix.
+
+---
+
 ## What was deliberately *not* changed
 
 - **No new settlement logic.** `handlePickCustomer` hands off to the existing
@@ -466,3 +581,9 @@ derived Free Issue / Damaged figures, so a signed-off report keeps its numbers.
   limited that way for multi-item orders; pooled ordering doesn't change it.
 - **`place_multi_item_order_transaction` was left in the database.** Unused,
   but dropping it buys nothing and makes rollback harder.
+- **The two legacy order RPCs were not restated** to stamp `is_auto_applied`.
+  The trigger covers them, and rewriting ~150 lines of each to add one column
+  is more risk than the trigger carries.
+- **Debt ledgers, customer statements and the Debts page are untouched by
+  Part 5.** Auto-applied settlements count there exactly as before — the debt
+  really was reduced.

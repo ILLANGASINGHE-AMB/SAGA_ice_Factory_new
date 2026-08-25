@@ -195,9 +195,12 @@ begin
           created_at       = case when v_old_new_remaining > 0 then v_now else created_at end
       where id = v_old_debt.id;
 
-      insert into public.debt_settlements (debt_id, customer_id, amount_paid, settlement_date, created_by)
+      -- is_auto_applied: this reduces the debt but is NOT new money at the
+      -- till — the cash was already counted as this sale. See
+      -- 20260825030000_auto_applied_settlement_flag.sql.
+      insert into public.debt_settlements (debt_id, customer_id, amount_paid, settlement_date, created_by, is_auto_applied)
       values (v_old_debt.id, p_customer_id, v_apply_amt, v_now,
-              p_created_by || ' (auto-applied from sale ' || v_sale_code || ')');
+              p_created_by || ' (auto-applied from sale ' || v_sale_code || ')', true);
 
       v_applied_to_old_debt := v_applied_to_old_debt + v_apply_amt;
       v_cash_remaining := v_cash_remaining - v_apply_amt;

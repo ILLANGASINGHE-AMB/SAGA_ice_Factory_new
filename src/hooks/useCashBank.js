@@ -29,7 +29,11 @@ export function useCashBank() {
         { data: openingData, error: openingErr }
       ] = await Promise.all([
         supabase.from('sales').select('total_amount, payment_type, sale_date').eq('payment_type', 'cash'),
-        supabase.from('debt_settlements').select('id, settlement_code, amount_paid, payment_method, settlement_date, created_by, customer:customers(name, customer_code)'),
+        // NOTE: no settlement_code here. settle_debt_transaction generates one
+        // with get_next_code() and returns it in its JSON, but never writes it
+        // to the row — there is no such column, and selecting it 400s the
+        // whole Promise.all below, blanking every balance on this page.
+        supabase.from('debt_settlements').select('id, debt_id, amount_paid, payment_method, is_auto_applied, settlement_date, created_by, customer:customers(name, customer_code)'),
         supabase.from('cash_receives').select('*').order('received_at', { ascending: false }),
         supabase.from('bank_deposits').select('*').order('deposited_at', { ascending: false }),
         supabase.from('cheque_records').select('*, customer:customers(id, customer_code, name, is_one_time)').order('received_at', { ascending: false }),
@@ -80,6 +84,7 @@ export function useCashBank() {
     settlementCashTotal,
     settlementBankTotal,
     settlementChequeTotal,
+    settlementAutoAppliedTotal,
     bankDepositsTotal,
     bankWithdrawalsTotal,
     chequesPending,
@@ -112,10 +117,14 @@ export function useCashBank() {
   const historyEntries = useMemo(() => {
     const entries = [];
 
-    // Settlement code for the deposit / cheque rows a settlement produced, so
-    // a Cash & Bank entry can be traced back to the payment that created it.
+    // Label for the deposit / cheque rows a settlement produced, so a Cash &
+    // Bank entry can be traced back to the payment that created it. Settlement
+    // codes aren't stored on the row (see the select above), so the customer
+    // name is the reference — with the settlement id as a last resort.
     const settlementLabels = new Map(
-      settlements.filter(s => s.id != null).map(s => [s.id, s.settlement_code ? `Settlement ${s.settlement_code}` : null])
+      settlements
+        .filter(s => s.id != null)
+        .map(s => [s.id, s.customer?.name ? `Debt settlement — ${s.customer.name}` : `Debt settlement #${s.id}`])
     );
 
     // Cash settlements have no ledger row of their own — they raise Cash
@@ -123,19 +132,25 @@ export function useCashBank() {
     // keep the history complete. Bank-transfer and cheque settlements are
     // deliberately NOT listed twice: each already appears above as the bank
     // deposit or the received cheque it produced.
+    //
+    // An auto-applied settlement (a cash order paying down the customer's
+    // existing debt) is listed too, because it explains a debt reduction the
+    // operator will otherwise see no reason for — but as a NEUTRAL entry with
+    // no +/-, since no money arrived at the till: it came in as the sale.
     for (const s of settlements) {
-      if (s.payment_method === 'bank_transfer' || s.payment_method === 'cheque') continue;
+      if (!s.is_auto_applied && (s.payment_method === 'bank_transfer' || s.payment_method === 'cheque')) continue;
       entries.push({
         id: `settlement-${s.id}`,
         actionType: 'debt_settlement',
         occurredAt: s.settlement_date,
         amount: Number(s.amount_paid) || 0,
-        direction: 'in',
+        direction: s.is_auto_applied ? 'neutral' : 'in',
         doneBy: s.created_by || 'Admin',
         detail: [
-          'Debt Settlement (Cash)',
-          s.customer?.name,
-          s.settlement_code
+          s.is_auto_applied
+            ? 'Debt Settlement (applied from a cash order — no new cash)'
+            : 'Debt Settlement (Cash)',
+          s.customer?.name
         ].filter(Boolean).join(' — ')
       });
     }
@@ -425,6 +440,7 @@ export function useCashBank() {
     settlementCashTotal,
     settlementBankTotal,
     settlementChequeTotal,
+    settlementAutoAppliedTotal,
     bankBalance,
     bankDepositsTotal,
     bankWithdrawalsTotal,
