@@ -33,10 +33,11 @@ import {
   Sun,
   Moon,
   Palmtree,
-  Waves
+  Waves,
+  Webhook
 } from 'lucide-react';
 
-const THEME_ICONS = { light: Sun, dark: Moon, beach: Palmtree, ocean: Waves };
+const THEME_ICONS = { light: Sun, dark: Moon, beach: Palmtree, ocean: Waves, batman: Building2, spiderman: Webhook };
 const THEME_PREVIEWS = {
   light: 'linear-gradient(135deg,#f8fafc,#e2e8f0)',
   dark: 'linear-gradient(135deg,#1e293b,#0a0f1d)'
@@ -532,7 +533,7 @@ export function SettingsPage() {
             <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
               Theme
             </span>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {THEMES.map((t) => {
                 const Icon = THEME_ICONS[t.value];
                 const isActive = theme === t.value;
@@ -912,7 +913,7 @@ export function SettingsPage() {
             <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
               Theme
             </span>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {THEMES.map((t) => {
                 const Icon = THEME_ICONS[t.value];
                 const isActive = theme === t.value;

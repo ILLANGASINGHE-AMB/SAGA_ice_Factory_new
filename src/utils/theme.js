@@ -1,16 +1,21 @@
 import beachThemeUrl from '../assets/themes/beach-theme.svg';
 import oceanThemeUrl from '../assets/themes/ocean-theme.svg';
+import batmanThemeUrl from '../assets/themes/batman-theme.svg';
+import spidermanThemeUrl from '../assets/themes/spiderman-theme.svg';
 
 export const THEME_STORAGE_KEY = 'saga_ice_theme';
 
-// 'beach' reads as a bright, light-based theme; 'ocean' is a deep, dark-based
-// theme, so each maps onto the app's existing light/dark class strategy
-// (Tailwind's `dark` variant) while layering its own wallpaper on top.
+// 'beach' and 'spiderman' read as bright, light-based themes; 'ocean' and
+// 'batman' are deep, dark-based themes, so each maps onto the app's existing
+// light/dark class strategy (Tailwind's `dark` variant) while layering its
+// own wallpaper on top.
 export const THEMES = [
   { value: 'light', label: 'Light Theme', isDarkBase: false, backgroundUrl: null },
   { value: 'dark', label: 'Dark Theme', isDarkBase: true, backgroundUrl: null },
   { value: 'beach', label: 'Beach Theme', isDarkBase: false, backgroundUrl: beachThemeUrl },
-  { value: 'ocean', label: 'Ocean Theme', isDarkBase: true, backgroundUrl: oceanThemeUrl }
+  { value: 'ocean', label: 'Ocean Theme', isDarkBase: true, backgroundUrl: oceanThemeUrl },
+  { value: 'batman', label: 'Batman Theme', isDarkBase: true, backgroundUrl: batmanThemeUrl },
+  { value: 'spiderman', label: 'Spiderman Theme', isDarkBase: false, backgroundUrl: spidermanThemeUrl }
 ];
 
 const VALID_THEMES = new Set(THEMES.map(t => t.value));
