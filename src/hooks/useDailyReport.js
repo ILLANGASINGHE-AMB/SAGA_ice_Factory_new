@@ -416,6 +416,36 @@ export function useDailyReport(selectedDateStr) {
     const totalCreditGivenAmount = creditGivenList.reduce((sum, item) => sum + item.amount, 0);
 
     // 4. Credit Amount Collection / Repayment
+    //
+    // "Remaining Debt" on a settlement row is a point-in-time figure: what was
+    // still owing on that debt *immediately after that payment*. Reading the
+    // debt's live `remaining_amount` printed today's balance against every
+    // historical row instead, so once a debt was cleared the whole column read
+    // LKR 0.00 — including rows where only part of the debt had been paid at
+    // the time (a LKR 5,000 payment against a LKR 32,500 debt still showed
+    // nothing left owing). Replay each debt's settlements in order to recover
+    // the balance each one actually left behind.
+    const settlementsByDebt = new Map();
+    for (const setl of settlements) {
+      const key = Number(setl.debt_id);
+      if (!settlementsByDebt.has(key)) settlementsByDebt.set(key, []);
+      settlementsByDebt.get(key).push(setl);
+    }
+    const balanceAfterSettlement = new Map();
+    for (const [debtId, rows] of settlementsByDebt) {
+      const debt = debts.find(d => Number(d.id) === debtId);
+      let running = debt ? Number(debt.total_amount) || 0 : 0;
+      rows
+        .slice()
+        // Ties on the timestamp fall back to insertion order, so two payments
+        // taken within the same second still replay the way they landed.
+        .sort((a, b) => new Date(a.settlement_date) - new Date(b.settlement_date) || Number(a.id) - Number(b.id))
+        .forEach(row => {
+          running = Math.max(0, running - (Number(row.amount_paid) || 0));
+          balanceAfterSettlement.set(Number(row.id), running);
+        });
+    }
+
     const creditCollectionList = todaysSettlements.map(setl => {
       const cust = setl.customer || customers.find(c => Number(c.id) === Number(setl.customer_id));
       // Match by debt_id (the settlement's actual debt), not customer_id — a
@@ -434,7 +464,7 @@ export function useDailyReport(selectedDateStr) {
         settlementDate: toLocalDateTimeStr(setl.settlement_date),
         debtAmount: matchingDebt ? Number(matchingDebt.total_amount) : 0,
         amountReceived: Number(setl.amount_paid),
-        outstandingAmount: matchingDebt ? Number(matchingDebt.remaining_amount) : 0
+        outstandingAmount: balanceAfterSettlement.get(Number(setl.id)) ?? (matchingDebt ? Number(matchingDebt.remaining_amount) : 0)
       };
     });
     // The list stays complete — an auto-applied row explains a debt reduction
