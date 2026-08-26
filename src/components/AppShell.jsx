@@ -5,6 +5,7 @@ import { useSettings } from '../hooks/useSettings';
 import { useIsMobileLayout } from '../hooks/useIsMobileLayout';
 import { SagaAiDrawer } from './SagaAiDrawer';
 import { GlobalSearchModal } from './GlobalSearchModal';
+import { getStoredTheme, getThemeConfig, applyTheme } from '../utils/theme';
 import {
   LayoutDashboard,
   Package,
@@ -96,27 +97,16 @@ export function AppShell({ children }) {
   };
   
   // Theme & Font Sizing & AI Toggle states
-  const [isDarkMode, setIsDarkMode] = useState(
-    localStorage.getItem('saga_ice_theme') === 'dark' ||
-    (!localStorage.getItem('saga_ice_theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)
-  );
-  
+  const [theme, setTheme] = useState(getStoredTheme);
+
   const [textSize, setTextSize] = useState(
     localStorage.getItem('saga_ice_text_size') || 'medium' // 'small', 'medium', 'large'
   );
 
-  // Apply Theme & Font Sizing
+  // Apply theme (dark/light base class + wallpaper data attribute)
   useEffect(() => {
-    // Apply theme
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('saga_ice_theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('saga_ice_theme', 'light');
-    }
-    window.dispatchEvent(new Event('theme-changed'));
-  }, [isDarkMode]);
+    applyTheme(theme);
+  }, [theme]);
 
   useEffect(() => {
     // Apply text size CSS variable
@@ -132,8 +122,7 @@ export function AppShell({ children }) {
   // Sync settings preferences with settings page changes
   useEffect(() => {
     const handleStorageChange = () => {
-      const savedTheme = localStorage.getItem('saga_ice_theme');
-      if (savedTheme) setIsDarkMode(savedTheme === 'dark');
+      setTheme(getStoredTheme());
 
       const savedTextSize = localStorage.getItem('saga_ice_text_size');
       if (savedTextSize) setTextSize(savedTextSize);
@@ -196,9 +185,22 @@ export function AppShell({ children }) {
     return currentItem ? currentItem.name : 'Sagacious Ice';
   };
 
+  const { isDarkBase, backgroundUrl } = getThemeConfig(theme);
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans transition-colors duration-200">
-      
+
+      {/* Beach/Ocean wallpaper — a fixed 40%-opacity backdrop behind the
+          sidebar/header/main chrome (which stay opaque), visible through the
+          page's own background and the gaps around cards. */}
+      {backgroundUrl && (
+        <div
+          aria-hidden="true"
+          className="fixed inset-0 z-0 pointer-events-none bg-cover bg-center"
+          style={{ backgroundImage: `url(${backgroundUrl})`, opacity: 0.4 }}
+        />
+      )}
+
       {/* Sidebar - Tablet & Desktop only. Phones (portrait or landscape) get the bottom nav instead. */}
       <aside
         className={`${isMobileLayout ? 'hidden' : 'flex'} flex-col ${
@@ -360,11 +362,11 @@ export function AppShell({ children }) {
             </button>
 
             <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
+              onClick={() => setTheme(isDarkBase ? 'light' : 'dark')}
               className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-h-[36px] min-w-[36px] flex items-center justify-center"
-              title="Toggle Light/Dark Mode"
+              title="Toggle Light/Dark Mode (Beach & Ocean themes live in Settings)"
             >
-              {isDarkMode ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} />}
+              {isDarkBase ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} />}
             </button>
 
             {/* User Profile Icon + Popover */}

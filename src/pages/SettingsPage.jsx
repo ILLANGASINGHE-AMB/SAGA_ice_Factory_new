@@ -12,6 +12,7 @@ import { Badge } from '../components/Badge';
 import { supabase } from '../lib/supabase';
 import { logActivity } from '../lib/activityLog';
 import { testGeminiApiKey } from '../services/sagaAiService';
+import { THEMES, getStoredTheme, applyTheme } from '../utils/theme';
 import {
   Building,
   Building2,
@@ -28,8 +29,18 @@ import {
       Plus,
   Edit2,
   X,
-  Users
+  Users,
+  Sun,
+  Moon,
+  Palmtree,
+  Waves
 } from 'lucide-react';
+
+const THEME_ICONS = { light: Sun, dark: Moon, beach: Palmtree, ocean: Waves };
+const THEME_PREVIEWS = {
+  light: 'linear-gradient(135deg,#f8fafc,#e2e8f0)',
+  dark: 'linear-gradient(135deg,#1e293b,#0a0f1d)'
+};
 
 export function SettingsPage() {
   const { settings, isLoading, updateSettings } = useSettings();
@@ -112,7 +123,7 @@ export function SettingsPage() {
   const [saveLoading, setSaveLoading] = useState(false);
 
   // Appearance states (synced with AppShell localStorage triggers)
-  const [isDark, setIsDark] = useState(localStorage.getItem('saga_ice_theme') === 'dark');
+  const [theme, setTheme] = useState(getStoredTheme);
   const [textSize, setTextSize] = useState(localStorage.getItem('saga_ice_text_size') || 'medium');
 
   // Import JSON File states
@@ -127,7 +138,7 @@ export function SettingsPage() {
   // Sync appearance options from external triggers (like the sidebar)
   useEffect(() => {
     const syncSettings = () => {
-      setIsDark(localStorage.getItem('saga_ice_theme') === 'dark');
+      setTheme(getStoredTheme());
       setTextSize(localStorage.getItem('saga_ice_text_size') || 'medium');
     };
     window.addEventListener('theme-changed', syncSettings);
@@ -245,18 +256,12 @@ export function SettingsPage() {
     }
   };
 
-  // Appearance Actions (toggles dark class and dispatches triggers to AppShell)
-  const toggleTheme = (val) => {
-    setIsDark(val);
-    localStorage.setItem('saga_ice_theme', val ? 'dark' : 'light');
-    if (val) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-    // Dispatch custom event to notify AppShell
-    window.dispatchEvent(new Event('theme-changed'));
-    toast.success(`Theme updated to ${val ? 'Dark' : 'Light'} Mode`);
+  // Appearance Actions (toggles dark class + wallpaper and dispatches triggers to AppShell)
+  const selectTheme = (value) => {
+    setTheme(value);
+    applyTheme(value);
+    const label = THEMES.find(t => t.value === value)?.label || value;
+    toast.success(`Theme updated to ${label}`);
   };
 
   const changeTextSize = (size) => {
@@ -525,31 +530,40 @@ export function SettingsPage() {
           {/* Theme selection */}
           <div className="space-y-2">
             <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-              Theme Mode
+              Theme
             </span>
             <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => toggleTheme(false)}
-                className={`py-2.5 text-xs font-semibold rounded-xl border transition ${
-                  !isDark 
-                    ? 'bg-navy-50 dark:bg-navy-950/20 border-navy-500 text-navy-600 dark:text-navy-400' 
-                    : 'border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400'
-                }`}
-              >
-                Light Theme
-              </button>
-              <button
-                type="button"
-                onClick={() => toggleTheme(true)}
-                className={`py-2.5 text-xs font-semibold rounded-xl border transition ${
-                  isDark 
-                    ? 'bg-navy-50 dark:bg-navy-950/20 border-navy-500 text-navy-600 dark:text-navy-400' 
-                    : 'border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400'
-                }`}
-              >
-                Dark Theme
-              </button>
+              {THEMES.map((t) => {
+                const Icon = THEME_ICONS[t.value];
+                const isActive = theme === t.value;
+                return (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => selectTheme(t.value)}
+                    className={`overflow-hidden rounded-xl border text-left transition ${
+                      isActive
+                        ? 'border-navy-500 ring-1 ring-navy-500'
+                        : 'border-slate-200 dark:border-slate-800'
+                    }`}
+                  >
+                    <div
+                      className="h-12 w-full bg-cover bg-center"
+                      style={{ backgroundImage: t.backgroundUrl ? `url(${t.backgroundUrl})` : THEME_PREVIEWS[t.value] }}
+                    />
+                    <div
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold ${
+                        isActive
+                          ? 'bg-navy-50 dark:bg-navy-950/20 text-navy-600 dark:text-navy-400'
+                          : 'text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      <Icon size={13} />
+                      <span>{t.label.replace(' Theme', '')}</span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -565,8 +579,8 @@ export function SettingsPage() {
                   type="button"
                   onClick={() => changeTextSize(size)}
                   className={`py-2.5 text-xs font-semibold capitalize rounded-xl border transition ${
-                    textSize === size 
-                      ? 'bg-navy-50 dark:bg-navy-950/20 border-navy-500 text-navy-600 dark:text-navy-400' 
+                    textSize === size
+                      ? 'bg-navy-50 dark:bg-navy-950/20 border-navy-500 text-navy-600 dark:text-navy-400'
                       : 'border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400'
                   }`}
                 >
@@ -896,31 +910,40 @@ export function SettingsPage() {
           {/* Theme selection */}
           <div className="space-y-2">
             <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-              Theme Mode
+              Theme
             </span>
             <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => toggleTheme(false)}
-                className={`py-2 text-xs font-semibold rounded-lg border transition ${
-                  !isDark 
-                    ? 'bg-navy-50 dark:bg-navy-950/20 border-navy-500 text-navy-600 dark:text-navy-400' 
-                    : 'border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400'
-                }`}
-              >
-                Light Theme
-              </button>
-              <button
-                type="button"
-                onClick={() => toggleTheme(true)}
-                className={`py-2 text-xs font-semibold rounded-lg border transition ${
-                  isDark 
-                    ? 'bg-navy-50 dark:bg-navy-950/20 border-navy-500 text-navy-600 dark:text-navy-400' 
-                    : 'border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400'
-                }`}
-              >
-                Dark Theme
-              </button>
+              {THEMES.map((t) => {
+                const Icon = THEME_ICONS[t.value];
+                const isActive = theme === t.value;
+                return (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => selectTheme(t.value)}
+                    className={`overflow-hidden rounded-lg border text-left transition ${
+                      isActive
+                        ? 'border-navy-500 ring-1 ring-navy-500'
+                        : 'border-slate-200 dark:border-slate-800'
+                    }`}
+                  >
+                    <div
+                      className="h-10 w-full bg-cover bg-center"
+                      style={{ backgroundImage: t.backgroundUrl ? `url(${t.backgroundUrl})` : THEME_PREVIEWS[t.value] }}
+                    />
+                    <div
+                      className={`flex items-center gap-1.5 px-2 py-1.5 text-xs font-semibold ${
+                        isActive
+                          ? 'bg-navy-50 dark:bg-navy-950/20 text-navy-600 dark:text-navy-400'
+                          : 'text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      <Icon size={13} />
+                      <span>{t.label.replace(' Theme', '')}</span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -936,8 +959,8 @@ export function SettingsPage() {
                   type="button"
                   onClick={() => changeTextSize(size)}
                   className={`py-2 text-xs font-semibold capitalize rounded-lg border transition ${
-                    textSize === size 
-                      ? 'bg-navy-50 dark:bg-navy-950/20 border-navy-500 text-navy-600 dark:text-navy-400' 
+                    textSize === size
+                      ? 'bg-navy-50 dark:bg-navy-950/20 border-navy-500 text-navy-600 dark:text-navy-400'
                       : 'border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400'
                   }`}
                 >
