@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { generateBillPDF } from '../utils/pdfGenerator';
+import { toLocalDateTimeStr } from '../utils/date';
 import { 
     Download, 
   Clock, 
@@ -174,8 +175,8 @@ export function PublicBillPage() {
                 <span className="font-bold text-slate-900 dark:text-slate-100">{sale.customer?.name || 'Walk-in Customer'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Invoice Date:</span>
-                <span className="text-slate-700 dark:text-slate-300">{new Date(sale.sale_date).toLocaleDateString()}</span>
+                <span className="text-slate-500">Invoice Date &amp; Time:</span>
+                <span className="text-slate-700 dark:text-slate-300">{toLocalDateTimeStr(sale.sale_date)}</span>
               </div>
               {sale.sale_items?.length > 1 ? (
                 <div className="space-y-1 pt-1">

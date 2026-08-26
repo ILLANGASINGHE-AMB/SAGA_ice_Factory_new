@@ -7,6 +7,7 @@ import { Input, Select } from '../components/FormFields';
 import { Table } from '../components/Table';
 import { Badge } from '../components/Badge';
 import { generateReportPDF } from '../utils/pdfGenerator';
+import { toLocalDateTimeStr } from '../utils/date';
 import { DailyManagerReportView } from '../components/DailyManagerReportView';
 import { FileBarChart2, FileText, Download, Calendar, UserCheck, CreditCard, SlidersHorizontal, ClipboardCheck } from 'lucide-react';
 
@@ -416,7 +417,8 @@ export function ReportsPage() {
             paidAmount: d.paid_amount,
             amountOwed: d.remaining_amount,
             status: d.status,
-            created: new Date(d.created_at).toLocaleDateString()
+            createdAt: d.created_at,
+            created: toLocalDateTimeStr(d.created_at)
           };
         });
       }
@@ -479,7 +481,7 @@ export function ReportsPage() {
     if (activeReport === 'debtors') {
       // Custom format for debtors report table
       const formattedSales = previewData.debtors.map(d => ({
-        sale_date: new Date(),
+        sale_date: d.createdAt,
         sale_code: 'DEBT',
         customerName: d.name,
         cube_type: 'DEBT',
@@ -857,7 +859,7 @@ export function ReportsPage() {
                         { key: 'quantity', label: 'Qty' },
                         { key: 'total_amount', label: 'Amount' },
                         { key: 'payment_type', label: 'Billing' },
-                        { key: 'sale_date', label: 'Date' }
+                        { key: 'sale_date', label: 'Date & Time' }
                       ]}
                       data={previewData.sales}
                       emptyMessage="No sales recorded in period."
@@ -875,7 +877,7 @@ export function ReportsPage() {
                           <td className="px-6 py-2.5 font-mono">{sale.quantity.toLocaleString()}</td>
                           <td className="px-6 py-2.5 font-mono font-semibold">LKR {sale.total_amount.toLocaleString()}</td>
                           <td className="px-6 py-2.5"><Badge type={sale.payment_type} /></td>
-                          <td className="px-6 py-2.5 font-mono text-slate-400">{new Date(sale.sale_date).toLocaleDateString()}</td>
+                          <td className="px-6 py-2.5 font-mono text-slate-400 whitespace-nowrap">{toLocalDateTimeStr(sale.sale_date)}</td>
                         </tr>
                       )}
                     />

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { coalesceRefetch } from '../lib/realtimeRefetch';
-import { todayStr, previousLocalDateStr } from '../utils/date';
+import { todayStr, previousLocalDateStr, toLocalDateTimeStr, toLocalDateTimeStrFrom } from '../utils/date';
 import { computeCashBankBalances } from '../utils/cashBankMath';
 import { logActivity } from '../lib/activityLog';
 
@@ -431,7 +431,7 @@ export function useDailyReport(selectedDateStr) {
         method: setl.is_auto_applied
           ? 'Applied from Cash Order'
           : (PAYMENT_METHOD_LABELS[setl.payment_method] || 'Cash'),
-        settlementDate: setl.settlement_date ? setl.settlement_date.slice(0, 10) : '',
+        settlementDate: toLocalDateTimeStr(setl.settlement_date),
         debtAmount: matchingDebt ? Number(matchingDebt.total_amount) : 0,
         amountReceived: Number(setl.amount_paid),
         outstandingAmount: matchingDebt ? Number(matchingDebt.remaining_amount) : 0
@@ -469,7 +469,7 @@ export function useDailyReport(selectedDateStr) {
         const item = expenseItemById.get(a.expense_item_id);
         const category = item ? expenseCategoryById.get(item.category_id) : null;
         return {
-          date: row?.entry_date || '',
+          date: toLocalDateTimeStrFrom(row?.entry_date, row?.created_at),
           description: row?.description || item?.name || '',
           category: category?.name || 'Uncategorized',
           expenseType: item?.name || 'Other',
@@ -544,7 +544,7 @@ export function useDailyReport(selectedDateStr) {
       .filter(t => isInRange(t.start_datetime))
       .map(t => ({
         tripId: t.trip_code || `SIFT_${String(t.id).padStart(4, '0')}`,
-        date: t.start_datetime ? t.start_datetime.slice(0, 10) : '',
+        date: toLocalDateTimeStr(t.start_datetime),
         description: t.description || t.end_description || '',
         startKm: Number(t.start_odometer) || 0,
         endKm: t.end_odometer !== null && t.end_odometer !== undefined ? Number(t.end_odometer) : null,

@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import { applyPlugin } from 'jspdf-autotable';
+import { toLocalDateTimeStr } from './date';
 
 applyPlugin(jsPDF);
 
@@ -222,7 +223,7 @@ export function generateBillPDF(sale, settings) {
   fieldLine(doc, `Address: ${sale.customer?.address || 'N/A'}`, 14, y0 + 15.5);
 
   fieldLabel(doc, 'Transaction Details', 115, y0);
-  fieldLine(doc, `Date & Time: ${new Date(sale.sale_date).toLocaleString()}`, 115, y0 + 5.5);
+  fieldLine(doc, `Date & Time: ${toLocalDateTimeStr(sale.sale_date)}`, 115, y0 + 5.5);
   fieldLine(doc, `Payment Method: ${sale.payment_type?.toUpperCase()}`, 115, y0 + 10.5);
   fieldLine(doc, `Operator: ${sale.created_by || 'System'}`, 115, y0 + 15.5);
 
@@ -395,7 +396,7 @@ export function generateDebtStatementPDF(debt, settings) {
 
   fieldLabel(doc, 'Debt Details', 115, y0);
   fieldLine(doc, `Sale Reference: ${debt.sale?.sale_code || 'N/A'}`, 115, y0 + 5.5);
-  fieldLine(doc, `Date Issued: ${new Date(debt.created_at).toLocaleDateString()}`, 115, y0 + 10.5);
+  fieldLine(doc, `Date & Time Issued: ${toLocalDateTimeStr(debt.created_at)}`, 115, y0 + 10.5);
   fieldLine(doc, `Total Debt Amount: LKR ${Number(debt.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 115, y0 + 15.5);
   fieldLine(doc, `Status: ${debt.status?.toUpperCase() || 'N/A'}`, 115, y0 + 20.5);
 
@@ -406,7 +407,7 @@ export function generateDebtStatementPDF(debt, settings) {
 
   const tableData = settlements.length
     ? settlements.map(s => [
-        new Date(s.settlement_date).toLocaleDateString(),
+        toLocalDateTimeStr(s.settlement_date),
         `LKR ${Number(s.amount_paid).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
         (s.payment_method || 'cash').replace('_', ' ').toUpperCase(),
         s.notes || '-'
@@ -416,7 +417,7 @@ export function generateDebtStatementPDF(debt, settings) {
   doc.autoTable({
     ...TABLE_STYLE_DEFAULTS,
     startY: y0 + 28,
-    head: [['DATE', 'AMOUNT PAID', 'METHOD', 'NOTE']],
+    head: [['DATE & TIME', 'AMOUNT PAID', 'METHOD', 'NOTE']],
     body: tableData,
     bodyStyles: { fontSize: 8.5, textColor: BODY },
     columnStyles: {
@@ -444,11 +445,11 @@ export function generateDebtStatementPDF(debt, settings) {
     doc.setTextColor(INK[0], INK[1], INK[2]);
     doc.text(`LKR ${Number(debt.paid_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 190, finalY + 8, { align: 'right' });
 
-    fieldLabel(doc, 'Settled Date', 124, finalY + 16);
+    fieldLabel(doc, 'Settled Date & Time', 124, finalY + 16);
     doc.setFont('Helvetica', 'bold');
     doc.setFontSize(9.5);
     doc.setTextColor(INK[0], INK[1], INK[2]);
-    doc.text(lastSettlement ? new Date(lastSettlement.settlement_date).toLocaleDateString() : 'N/A', 190, finalY + 16, { align: 'right' });
+    doc.text(lastSettlement ? toLocalDateTimeStr(lastSettlement.settlement_date) : 'N/A', 190, finalY + 16, { align: 'right' });
 
     fieldLabel(doc, 'Remaining Debt', 124, finalY + 24);
     doc.setFont('Helvetica', 'bold');
@@ -496,7 +497,7 @@ export function generateSettlementReceiptPDF(settlement, settings) {
     : (settlement.sale?.sale_code || 'N/A');
 
   fieldLabel(doc, 'Settlement Details', 115, y0);
-  fieldLine(doc, `Date & Time: ${new Date(settlement.settlement_date).toLocaleString()}`, 115, y0 + 5.5);
+  fieldLine(doc, `Date & Time: ${toLocalDateTimeStr(settlement.settlement_date)}`, 115, y0 + 5.5);
   fieldLine(doc, `Sale Reference: ${saleRefText}`, 115, y0 + 10.5);
   // A cheque or bank transfer names where the money went, so the receipt can
   // be checked against the Cash & Bank ledger entry it created.
@@ -654,9 +655,9 @@ export function generateReportPDF(reportTitle, dateStr, salesData, summaryData, 
   doc.text('TRANSACTION LEDGER', 14, tableStartY - 4);
 
   // Itemized transactions table
-  const tableHeaders = [['DATE', 'SALE REF', 'CUSTOMER', 'TYPE', 'QTY', 'AMOUNT', 'BILLING']];
+  const tableHeaders = [['DATE & TIME', 'SALE REF', 'CUSTOMER', 'TYPE', 'QTY', 'AMOUNT', 'BILLING']];
   const tableRows = salesData.map(sale => [
-    new Date(sale.sale_date).toLocaleDateString(),
+    toLocalDateTimeStr(sale.sale_date),
     sale.sale_code,
     sale.customerName || sale.customer?.name || 'Walk-in',
     (sale.sale_items?.length || 0) > 1 ? 'MIXED' : sale.cube_type === 'manufactured' ? 'MFC' : sale.cube_type === 'resell' ? 'RSC' : 'MIXED',
@@ -673,9 +674,9 @@ export function generateReportPDF(reportTitle, dateStr, salesData, summaryData, 
     headStyles: { ...TABLE_STYLE_DEFAULTS.headStyles, fontSize: 8 },
     bodyStyles: { fontSize: 8, textColor: BODY },
     columnStyles: {
-      0: { width: 22 },
+      0: { width: 30 },
       1: { width: 22, textColor: NAVY, fontStyle: 'bold' },
-      2: { width: 46 },
+      2: { width: 38 },
       3: { halign: 'center', width: 19 },
       4: { halign: 'right', width: 20 },
       5: { halign: 'right', width: 30 },
@@ -864,7 +865,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   doc.autoTable({
     ...TABLE_STYLE_DEFAULTS,
     startY: currentY + 3,
-    head: [[headCell('NO.', 'center'), 'CUSTOMER NAME', 'PAYMENT METHOD', 'SETTLEMENT DATE', headCell('DEBT AMOUNT LKR', 'right'), headCell('PAID DEBT LKR', 'right'), headCell('REMAINING DEBT LKR', 'right')]],
+    head: [[headCell('NO.', 'center'), 'CUSTOMER NAME', 'PAYMENT METHOD', 'SETTLEMENT DATE & TIME', headCell('DEBT AMOUNT LKR', 'right'), headCell('PAID DEBT LKR', 'right'), headCell('REMAINING DEBT LKR', 'right')]],
     body: creditCollectionRows,
     headStyles: { ...TABLE_STYLE_DEFAULTS.headStyles, fontSize: 7.5 },
     bodyStyles: { fontSize: 7.5, textColor: BODY },
@@ -899,7 +900,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   doc.autoTable({
     ...TABLE_STYLE_DEFAULTS,
     startY: currentY + 3,
-    head: [[headCell('NO.', 'center'), 'DATE', 'DESCRIPTION', 'EXPENSE CATEGORY', 'EXPENSE TYPE', headCell('AMOUNT LKR', 'right')]],
+    head: [[headCell('NO.', 'center'), 'DATE & TIME', 'DESCRIPTION', 'EXPENSE CATEGORY', 'EXPENSE TYPE', headCell('AMOUNT LKR', 'right')]],
     body: expRows,
     headStyles: { ...TABLE_STYLE_DEFAULTS.headStyles, fontSize: 7.5 },
     bodyStyles: { fontSize: 7.5, textColor: BODY },
@@ -999,7 +1000,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   doc.autoTable({
     ...TABLE_STYLE_DEFAULTS,
     startY: currentY + 3,
-    head: [[headCell('NO.', 'center'), 'TRIP ID', 'DATE', 'DESCRIPTION', headCell('START KM', 'right'), headCell('END KM', 'right'), headCell('TOTAL DISTANCE', 'right')]],
+    head: [[headCell('NO.', 'center'), 'TRIP ID', 'DATE & TIME', 'DESCRIPTION', headCell('START KM', 'right'), headCell('END KM', 'right'), headCell('TOTAL DISTANCE', 'right')]],
     body: vehRows,
     headStyles: { ...TABLE_STYLE_DEFAULTS.headStyles, fontSize: 7.5 },
     bodyStyles: { fontSize: 7.5, textColor: BODY },
@@ -1022,7 +1023,7 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   doc.text('09. NOTES', 14, currentY);
 
   const notesRows = reportData.notesList.length > 0
-    ? reportData.notesList.map(n => [n.text, n.createdBy, new Date(n.createdAt).toLocaleString()])
+    ? reportData.notesList.map(n => [n.text, n.createdBy, toLocalDateTimeStr(n.createdAt)])
     : [['No notes recorded', '-', '-']];
 
   doc.autoTable({

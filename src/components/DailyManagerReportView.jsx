@@ -443,7 +443,7 @@ export function DailyManagerReportView() {
                       <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px]">
                         <th className="py-2">Customer</th>
                         <th className="py-2">Method</th>
-                        <th className="py-2">Settlement Date</th>
+                        <th className="py-2">Settlement Date &amp; Time</th>
                         <th className="py-2 text-right">Debt Amount</th>
                         <th className="py-2 text-right">Paid</th>
                         <th className="py-2 text-right">Remaining</th>
@@ -497,7 +497,7 @@ export function DailyManagerReportView() {
                     <thead>
                       <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px]">
                         <th className="py-2">No.</th>
-                        <th className="py-2">Date</th>
+                        <th className="py-2">Date &amp; Time</th>
                         <th className="py-2">Description</th>
                         <th className="py-2">Category</th>
                         <th className="py-2">Type</th>
@@ -637,7 +637,7 @@ export function DailyManagerReportView() {
                     <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px]">
                       <th className="py-2">No.</th>
                       <th className="py-2">Trip ID</th>
-                      <th className="py-2">Date</th>
+                      <th className="py-2">Date &amp; Time</th>
                       <th className="py-2">Description</th>
                       <th className="py-2 text-right">Start Km</th>
                       <th className="py-2 text-right">End Km</th>

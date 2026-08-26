@@ -76,3 +76,41 @@ export function isWithinLocalRange(value, from, to) {
   if (to && d > to) return false;
   return true;
 }
+
+/** Local `HH:mm` (24-hour) for a Date/ISO string. Returns '' for missing/invalid input. */
+export function toLocalTimeStr(value) {
+  if (!value) return '';
+  const d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return '';
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * A Date/ISO string as local `YYYY-MM-DD HH:mm` — the format every printed
+ * Date column uses, so a bill, statement or report always says *when* a
+ * transaction happened, not just on which day. Sortable as a plain string,
+ * and unambiguous regardless of the reader's locale (unlike `toLocaleString`,
+ * which flips day/month between machines). Returns '' for missing/invalid input.
+ */
+export function toLocalDateTimeStr(value) {
+  const date = toLocalDateStr(value);
+  return date ? `${date} ${toLocalTimeStr(value)}` : '';
+}
+
+/**
+ * Date-and-time for a record whose event day is a plain `date` column with no
+ * time of day (expense ledger rows, attendance), paired with the `timestamptz`
+ * that records when the row was entered.
+ *
+ * The clock time is only appended when the two agree on the calendar day: for
+ * a same-day entry the recorded time *is* the time the thing happened, but a
+ * backdated row would otherwise borrow an unrelated timestamp, so it keeps
+ * just its date rather than printing a time that never occurred.
+ */
+export function toLocalDateTimeStrFrom(dateOnly, recordedAt) {
+  if (!dateOnly) return '';
+  const day = String(dateOnly).slice(0, 10);
+  const recordedDay = toLocalDateStr(recordedAt);
+  if (!recordedDay || recordedDay !== day) return day;
+  return `${day} ${toLocalTimeStr(recordedAt)}`;
+}
