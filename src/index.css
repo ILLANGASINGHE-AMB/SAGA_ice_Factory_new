@@ -114,6 +114,24 @@ h1, h2, h3, h4, h5, h6 {
   -webkit-backdrop-filter: blur(10px);
 }
 
+/* Liquid Glass theme: heavier blur + saturation boost and a light gradient
+   border/inset highlight so cards and chrome read as curved glass panes
+   floating over the pastel wallpaper, rather than a flat frosted tint. */
+[data-app-theme="liquidglass"] .theme-card {
+  background-color: rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 8px 32px -8px rgba(31, 41, 55, 0.25), inset 0 1px 0 0 rgba(255, 255, 255, 0.5);
+}
+
+[data-app-theme="liquidglass"] .theme-nav {
+  background-color: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
 /* Premium Card Shadows in Dark Mode */
 .dark .card-glow {
   box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);

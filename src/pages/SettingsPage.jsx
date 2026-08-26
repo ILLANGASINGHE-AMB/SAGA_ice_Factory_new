@@ -34,10 +34,11 @@ import {
   Moon,
   Palmtree,
   Waves,
-  Webhook
+  Webhook,
+  Droplets
 } from 'lucide-react';
 
-const THEME_ICONS = { light: Sun, dark: Moon, beach: Palmtree, ocean: Waves, batman: Building2, spiderman: Webhook };
+const THEME_ICONS = { light: Sun, dark: Moon, beach: Palmtree, ocean: Waves, batman: Building2, spiderman: Webhook, liquidglass: Droplets };
 const THEME_PREVIEWS = {
   light: 'linear-gradient(135deg,#f8fafc,#e2e8f0)',
   dark: 'linear-gradient(135deg,#1e293b,#0a0f1d)'

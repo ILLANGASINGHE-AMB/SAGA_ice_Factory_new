@@ -2,6 +2,7 @@ import beachThemeUrl from '../assets/themes/beach-theme.svg';
 import oceanThemeUrl from '../assets/themes/ocean-theme.svg';
 import batmanThemeUrl from '../assets/themes/batman-theme.svg';
 import spidermanThemeUrl from '../assets/themes/spiderman-theme.svg';
+import liquidGlassThemeUrl from '../assets/themes/liquid-glass-theme.svg';
 
 export const THEME_STORAGE_KEY = 'saga_ice_theme';
 
@@ -15,7 +16,8 @@ export const THEMES = [
   { value: 'beach', label: 'Beach Theme', isDarkBase: false, backgroundUrl: beachThemeUrl },
   { value: 'ocean', label: 'Ocean Theme', isDarkBase: true, backgroundUrl: oceanThemeUrl },
   { value: 'batman', label: 'Batman Theme', isDarkBase: true, backgroundUrl: batmanThemeUrl },
-  { value: 'spiderman', label: 'Spiderman Theme', isDarkBase: false, backgroundUrl: spidermanThemeUrl }
+  { value: 'spiderman', label: 'Spiderman Theme', isDarkBase: false, backgroundUrl: spidermanThemeUrl },
+  { value: 'liquidglass', label: 'Liquid Glass Theme', isDarkBase: false, backgroundUrl: liquidGlassThemeUrl }
 ];
 
 const VALID_THEMES = new Set(THEMES.map(t => t.value));
