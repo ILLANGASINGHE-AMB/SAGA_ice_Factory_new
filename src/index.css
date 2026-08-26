@@ -81,18 +81,16 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* Dashboard cards turn semi-transparent + frosted only under the wallpaper
-   themes (Beach/Day City are light-based, Ocean/Night City are dark-based),
-   so the artwork stays visible through the UI. Plain Light/Dark keep the
-   normal opaque card look untouched. */
-[data-app-theme="beach"] .theme-card,
-[data-app-theme="daycity"] .theme-card {
+   themes (Beach is light-based, Ocean is dark-based), so the artwork stays
+   visible through the UI. Plain Light/Dark keep the normal opaque card look
+   untouched. */
+[data-app-theme="beach"] .theme-card {
   background-color: rgba(255, 255, 255, 0.6);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
 
-[data-app-theme="ocean"] .theme-card,
-[data-app-theme="nightcity"] .theme-card {
+[data-app-theme="ocean"] .theme-card {
   background-color: rgba(15, 23, 42, 0.55);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -100,15 +98,13 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Sidebar / header / bottom nav stay readable chrome, so they only let the
    wallpaper show through faintly — much less than the dashboard cards. */
-[data-app-theme="beach"] .theme-nav,
-[data-app-theme="daycity"] .theme-nav {
+[data-app-theme="beach"] .theme-nav {
   background-color: rgba(255, 255, 255, 0.86);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 }
 
-[data-app-theme="ocean"] .theme-nav,
-[data-app-theme="nightcity"] .theme-nav {
+[data-app-theme="ocean"] .theme-nav {
   background-color: rgba(15, 23, 42, 0.82);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);

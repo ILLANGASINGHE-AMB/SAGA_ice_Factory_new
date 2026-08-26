@@ -34,11 +34,10 @@ import {
   Moon,
   Palmtree,
   Waves,
-  Sunrise,
   Droplets
 } from 'lucide-react';
 
-const THEME_ICONS = { light: Sun, dark: Moon, beach: Palmtree, ocean: Waves, nightcity: Building2, daycity: Sunrise, liquidglass: Droplets };
+const THEME_ICONS = { light: Sun, dark: Moon, beach: Palmtree, ocean: Waves, liquidglass: Droplets };
 const THEME_PREVIEWS = {
   light: 'linear-gradient(135deg,#f8fafc,#e2e8f0)',
   dark: 'linear-gradient(135deg,#1e293b,#0a0f1d)'
