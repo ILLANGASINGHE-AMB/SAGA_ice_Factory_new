@@ -205,7 +205,7 @@ export function AppShell({ children }) {
       <aside
         className={`${isMobileLayout ? 'hidden' : 'flex'} flex-col ${
           isSidebarCollapsed ? 'w-20' : 'w-64'
-        } bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 h-full transition-all duration-300 select-none z-30 shrink-0`}
+        } theme-nav bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 h-full transition-all duration-300 select-none z-30 shrink-0`}
       >
         {/* Branding header */}
         <div className={`p-4 ${isSidebarCollapsed ? 'px-3 justify-center' : 'px-5'} border-b border-slate-200 dark:border-slate-800 flex items-center justify-between`}>
@@ -295,7 +295,7 @@ export function AppShell({ children }) {
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         
         {/* Top Header Bar - Optimized Compact Height for Landscape */}
-        <header className="flex items-center justify-between h-13 sm:h-14 md:h-14 px-4 sm:px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 z-20">
+        <header className="theme-nav flex items-center justify-between h-13 sm:h-14 md:h-14 px-4 sm:px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 z-20">
           <div className="flex items-center space-x-3">
             {/* Mobile Header Branding (phones only, portrait or landscape) */}
             {isMobileLayout ? (
@@ -408,7 +408,7 @@ export function AppShell({ children }) {
       </div>
 
       {/* Bottom Nav Bar - Phones only (portrait and landscape both get the functional bottom nav) */}
-      <nav className={`${isMobileLayout ? 'flex' : 'hidden'} fixed bottom-0 left-0 right-0 h-14 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 items-center justify-around z-40 px-1 shadow-lg`}>
+      <nav className={`${isMobileLayout ? 'flex' : 'hidden'} theme-nav fixed bottom-0 left-0 right-0 h-14 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 items-center justify-around z-40 px-1 shadow-lg`}>
         {visibleNavItems.slice(0, 4).map((item) => (
           <NavLink
             key={item.path}
