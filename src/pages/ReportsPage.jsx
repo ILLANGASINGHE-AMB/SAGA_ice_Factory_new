@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useSettings } from '../hooks/useSettings';
 import { useToast } from '../components/Toast';
@@ -42,8 +43,21 @@ const REPORT_TYPES = [
 export function ReportsPage() {
   const { settings } = useSettings();
   const toast = useToast();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const [activeReport, setActiveReport] = useState('weekly'); // 'weekly', 'monthly', 'full', 'debtors', 'customers'
+
+  // Allow navigating here from the Dashboard's "Daily Manager Report" button
+  // and land straight on that report tab.
+  useEffect(() => {
+    if (location.state?.openDailyManagerReport) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveReport('daily_manager');
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   // Date parameter states
   const [selectedWeek, setSelectedWeek] = useState(() => getISOWeekString(new Date()));

@@ -20,7 +20,8 @@ import {
   Landmark,
   CreditCard,
   ShoppingCart,
-  HandCoins
+  HandCoins,
+  ClipboardCheck
 } from 'lucide-react';
 
 export function DashboardPage() {
@@ -37,6 +38,10 @@ export function DashboardPage() {
   // without hunting the customer down in the ledger first.
   const handleSettleDebts = () => {
     navigate('/debts', { state: { openSettleDebt: true } });
+  };
+
+  const handleOpenDailyManagerReport = () => {
+    navigate('/reports', { state: { openDailyManagerReport: true } });
   };
 
   // Color constants for charts
@@ -143,6 +148,16 @@ export function DashboardPage() {
 
       {/* Quick Action Triggers */}
       <div className="flex justify-end gap-2.5">
+        {isAdmin && (
+          <Button
+            variant="primary"
+            onClick={handleOpenDailyManagerReport}
+            className="flex items-center justify-center space-x-2 rounded-xl bg-violet-600 hover:bg-violet-700 active:bg-violet-800 shadow-violet-200 focus:ring-violet-500"
+          >
+            <ClipboardCheck size={16} />
+            <span>Daily Manager Report</span>
+          </Button>
+        )}
         <Button
           variant="primary"
           onClick={handleSettleDebts}
