@@ -1,26 +1,31 @@
 import beachThemeUrl from '../assets/themes/beach-theme.svg';
 import oceanThemeUrl from '../assets/themes/ocean-theme.svg';
-import batmanThemeUrl from '../assets/themes/batman-theme.svg';
-import spidermanThemeUrl from '../assets/themes/spiderman-theme.svg';
+import nightCityThemeUrl from '../assets/themes/night-city-theme.svg';
+import dayCityThemeUrl from '../assets/themes/day-city-theme.svg';
 import liquidGlassThemeUrl from '../assets/themes/liquid-glass-theme.svg';
 
 export const THEME_STORAGE_KEY = 'saga_ice_theme';
 
-// 'beach' and 'spiderman' read as bright, light-based themes; 'ocean' and
-// 'batman' are deep, dark-based themes, so each maps onto the app's existing
-// light/dark class strategy (Tailwind's `dark` variant) while layering its
-// own wallpaper on top.
+// 'beach' and 'daycity' read as bright, light-based themes; 'ocean' and
+// 'nightcity' are deep, dark-based themes, so each maps onto the app's
+// existing light/dark class strategy (Tailwind's `dark` variant) while
+// layering its own wallpaper on top.
 export const THEMES = [
   { value: 'light', label: 'Light Theme', isDarkBase: false, backgroundUrl: null },
   { value: 'dark', label: 'Dark Theme', isDarkBase: true, backgroundUrl: null },
   { value: 'beach', label: 'Beach Theme', isDarkBase: false, backgroundUrl: beachThemeUrl },
   { value: 'ocean', label: 'Ocean Theme', isDarkBase: true, backgroundUrl: oceanThemeUrl },
-  { value: 'batman', label: 'Batman Theme', isDarkBase: true, backgroundUrl: batmanThemeUrl },
-  { value: 'spiderman', label: 'Spiderman Theme', isDarkBase: false, backgroundUrl: spidermanThemeUrl },
+  { value: 'nightcity', label: 'Night City Theme', isDarkBase: true, backgroundUrl: nightCityThemeUrl },
+  { value: 'daycity', label: 'Day City Theme', isDarkBase: false, backgroundUrl: dayCityThemeUrl },
   { value: 'liquidglass', label: 'Liquid Glass Theme', isDarkBase: false, backgroundUrl: liquidGlassThemeUrl }
 ];
 
 const VALID_THEMES = new Set(THEMES.map(t => t.value));
+
+// Previously shipped as 'batman'/'spiderman' before the rename; kept so
+// anyone who already had one of those saved doesn't silently drop back
+// to their system default.
+const LEGACY_THEME_ALIASES = { batman: 'nightcity', spiderman: 'daycity' };
 
 export function getThemeConfig(value) {
   return THEMES.find(t => t.value === value) || THEMES[0];
@@ -28,7 +33,8 @@ export function getThemeConfig(value) {
 
 export function getStoredTheme() {
   const saved = localStorage.getItem(THEME_STORAGE_KEY);
-  if (VALID_THEMES.has(saved)) return saved;
+  const resolved = LEGACY_THEME_ALIASES[saved] || saved;
+  if (VALID_THEMES.has(resolved)) return resolved;
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
