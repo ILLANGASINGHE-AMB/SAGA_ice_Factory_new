@@ -67,7 +67,6 @@ export function ExpenseCashBookGrid({
       id: r.id,
       entry_date: r.entry_date,
       description: r.description,
-      payment_source: r.payment_source || 'cash',
       amounts: Object.fromEntries(r.amounts.entries()),
       _isNew: false
     })));
@@ -77,7 +76,7 @@ export function ExpenseCashBookGrid({
 
   const handleAddRow = () => {
     const id = nextTempId();
-    const draft = { id, entry_date: todayInput(), description: '', payment_source: 'cash', amounts: {}, _isNew: true };
+    const draft = { id, entry_date: todayInput(), description: '', amounts: {}, _isNew: true };
     setLocalRows(prev => [draft, ...prev]);
     setEditingIds(prev => new Set(prev).add(id));
   };
@@ -146,7 +145,6 @@ export function ExpenseCashBookGrid({
           id: row.id,
           entry_date: row.entry_date,
           description: row.description,
-          payment_source: row.payment_source || 'cash',
           amounts: row.amounts
         });
         savedIds.push(row.id);
@@ -357,34 +355,17 @@ export function ExpenseCashBookGrid({
                     </td>
                     <td className={`${stickyCellBase} left-28 border-r border-slate-100 dark:border-slate-800 whitespace-normal`}>
                       {isEditing ? (
-                        <div className="space-y-1.5">
-                          <input
-                            type="text"
-                            className={inputBase}
-                            placeholder="Description"
-                            value={row.description || ''}
-                            onChange={(e) => handleFieldChange(row.id, 'description', e.target.value)}
-                          />
-                          {/* Which store of value this money left. Expenses
-                              now reduce Cash Balance or Bank Balance
-                              accordingly — before this they reduced neither. */}
-                          <select
-                            className={inputBase}
-                            value={row.payment_source || 'cash'}
-                            onChange={(e) => handleFieldChange(row.id, 'payment_source', e.target.value)}
-                            title="Paid from"
-                          >
-                            <option value="cash">Paid from Cash</option>
-                            <option value="bank">Paid from Bank</option>
-                          </select>
-                        </div>
+                        <input
+                          type="text"
+                          className={inputBase}
+                          placeholder="Description"
+                          value={row.description || ''}
+                          onChange={(e) => handleFieldChange(row.id, 'description', e.target.value)}
+                        />
                       ) : (
                         <div className="flex items-center justify-between gap-1.5">
                           <span className="font-medium text-slate-800 dark:text-slate-200 truncate">
                             {row.description || '—'}
-                            <span className="ml-1.5 text-[10px] uppercase font-semibold text-slate-400">
-                              {row.payment_source === 'bank' ? 'Bank' : 'Cash'}
-                            </span>
                           </span>
                           <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                             <button

@@ -190,8 +190,10 @@ export function useExpenses() {
     if (e1 || e2) throw new Error("Failed to reorder expenses");
   };
 
-  // Saves one Cash Book row: the Date/Description/payment-source row, then
-  // every cell amount for it. `amounts` is { [expense_item_id]: value }.
+  // Saves one Cash Book row: the Date/Description row, then
+  // every cell amount for it. Expenses always leave Cash, so every row is
+  // written as payment_source 'cash' — editing a legacy 'bank' row normalises
+  // it too. `amounts` is { [expense_item_id]: value }.
   //
   // The cells go in as ONE array upsert rather than a sequential loop. The
   // loop threw on the first cell failure, after the ledger row had already
@@ -199,9 +201,8 @@ export function useExpenses() {
   // the retry took the "new row" branch again and inserted a SECOND ledger
   // row, each carrying whichever cells happened to land. Every retry added
   // another duplicate, and the grand total counted them all.
-  const saveLedgerRow = async ({ id, entry_date, description, payment_source = 'cash', amounts: rowAmounts, created_by = 'Admin' }) => {
+  const saveLedgerRow = async ({ id, entry_date, description, amounts: rowAmounts, created_by = 'Admin' }) => {
     if (!entry_date) throw new Error("Date is required");
-    if (!['cash', 'bank'].includes(payment_source)) throw new Error("Paid From must be Cash or Bank");
 
     let rowId = id;
     const isNew = !id || String(id).startsWith('temp-');
@@ -209,7 +210,7 @@ export function useExpenses() {
     if (isNew) {
       const { data: inserted, error: insertErr } = await supabase
         .from('expense_ledger_rows')
-        .insert([{ entry_date, description: description || '', payment_source, created_by }])
+        .insert([{ entry_date, description: description || '', payment_source: 'cash', created_by }])
         .select('*')
         .single();
       if (insertErr) throw new Error(insertErr.message || "Failed to save row");
@@ -217,7 +218,7 @@ export function useExpenses() {
     } else {
       const { error: updateErr } = await supabase
         .from('expense_ledger_rows')
-        .update({ entry_date, description: description || '', payment_source })
+        .update({ entry_date, description: description || '', payment_source: 'cash' })
         .eq('id', id);
       if (updateErr) throw new Error(updateErr.message || "Failed to save row");
     }

@@ -95,7 +95,7 @@ export function GlobalSearchModal({ isOpen, onClose }) {
           // (20260821140000). This query used to 404 on every open and render
           // the Expenses section permanently empty.
           supabase.from('expense_amounts')
-            .select('id, amount, expense_item:expense_items(name, expense_code, category:expense_categories(name)), ledger_row:expense_ledger_rows(entry_date, description, payment_source)')
+            .select('id, amount, expense_item:expense_items(name, expense_code, category:expense_categories(name)), ledger_row:expense_ledger_rows(entry_date, description)')
             .gt('amount', 0)
             .limit(200),
           supabase.from('notes').select('*')
@@ -170,7 +170,7 @@ export function GlobalSearchModal({ isOpen, onClose }) {
             type: 'Expense',
             icon: <Receipt size={16} className="text-orange-500" />,
             title: `${code || 'Expense'} — ${description || itemName || 'Cash Book entry'}`,
-            subtitle: `${categoryName || 'Uncategorized'} • LKR ${Number(a.amount || 0).toLocaleString()} • ${a.ledger_row?.entry_date || ''} (${a.ledger_row?.payment_source === 'bank' ? 'Bank' : 'Cash'})`,
+            subtitle: `${categoryName || 'Uncategorized'} • LKR ${Number(a.amount || 0).toLocaleString()} • ${a.ledger_row?.entry_date || ''}`,
             path: '/expenses'
           });
         });
