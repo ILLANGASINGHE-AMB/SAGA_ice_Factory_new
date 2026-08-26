@@ -181,7 +181,7 @@ export function DashboardPage() {
         {cardItems.map((card, idx) => (
           <div 
             key={idx} 
-            className="p-3.5 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 shadow-xs dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] backdrop-blur-md flex items-center space-x-3 hover:-translate-y-0.5 transition-all duration-200"
+            className="theme-card p-3.5 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 shadow-xs dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] backdrop-blur-md flex items-center space-x-3 hover:-translate-y-0.5 transition-all duration-200"
           >
             <div className={`p-2.5 rounded-xl ${card.bg.split(' ')[0]} ${card.bg.split(' ')[1]} shrink-0`}>
               {card.icon}
@@ -202,7 +202,7 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 landscape:grid-cols-3 gap-4 sm:gap-5">
         
         {/* Monthly Sales & Production Chart */}
-        <div className="bg-white dark:bg-slate-900/90 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] backdrop-blur-md lg:col-span-2 landscape:col-span-2 space-y-3">
+        <div className="theme-card bg-white dark:bg-slate-900/90 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] backdrop-blur-md lg:col-span-2 landscape:col-span-2 space-y-3">
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
             <h3 className="text-xs sm:text-sm font-bold font-heading text-slate-800 dark:text-slate-100">
               Monthly Cube Production Sales
@@ -256,7 +256,7 @@ export function DashboardPage() {
         </div>
 
         {/* Debt vs Cash sales (Pie Chart) */}
-        <div className="bg-white dark:bg-slate-900/90 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] backdrop-blur-md space-y-3 flex flex-col justify-between">
+        <div className="theme-card bg-white dark:bg-slate-900/90 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] backdrop-blur-md space-y-3 flex flex-col justify-between">
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
             <h3 className="text-xs sm:text-sm font-bold font-heading text-slate-800 dark:text-slate-100">
               Sales Distribution (Monthly)
@@ -320,7 +320,7 @@ export function DashboardPage() {
           days: what the factory manufactured (MFC) versus what it bought in
           (RSC). This is intake, so sales deductions and manual removals are
           deliberately excluded. */}
-      <div className="bg-white dark:bg-slate-900/90 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] backdrop-blur-md">
+      <div className="theme-card bg-white dark:bg-slate-900/90 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] backdrop-blur-md">
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 mb-3">
           <h3 className="text-xs sm:text-sm font-bold font-heading text-slate-800 dark:text-slate-100">
             Production & Purchase Trends
@@ -373,7 +373,7 @@ export function DashboardPage() {
       {/* Monthly Revenue Timeline — takings, so administrators only (same
           rule as the revenue summary cards above). */}
       {isAdmin && (
-      <div className="bg-white dark:bg-slate-900/90 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] backdrop-blur-md">
+      <div className="theme-card bg-white dark:bg-slate-900/90 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] backdrop-blur-md">
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 mb-3">
           <h3 className="text-xs sm:text-sm font-bold font-heading text-slate-800 dark:text-slate-100">
             Monthly Revenue Trend (Daily)
@@ -404,7 +404,7 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 xl:grid-cols-2 landscape:grid-cols-2 gap-4 sm:gap-5">
         
         {/* Recent Sales Table */}
-        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+        <div className="theme-card bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs sm:text-sm font-bold font-heading text-slate-800 dark:text-slate-100">
               Recent Cube Orders
@@ -439,7 +439,7 @@ export function DashboardPage() {
         </div>
 
         {/* Recent Debts Table */}
-        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+        <div className="theme-card bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs sm:text-sm font-bold font-heading text-slate-800 dark:text-slate-100">
               Outstanding Debt Log
@@ -466,7 +466,7 @@ export function DashboardPage() {
         </div>
 
         {/* Recent Settlements Table */}
-        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3 lg:col-span-2 landscape:col-span-2">
+        <div className="theme-card bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3 lg:col-span-2 landscape:col-span-2">
           <div className="flex items-center justify-between">
             <h3 className="text-xs sm:text-sm font-bold font-heading text-slate-800 dark:text-slate-100">
               Recent Debt Settlements
