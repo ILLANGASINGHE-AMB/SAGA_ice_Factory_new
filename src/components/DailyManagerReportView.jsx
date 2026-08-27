@@ -309,18 +309,6 @@ export function DailyManagerReportView() {
                   </p>
                 </div>
 
-                {/* Debt written down by cash orders paying off old balances.
-                    A real reduction, but not money collected — so it sits
-                    outside Total Income rather than inside it. */}
-                {reportData.incomeDetails.debtOffsetByCashOrders > 0 && (
-                  <div className="p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/60 dark:border-slate-700/60" title="Old debt cleared by cash orders — already counted as Cash Sales, so not added to Total Income">
-                    <span className="text-[10px] text-slate-500 font-semibold uppercase block truncate">Debt Offset (Not Income)</span>
-                    <p className="font-bold text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-0.5 truncate">
-                      LKR {reportData.incomeDetails.debtOffsetByCashOrders.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                )}
-
                 <div className="p-2.5 bg-amber-50/50 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-900/50" title="From Cash & Bank Section 01 — Received by Head Office + Other Receives">
                   <span className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold uppercase block truncate">Other Receipts</span>
                   <p className="font-bold text-xs sm:text-sm text-amber-600 dark:text-amber-400 mt-0.5 truncate">

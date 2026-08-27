@@ -370,13 +370,9 @@ export function useDailyReport(selectedDateStr) {
     // settlements the system applied automatically when a cash order paid down
     // the customer's existing debt: that cash is already in cashSalesAmount as
     // the sale, and adding it again overstated Total Income by the offset.
-    const autoAppliedSettlements = todaysSettlements.filter(setl => setl.is_auto_applied);
     const collectedSettlements = todaysSettlements.filter(setl => !setl.is_auto_applied);
 
     const creditAmountReceived = collectedSettlements.reduce((sum, setl) => sum + (Number(setl.amount_paid) || 0), 0);
-    // Debt genuinely written down by cash orders in range — a real reduction,
-    // just not a collection. Reported separately rather than folded into income.
-    const debtOffsetByCashOrders = autoAppliedSettlements.reduce((sum, setl) => sum + (Number(setl.amount_paid) || 0), 0);
 
     // Other Receipts used to be a manager-typed number. Cash & Bank Section 01
     // (Other Cash Receives) already records exactly this money — both
@@ -622,7 +618,6 @@ export function useDailyReport(selectedDateStr) {
         cashSalesAmount,
         creditSalesAmount,
         creditAmountReceived,
-        debtOffsetByCashOrders,
         otherReceipts,
         // Broken out so the report can show where the receipts came from,
         // matching the two buttons on Cash & Bank Section 01.
