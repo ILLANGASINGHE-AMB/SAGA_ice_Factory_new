@@ -1,134 +1,55 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice">
-  <defs>
-    <linearGradient id="beachSky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#7ec8e3"/>
-      <stop offset="55%" stop-color="#bfe6f0"/>
-      <stop offset="100%" stop-color="#fdf3d3"/>
-    </linearGradient>
-    <linearGradient id="beachSea" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#1a8fa3"/>
-      <stop offset="45%" stop-color="#12708a"/>
-      <stop offset="100%" stop-color="#0b4f66"/>
-    </linearGradient>
-    <linearGradient id="beachSand" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#f2dfa8"/>
-      <stop offset="100%" stop-color="#e3c581"/>
-    </linearGradient>
-  </defs>
-
-  <rect x="0" y="0" width="1200" height="440" fill="url(#beachSky)"/>
-
-  <circle cx="1010" cy="130" r="95" fill="#ffe9a8" opacity="0.55"/>
-  <circle cx="1010" cy="130" r="62" fill="#ffd166"/>
-
-  <g fill="#ffffff" opacity="0.75">
-    <ellipse cx="230" cy="120" rx="70" ry="26"/>
-    <ellipse cx="285" cy="110" rx="55" ry="22"/>
-    <ellipse cx="180" cy="112" rx="45" ry="18"/>
-    <ellipse cx="640" cy="90" rx="60" ry="20"/>
-    <ellipse cx="690" cy="82" rx="42" ry="16"/>
-  </g>
-
-  <rect x="0" y="400" width="1200" height="300" fill="url(#beachSea)"/>
-
-  <g stroke="#ffffff" stroke-width="3" fill="none" opacity="0.28" stroke-linecap="round">
-    <path d="M40,450 Q160,435 280,450 T520,450 T760,450 T1000,450 T1200,450"/>
-    <path d="M0,520 Q140,502 280,520 T560,520 T840,520 T1120,520"/>
-    <path d="M20,600 Q160,580 300,600 T580,600 T860,600 T1140,600"/>
-    <path d="M0,660 Q150,644 300,660 T600,660 T900,660 T1200,660"/>
-  </g>
-
-  <rect x="0" y="680" width="1200" height="120" fill="url(#beachSand)"/>
-  <g fill="#d9b56d" opacity="0.5">
-    <ellipse cx="150" cy="720" rx="10" ry="4"/>
-    <ellipse cx="410" cy="745" rx="8" ry="3"/>
-    <ellipse cx="700" cy="715" rx="11" ry="4"/>
-    <ellipse cx="960" cy="750" rx="9" ry="3"/>
-    <ellipse cx="1100" cy="720" rx="7" ry="3"/>
-  </g>
-
-  <g id="palm-left" transform="translate(110,0)">
-    <path d="M20,800 C10,660 40,560 78,505" stroke="#7a4a26" stroke-width="20" fill="none" stroke-linecap="round"/>
-    <g fill="#2f7d4f">
-      <path d="M78,505 C40,470 -10,470 -50,495 C10,500 50,505 78,515 Z"/>
-      <path d="M78,505 C50,455 20,420 -20,405 C10,450 40,485 78,515 Z"/>
-      <path d="M78,505 C90,450 130,420 175,412 C140,455 105,490 78,515 Z"/>
-      <path d="M78,505 C110,470 160,465 200,485 C160,495 120,505 78,515 Z"/>
-      <path d="M78,505 C68,455 78,410 100,375 C112,420 105,470 78,515 Z"/>
-    </g>
-    <g fill="#8a5a2b">
-      <ellipse cx="66" cy="500" rx="9" ry="7"/>
-      <ellipse cx="82" cy="512" rx="8" ry="6"/>
-    </g>
-  </g>
-
-  <g id="palm-right" transform="translate(1050,0) scale(-1,1)">
-    <path d="M20,800 C10,650 45,545 85,495" stroke="#7a4a26" stroke-width="18" fill="none" stroke-linecap="round"/>
-    <g fill="#37905c">
-      <path d="M85,495 C48,460 0,460 -38,485 C15,492 52,497 85,507 Z"/>
-      <path d="M85,495 C58,448 28,415 -12,398 C18,442 48,478 85,507 Z"/>
-      <path d="M85,495 C98,440 138,410 182,402 C146,446 112,482 85,507 Z"/>
-      <path d="M85,495 C118,460 166,455 205,475 C166,486 126,495 85,507 Z"/>
-    </g>
-  </g>
-
-  <g id="turtle-template">
-  </g>
-
-  <g transform="translate(300,540) rotate(-8) scale(1.15)">
-    <g fill="#1f5e42">
-      <ellipse cx="-24" cy="30" rx="15" ry="6" transform="rotate(18 -24 30)"/>
-      <ellipse cx="24" cy="34" rx="13" ry="6" transform="rotate(-14 24 34)"/>
-      <ellipse cx="-12" cy="-28" rx="18" ry="7" transform="rotate(-24 -12 -28)"/>
-      <ellipse cx="26" cy="-24" rx="18" ry="7" transform="rotate(22 26 -24)"/>
-    </g>
-    <ellipse cx="0" cy="0" rx="42" ry="27" fill="#2f8459"/>
-    <g stroke="#1c4e35" stroke-width="2" fill="none" opacity="0.8">
-      <path d="M-20,-12 L0,-18 L20,-12"/>
-      <path d="M-26,4 L0,-2 L26,4"/>
-      <path d="M-18,18 L0,10 L18,18"/>
-      <path d="M0,-18 L0,10"/>
-    </g>
-    <ellipse cx="48" cy="-2" rx="13" ry="9" fill="#3a9968"/>
-    <circle cx="53" cy="-4" r="2" fill="#0b2a1c"/>
-    <path d="M-42,0 L-54,-6 L-54,6 Z" fill="#2f8459"/>
-  </g>
-
-  <g transform="translate(660,610) rotate(12) scale(0.85)">
-    <g fill="#1f5e42">
-      <ellipse cx="-24" cy="30" rx="15" ry="6" transform="rotate(18 -24 30)"/>
-      <ellipse cx="24" cy="34" rx="13" ry="6" transform="rotate(-14 24 34)"/>
-      <ellipse cx="-12" cy="-28" rx="18" ry="7" transform="rotate(-24 -12 -28)"/>
-      <ellipse cx="26" cy="-24" rx="18" ry="7" transform="rotate(22 26 -24)"/>
-    </g>
-    <ellipse cx="0" cy="0" rx="42" ry="27" fill="#2f8459"/>
-    <g stroke="#1c4e35" stroke-width="2" fill="none" opacity="0.8">
-      <path d="M-20,-12 L0,-18 L20,-12"/>
-      <path d="M-26,4 L0,-2 L26,4"/>
-      <path d="M-18,18 L0,10 L18,18"/>
-      <path d="M0,-18 L0,10"/>
-    </g>
-    <ellipse cx="48" cy="-2" rx="13" ry="9" fill="#3a9968"/>
-    <circle cx="53" cy="-4" r="2" fill="#0b2a1c"/>
-    <path d="M-42,0 L-54,-6 L-54,6 Z" fill="#2f8459"/>
-  </g>
-
-  <g transform="translate(970,485) rotate(-4) scale(1.3)">
-    <g fill="#1f5e42">
-      <ellipse cx="-24" cy="30" rx="15" ry="6" transform="rotate(18 -24 30)"/>
-      <ellipse cx="24" cy="34" rx="13" ry="6" transform="rotate(-14 24 34)"/>
-      <ellipse cx="-12" cy="-28" rx="18" ry="7" transform="rotate(-24 -12 -28)"/>
-      <ellipse cx="26" cy="-24" rx="18" ry="7" transform="rotate(22 26 -24)"/>
-    </g>
-    <ellipse cx="0" cy="0" rx="42" ry="27" fill="#2f8459"/>
-    <g stroke="#1c4e35" stroke-width="2" fill="none" opacity="0.8">
-      <path d="M-20,-12 L0,-18 L20,-12"/>
-      <path d="M-26,4 L0,-2 L26,4"/>
-      <path d="M-18,18 L0,10 L18,18"/>
-      <path d="M0,-18 L0,10"/>
-    </g>
-    <ellipse cx="48" cy="-2" rx="13" ry="9" fill="#3a9968"/>
-    <circle cx="53" cy="-4" r="2" fill="#0b2a1c"/>
-    <path d="M-42,0 L-54,-6 L-54,6 Z" fill="#2f8459"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 1024">
+<defs>
+ <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#1598d0"/><stop offset="1" stop-color="#8be7f0"/></linearGradient>
+ <linearGradient id="sea" x2="0" y2="1"><stop stop-color="#079bc4"/><stop offset="1" stop-color="#48d8d6"/></linearGradient>
+ <linearGradient id="sand" x2="0" y2="1"><stop stop-color="#f5c76b"/><stop offset="1" stop-color="#ffe6a0"/></linearGradient>
+ <linearGradient id="hill" x2="1" y2="1"><stop stop-color="#174f48"/><stop offset="1" stop-color="#5b9b4b"/></linearGradient>
+</defs>
+<rect width="1536" height="1024" fill="url(#sky)"/>
+<!-- clouds -->
+<g fill="#fff" opacity=".9">
+ <path d="M0 390q35-55 78-15q24-75 86-8q54-38 91 20q53-13 79 30H0z"/>
+ <path d="M675 410q38-28 70-4q25-58 73-7q43-26 76 11q40-13 72 17H675z"/>
+ <path d="M1190 365q45-25 81 2q31-52 78-7q39-27 75 12q39-10 77 18h-311z"/>
+</g>
+<!-- distant land -->
+<path d="M0 510q100-120 250-35q135 76 300 132l180 32H0z" fill="url(#hill)"/>
+<path d="M0 570q145-75 285 0q105 55 240 70H0z" fill="#286c56"/>
+<!-- sea -->
+<path d="M0 645q250-28 500 0q300 32 1036 0v379H0z" fill="url(#sea)"/>
+<path d="M0 675q300-28 620 8t916 0v35q-350 30-720-4t-816 10z" fill="#0b9fc1" opacity=".55"/>
+<path d="M450 745q250-22 510 8t576 2v22q-300 22-590-4t-496 5z" fill="#73e1df" opacity=".65"/>
+<path d="M710 850q250-18 470 8t356 0v18q-220 18-460-2t-366 3z" fill="#a0ece5" opacity=".55"/>
+<!-- beach -->
+<path d="M0 650q180-15 350 15q80 15 135 67q75 70 205 112q180 115 846 180H0z" fill="url(#sand)"/>
+<!-- surf -->
+<path d="M175 674q90-26 183-4q-77 5-142 25q-54 17-84 46q55-26 119-24q-76 25-125 66q65-22 141-9q-91 21-145 61q88-26 177-3q-86 11-150 55q115-20 214 15q-108-2-194 31q210-5 335 51q-185-23-347-2q92-63 135-124q-57-38-117-53q60-43 107-59q-54-26-107-24z" fill="#fff" opacity=".95"/>
+<!-- foreground rocks -->
+<g fill="#8c6336"><path d="M70 685l50-52 88 66-101 26z"/><path d="M150 706l67-49 69 57-110 25z"/></g>
+<!-- palm trunk -->
+<path d="M45 760q45-220 116-500l34 10q-46 290-65 530z" fill="#714323"/>
+<path d="M66 760q45-250 95-470l17 6q-40 270-50 490z" fill="#a96a36" opacity=".7"/>
+<!-- palm crown -->
+<g fill="#176347">
+ <path d="M165 270Q45 155 18 62q116 53 172 151z"/>
+ <path d="M173 270Q140 110 183 12q58 110 25 242z"/>
+ <path d="M180 270Q255 105 405 83q-92 94-211 188z"/>
+ <path d="M180 282q150-105 300-60q-112 74-266 96z"/>
+ <path d="M170 278Q65 230 0 265q80 75 190 42z"/>
+ <path d="M170 278Q68 315 15 408q109-27 184-109z"/>
+</g>
+<g fill="#4f9b3f" opacity=".9">
+ <path d="M177 267q-10-140 28-219q35 116 5 220z"/>
+ <path d="M190 276q92-100 205-128q-91 87-190 157z"/>
+ <path d="M172 283Q84 235 18 246q76 65 170 62z"/>
+</g>
+<!-- foreground foliage -->
+<g fill="#245f35">
+ <path d="M0 1024q45-135 125-198q-8 92 4 198z"/><path d="M20 1024q80-145 171-171q-54 85-68 171z"/>
+ <path d="M115 1024q88-151 183-165q-53 93-70 165z"/><path d="M245 1024q30-115 111-157q-5 83 15 157z"/>
+</g>
+<!-- subtle sand marks -->
+<g fill="#d6a95c" opacity=".45">
+ <ellipse cx="380" cy="895" rx="50" ry="9"/><ellipse cx="535" cy="955" rx="70" ry="10"/><ellipse cx="290" cy="830" rx="34" ry="7"/>
+</g>
 </svg>

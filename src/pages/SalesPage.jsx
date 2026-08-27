@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSales } from '../hooks/useSales';
 import { useInventory } from '../hooks/useInventory';
@@ -50,6 +51,14 @@ export function SalesPage() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [step, setStep] = useState(1);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // The customer droplist is rendered through a portal on document.body so it
+  // is not clipped by the modal's own scrollport — the registry is long and
+  // the list is meant to run past the bottom of the New Order window. That
+  // means its position has to be measured from the input rather than
+  // inherited, and re-measured whenever the page moves under it.
+  const customerSearchRef = useRef(null);
+  const [dropdownBox, setDropdownBox] = useState(null);
 
   // Form Fields State
   const [paymentType, setPaymentType] = useState('cash'); // 'cash' | 'debt'
@@ -206,6 +215,37 @@ export function SalesPage() {
       c.contact_number?.includes(q)
     );
   }, [customers, customerSearchQuery]);
+
+  // Keep the portalled droplist glued to the search input.
+  const isCustomerDropdownOpen = customerFieldFocused && !customerId;
+
+  const measureCustomerDropdown = useCallback(() => {
+    const el = customerSearchRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setDropdownBox({
+      left: rect.left,
+      top: rect.bottom + 4,
+      width: rect.width,
+      // Run to the bottom of the viewport — deliberately past the modal's own
+      // edge — and scroll internally beyond that, so the whole registry stays
+      // reachable however many customers are on file.
+      maxHeight: Math.max(160, window.innerHeight - rect.bottom - 12)
+    });
+  }, []);
+
+  // The initial measurement happens in the field's onFocus, where the input is
+  // already laid out; this only has to keep it aligned afterwards. Scroll is
+  // captured so the list follows when ANY ancestor scrolls, not just window.
+  useEffect(() => {
+    if (!isCustomerDropdownOpen) return undefined;
+    window.addEventListener('resize', measureCustomerDropdown);
+    window.addEventListener('scroll', measureCustomerDropdown, true);
+    return () => {
+      window.removeEventListener('resize', measureCustomerDropdown);
+      window.removeEventListener('scroll', measureCustomerDropdown, true);
+    };
+  }, [isCustomerDropdownOpen, measureCustomerDropdown]);
 
   // Order total — free cubes are issued at no charge, so they never enter it.
   const paidQty = parseInt(cubeQty, 10) || 0;
@@ -1011,49 +1051,70 @@ export function SalesPage() {
                 <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
                   Search the registry and tap a result to continue, or register a new client:
                 </p>
-                <div className="relative">
+                <div ref={customerSearchRef}>
                   <Input
                     label="Customer Search Query"
                     name="custSearch"
                     placeholder="Enter customer name or phone number..."
                     value={customerSearchQuery}
-                    onFocus={() => setCustomerFieldFocused(true)}
+                    onFocus={() => {
+                      measureCustomerDropdown();
+                      setCustomerFieldFocused(true);
+                    }}
                     onBlur={() => setCustomerFieldFocused(false)}
                     onChange={(e) => {
                       setCustomerSearchQuery(e.target.value);
                       if (customerId) setCustomerId(''); // Reset ID on retype
                     }}
                   />
-                  {/* Droplist Results — shows the full registry on focus, filters as you type */}
-                  {customerFieldFocused && !customerId && (
-                    <div className="absolute top-full left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 divide-y divide-slate-100 dark:divide-slate-800 touch-scroll">
-                      {filteredCustomersForSearch.length === 0 ? (
-                        <div className="p-3 text-xs text-slate-400 text-center">
-                          No matching profiles.
-                        </div>
-                      ) : (
-                        filteredCustomersForSearch.map(c => (
-                          <div
-                            key={c.id}
-                            role="button"
-                            tabIndex={0}
-                            className="p-3.5 min-h-[48px] text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 active:bg-slate-100 dark:active:bg-slate-800 flex justify-between items-center gap-3 text-slate-800 dark:text-slate-200"
-                            onPointerDown={(e) => { e.preventDefault(); selectCustomer(c); }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                selectCustomer(c);
-                              }
-                            }}
-                          >
-                            <span className="font-semibold">{c.name}</span>
-                            <span className="font-mono text-slate-400">{c.whatsapp_number || c.contact_number}</span>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
                 </div>
+
+                {/* Droplist Results — the whole saved registry on focus,
+                    filtered as you type.
+                    Portalled to document.body on purpose: the modal body is a
+                    scrollport, so an absolutely-positioned list inside it was
+                    clipped at the window's edge and only a couple of names
+                    were ever visible. Out here it can run the full height of
+                    the screen, past the New Order window, and scroll for the
+                    rest. */}
+                {isCustomerDropdownOpen && dropdownBox && createPortal(
+                  <div
+                    style={{
+                      position: 'fixed',
+                      left: dropdownBox.left,
+                      top: dropdownBox.top,
+                      width: dropdownBox.width,
+                      maxHeight: dropdownBox.maxHeight
+                    }}
+                    className="overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl z-[60] divide-y divide-slate-100 dark:divide-slate-800 touch-scroll"
+                  >
+                    {filteredCustomersForSearch.length === 0 ? (
+                      <div className="p-3 text-xs text-slate-400 text-center">
+                        No matching profiles.
+                      </div>
+                    ) : (
+                      filteredCustomersForSearch.map(c => (
+                        <div
+                          key={c.id}
+                          role="button"
+                          tabIndex={0}
+                          className="p-3.5 min-h-[48px] text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 active:bg-slate-100 dark:active:bg-slate-800 flex justify-between items-center gap-3 text-slate-800 dark:text-slate-200"
+                          onPointerDown={(e) => { e.preventDefault(); selectCustomer(c); }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              selectCustomer(c);
+                            }
+                          }}
+                        >
+                          <span className="font-semibold">{c.name}</span>
+                          <span className="font-mono text-slate-400">{c.whatsapp_number || c.contact_number}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>,
+                  document.body
+                )}
 
                 {/* The two ways out of the registry search. These were inline
                     text links — far too small to hit reliably on the factory's
