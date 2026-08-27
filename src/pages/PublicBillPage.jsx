@@ -133,6 +133,31 @@ export function PublicBillPage() {
   const outstanding = Number(sale.outstanding) || 0;
   const amountPaid = Number(sale.amount_paid ?? sale.total_amount) || 0;
 
+  // An order is entered as one pooled Ice Cubes quantity that the server draws
+  // Production-first, then Resell. The several sale_items rows behind it are a
+  // stock-allocation detail — the customer bought ice, not a cube source — so
+  // they are collapsed back into one billed line per rate, exactly as
+  // generateBillPDF does for the downloadable invoice. Splitting them out as
+  // "Production" / "Resell" leaked an internal category onto the bill.
+  const lineItems = sale.sale_items?.length
+    ? sale.sale_items
+    : [{ quantity: sale.quantity, price_per_cube: sale.price_per_cube, subtotal: sale.total_amount, is_free: false }];
+
+  const billedByRate = new Map();
+  for (const item of lineItems.filter(i => !i.is_free)) {
+    const rate = Number(item.price_per_cube) || 0;
+    const key = rate.toFixed(2);
+    const row = billedByRate.get(key) || { rate, quantity: 0, subtotal: 0 };
+    row.quantity += Number(item.quantity) || 0;
+    row.subtotal += Number(item.subtotal) || 0;
+    billedByRate.set(key, row);
+  }
+  const billedLines = Array.from(billedByRate.values());
+
+  const freeQuantity = lineItems
+    .filter(i => i.is_free)
+    .reduce((sum, i) => sum + (Number(i.quantity) || 0), 0) || Number(sale.free_quantity) || 0;
+
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 flex flex-col items-center justify-center p-4 sm:p-6 font-sans">
       <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden">
@@ -178,31 +203,33 @@ export function PublicBillPage() {
                 <span className="text-slate-500">Invoice Date &amp; Time:</span>
                 <span className="text-slate-700 dark:text-slate-300">{toLocalDateTimeStr(sale.sale_date)}</span>
               </div>
-              {sale.sale_items?.length > 1 ? (
+              {billedLines.length > 1 ? (
                 <div className="space-y-1 pt-1">
                   <span className="text-slate-500 block">Items:</span>
-                  {sale.sale_items.map((item, idx) => (
+                  {billedLines.map((line, idx) => (
                     <div key={idx} className="flex justify-between pl-2 text-[11px]">
                       <span className="text-slate-600 dark:text-slate-300">
-                        {item.cube_type === 'manufactured' ? 'Production' : 'Resell'} × {item.quantity.toLocaleString()}
+                        Ice Cubes @ LKR {line.rate.toFixed(2)} × {line.quantity.toLocaleString()}
                       </span>
                       <span className="font-semibold text-slate-800 dark:text-slate-200">
-                        LKR {Number(item.subtotal).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        LKR {line.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Cube Category:</span>
-                    <span className="font-semibold uppercase text-slate-800 dark:text-slate-200">{sale.cube_type}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Quantity:</span>
-                    <span className="font-bold text-slate-900 dark:text-slate-100">{sale.quantity.toLocaleString()} cubes</span>
-                  </div>
-                </>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Quantity:</span>
+                  <span className="font-bold text-slate-900 dark:text-slate-100">{sale.quantity.toLocaleString()} cubes</span>
+                </div>
+              )}
+              {freeQuantity > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Free Cubes:</span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                    {freeQuantity.toLocaleString()} cubes (complimentary)
+                  </span>
+                </div>
               )}
               <div className="flex justify-between">
                 <span className="text-slate-500">Payment Terms:</span>
