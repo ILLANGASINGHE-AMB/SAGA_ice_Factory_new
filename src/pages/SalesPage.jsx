@@ -190,7 +190,7 @@ export function SalesPage() {
       .reduce((sum, d) => sum + (Number(d.remaining_amount) || 0), 0);
   }, [debts, customerId]);
 
-  // Customers for step 2 dropdown: full registry by default, filtered as the
+  // Customers for the step 1 dropdown: full registry by default, filtered as the
   // operator types a search term.
   const filteredCustomersForSearch = useMemo(() => {
     if (!customers) return [];
@@ -216,45 +216,45 @@ export function SalesPage() {
   );
 
   // Handle customer selection — touch flow: tapping a result both selects it
-  // and carries the wizard straight to Order Details, no separate Next tap.
+  // and carries the wizard on to Billing Terms, no separate Next tap. A
+  // registered customer can be billed either way, so the terms step is where
+  // they go next.
   const selectCustomer = (cust) => {
     setCustomerId(cust.id);
     setCustomerSearchQuery(cust.name);
     setCustomerFieldFocused(false);
     setCubePrice(resolveDefaultRate(cust.id));
-    setTimeout(() => setStep(3), 180);
+    setTimeout(() => setStep(2), 180);
   };
 
-  // One-Time Sale — no name, no search, nothing to type: tapping it both
-  // selects the mode and carries the wizard straight to Order Details, same
-  // touch flow as selectCustomer above. The one exception is a DEBT order,
-  // where a one-time (unregistered, no phone) customer can't be chased for
-  // the money later — that combination stays on Step 2 so the warning below
-  // is seen before the operator can continue.
+  // One-Time Sale — no name, no search, nothing to type.
+  //
+  // A one-time walk-in is unregistered and has no contact number, so a debt
+  // could never be chased later: these orders are cash by definition. That
+  // makes the Billing Terms step meaningless here, so picking One-Time settles
+  // the terms itself and jumps the wizard straight to Order Details.
   const selectOneTime = () => {
     setOneTimeMode(true);
     setCustomerId('');
     setCustomerSearchQuery('');
+    setPaymentType('cash');
     setCubePrice(resolveDefaultRate());
-    if (paymentType !== 'debt') {
-      setTimeout(() => setStep(3), 180);
-    }
+    setTimeout(() => setStep(3), 180);
   };
 
   // Wizard Navigation
   const nextStep = async () => {
     if (step === 1) {
-      setStep(2);
-    } else if (step === 2) {
-      // One-Time Sale normally auto-advances from selectOneTime() above; this
-      // branch only runs for the debt-order case that deliberately stops here
-      // so the warning below is seen before continuing.
+      // Step 1 is Customer Profile. Both of its tap paths advance themselves —
+      // a registry result via selectCustomer(), a walk-in via selectOneTime() —
+      // so this only runs for the quick-registration form, which has fields to
+      // validate before moving on.
       if (oneTimeMode) {
+        // Defensive: a walk-in is cash-only and skips Billing Terms entirely.
+        setPaymentType('cash');
         setStep(3);
         return;
       }
-      // Otherwise reached only via the mini registration form — picking an
-      // existing customer auto-advances from selectCustomer() above instead.
       if (!showMiniCustomerForm) {
         toast.error("Please search and select a customer, register a new one, or choose a one-time sale.");
         return;
@@ -270,6 +270,10 @@ export function SalesPage() {
       // Resolve the rate now that the customer is known: their custom
       // Production price if set, otherwise the inventory default.
       setCubePrice(resolveDefaultRate());
+      setStep(2);
+    } else if (step === 2) {
+      // Billing Terms. Tapping either card advances on its own; this is the
+      // fallback path, and paymentType always holds a valid value.
       setStep(3);
     } else if (step === 3) {
       if (paidQty <= 0 && freeQtyNum <= 0) {
@@ -291,7 +295,10 @@ export function SalesPage() {
   };
 
   const prevStep = () => {
-    setStep(prev => prev - 1);
+    // A one-time walk-in never sees Billing Terms on the way forward, so
+    // stepping back from Order Details must skip it too rather than stranding
+    // the operator on a screen the flow never showed them.
+    setStep(prev => (prev === 3 && oneTimeMode ? 1 : prev - 1));
   };
 
   // Final Order Placement
@@ -962,8 +969,8 @@ export function SalesPage() {
               </div>
             )}
             <span className="text-[11px] sm:text-xs text-slate-400 font-semibold uppercase tracking-wider">
-              {step === 1 && '1. Billing Terms'}
-              {step === 2 && '2. Customer Profile'}
+              {step === 1 && '1. Customer Profile'}
+              {step === 2 && '2. Billing Terms'}
               {step === 3 && '3. Order Details'}
               {step === 4 && '4. Review & Confirm'}
             </span>
@@ -972,50 +979,8 @@ export function SalesPage() {
 
         {/* Wizard Form Panels */}
         
-        {/* STEP 1: Payment Type Select */}
+        {/* STEP 1: Customer Select or Create */}
         {step === 1 && (
-          <div className="space-y-3 py-1">
-            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
-              Tap the payment terms for this factory cube order to continue:
-            </p>
-            <div className="grid grid-cols-2 gap-3 sm:gap-4">
-              <button
-                type="button"
-                onClick={() => { setPaymentType('cash'); setTimeout(() => setStep(2), 180); }}
-                className={`p-4 sm:p-5 rounded-2xl border text-center transition flex flex-col items-center justify-center space-y-1.5 cursor-pointer active:scale-[0.97] ${
-                  paymentType === 'cash'
-                    ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 shadow-sm'
-                    : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50/50 dark:hover:bg-slate-800/10'
-                }`}
-              >
-                <div className={`p-2 rounded-full ${paymentType === 'cash' ? 'bg-emerald-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
-                  <Check size={18} />
-                </div>
-                <span className="font-semibold text-xs sm:text-sm">Cash Sales</span>
-                <span className="text-[10px] opacity-80">Immediate full payment</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { setPaymentType('debt'); setTimeout(() => setStep(2), 180); }}
-                className={`p-4 sm:p-5 rounded-2xl border text-center transition flex flex-col items-center justify-center space-y-1.5 cursor-pointer active:scale-[0.97] ${
-                  paymentType === 'debt'
-                    ? 'border-rose-500 bg-rose-50/50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 shadow-sm'
-                    : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50/50 dark:hover:bg-slate-800/10'
-                }`}
-              >
-                <div className={`p-2 rounded-full ${paymentType === 'debt' ? 'bg-rose-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
-                  <Check size={18} />
-                </div>
-                <span className="font-semibold text-xs sm:text-sm">Debt Credit</span>
-                <span className="text-[10px] opacity-80">Added to debt ledger</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 2: Customer Select or Create */}
-        {step === 2 && (
           <div className="space-y-3 py-1">
             {oneTimeMode ? (
               <div className="space-y-3 bg-slate-50 dark:bg-slate-800/20 p-3.5 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-800">
@@ -1026,13 +991,11 @@ export function SalesPage() {
                   For a buyer who isn't a registered customer — no name or number needed. They
                   won't appear in the customer registry, and no WhatsApp notification is sent.
                 </p>
-                {paymentType === 'debt' && (
-                  <div className="bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 p-2.5 rounded-lg border border-amber-200/50 dark:border-amber-900/30 text-[11px]">
-                    <strong>Heads up:</strong> this is a credit order. A one-time customer has no
-                    contact number on file, so the debt can't be chased later. Go back to Step 1
-                    and choose Cash, or tap Next if you're sure.
-                  </div>
-                )}
+                <div className="bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 p-2.5 rounded-lg border border-emerald-200/50 dark:border-emerald-900/30 text-[11px]">
+                  <strong>Cash order.</strong> A walk-in has no contact number on file, so a debt
+                  could never be chased later — these are always billed as cash. Billing Terms is
+                  skipped and this goes straight to the order.
+                </div>
                 <div className="text-center pt-1">
                   <button
                     type="button"
@@ -1150,6 +1113,53 @@ export function SalesPage() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* STEP 2: Payment Type Select — registered customers only; a
+            one-time walk-in is cash by definition and skips this step. */}
+        {step === 2 && (
+          <div className="space-y-3 py-1">
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+              Tap the payment terms for{' '}
+              <strong className="text-slate-900 dark:text-slate-100">
+                {customerSearchQuery || newCustName || 'this customer'}
+              </strong>
+              's order to continue:
+            </p>
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+              <button
+                type="button"
+                onClick={() => { setPaymentType('cash'); setTimeout(() => setStep(3), 180); }}
+                className={`p-4 sm:p-5 rounded-2xl border text-center transition flex flex-col items-center justify-center space-y-1.5 cursor-pointer active:scale-[0.97] ${
+                  paymentType === 'cash'
+                    ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 shadow-sm'
+                    : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50/50 dark:hover:bg-slate-800/10'
+                }`}
+              >
+                <div className={`p-2 rounded-full ${paymentType === 'cash' ? 'bg-emerald-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
+                  <Check size={18} />
+                </div>
+                <span className="font-semibold text-xs sm:text-sm">Cash Sales</span>
+                <span className="text-[10px] opacity-80">Immediate full payment</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setPaymentType('debt'); setTimeout(() => setStep(3), 180); }}
+                className={`p-4 sm:p-5 rounded-2xl border text-center transition flex flex-col items-center justify-center space-y-1.5 cursor-pointer active:scale-[0.97] ${
+                  paymentType === 'debt'
+                    ? 'border-rose-500 bg-rose-50/50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 shadow-sm'
+                    : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50/50 dark:hover:bg-slate-800/10'
+                }`}
+              >
+                <div className={`p-2 rounded-full ${paymentType === 'debt' ? 'bg-rose-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
+                  <Check size={18} />
+                </div>
+                <span className="font-semibold text-xs sm:text-sm">Debt Credit</span>
+                <span className="text-[10px] opacity-80">Added to debt ledger</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -1390,18 +1400,28 @@ export function SalesPage() {
           </div>
         )}
 
-        {/* Wizard Footer Controls — hidden on step 1 since tapping a payment
-            card advances automatically; there is nothing left to confirm. */}
-        {step > 1 && (
+        {/* Wizard Footer Controls.
+            Step 1 (Customer) and step 2 (Billing Terms) both advance on tap,
+            so the only thing the footer owes them is a Back button. Step 1
+            also needs a Next in the two states that have no card left to tap:
+            the quick-registration form, and a one-time walk-in the operator
+            has stepped back into from Order Details. */}
+        {(step > 1 || showMiniCustomerForm || oneTimeMode) && (
           <div className="flex justify-between items-center mt-4 border-t border-slate-100 dark:border-slate-800 pt-3">
-            <Button variant="secondary" onClick={prevStep} disabled={actionLoading} className="flex items-center space-x-1">
-              <ArrowLeft size={14} />
-              <span>Back</span>
-            </Button>
+            {step > 1 ? (
+              <Button variant="secondary" onClick={prevStep} disabled={actionLoading} className="flex items-center space-x-1">
+                <ArrowLeft size={14} />
+                <span>Back</span>
+              </Button>
+            ) : (
+              // Step 1 is the first step; there is nothing behind it.
+              <div />
+            )}
 
-            {step === 2 && !showMiniCustomerForm && !oneTimeMode ? (
-              // Tapping a customer result auto-advances (selectCustomer); no
-              // manual Next needed unless the operator is registering new.
+            {step === 1 && !showMiniCustomerForm && !oneTimeMode ? (
+              <div />
+            ) : step === 2 ? (
+              // Tapping Cash or Debt advances (see the cards above).
               <div />
             ) : step < 4 ? (
               <Button variant="primary" onClick={nextStep} className="flex items-center space-x-1">
