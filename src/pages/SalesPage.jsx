@@ -247,6 +247,11 @@ export function SalesPage() {
     };
   }, [isCustomerDropdownOpen, measureCustomerDropdown]);
 
+  const selectedCustomer = useMemo(
+    () => (customers || []).find(c => Number(c.id) === Number(customerId)) || null,
+    [customers, customerId]
+  );
+
   // Order total — free cubes are issued at no charge, so they never enter it.
   const paidQty = parseInt(cubeQty, 10) || 0;
   const freeQtyNum = parseInt(freeQty, 10) || 0;
@@ -255,16 +260,24 @@ export function SalesPage() {
     [paidQty, cubePrice]
   );
 
-  // Handle customer selection — touch flow: tapping a result both selects it
-  // and carries the wizard on to Billing Terms, no separate Next tap. A
-  // registered customer can be billed either way, so the terms step is where
-  // they go next.
+  // Tapping a registry result selects the customer and nothing more. It used
+  // to jump straight to Billing Terms, which meant a mis-tap in a long list
+  // silently committed the wrong customer and moved the wizard on before the
+  // operator could see what they had hit. Selection is now confirmed on
+  // screen and the operator advances deliberately with Next.
   const selectCustomer = (cust) => {
     setCustomerId(cust.id);
     setCustomerSearchQuery(cust.name);
     setCustomerFieldFocused(false);
     setCubePrice(resolveDefaultRate(cust.id));
-    setTimeout(() => setStep(2), 180);
+  };
+
+  // Clears the current pick and hands the search field back, so a wrong tap
+  // is one button away from being undone.
+  const clearSelectedCustomer = () => {
+    setCustomerId('');
+    setCustomerSearchQuery('');
+    setOneTimeMode(false);
   };
 
   // One-Time Sale — no name, no search, nothing to type.
@@ -279,24 +292,28 @@ export function SalesPage() {
     setCustomerSearchQuery('');
     setPaymentType('cash');
     setCubePrice(resolveDefaultRate());
-    setTimeout(() => setStep(3), 180);
   };
 
   // Wizard Navigation
   const nextStep = async () => {
     if (step === 1) {
-      // Step 1 is Customer Profile. Both of its tap paths advance themselves —
-      // a registry result via selectCustomer(), a walk-in via selectOneTime() —
-      // so this only runs for the quick-registration form, which has fields to
-      // validate before moving on.
+      // Step 1 is Customer Profile. Nothing on it advances on its own any
+      // more — every path leaves through this Next button.
       if (oneTimeMode) {
-        // Defensive: a walk-in is cash-only and skips Billing Terms entirely.
+        // A walk-in is cash-only, so Billing Terms has nothing to ask and is
+        // skipped. prevStep() knows to skip it on the way back too.
         setPaymentType('cash');
         setStep(3);
         return;
       }
+      // A customer picked out of the registry: the rate was resolved when
+      // they were tapped, so there is nothing left to validate.
       if (!showMiniCustomerForm) {
-        toast.error("Please search and select a customer, register a new one, or choose a one-time sale.");
+        if (!customerId) {
+          toast.error("Please search and select a customer, register a new one, or choose a one-time sale.");
+          return;
+        }
+        setStep(2);
         return;
       }
       if (!newCustName || newCustName.trim().length < 2) {
@@ -1086,6 +1103,39 @@ export function SalesPage() {
                   </button>
                 </div>
 
+                {/* Selection confirmation. Now that a tap no longer advances
+                    the wizard, this is what tells the operator their tap
+                    landed — and on whom — before they commit with Next. */}
+                {customerId && (
+                  <div className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/20">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="p-1.5 rounded-full bg-emerald-500 text-white shrink-0">
+                        <Check size={14} />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                          Customer selected
+                        </span>
+                        <span className="block text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                          {selectedCustomer?.name || customerSearchQuery}
+                        </span>
+                        {selectedCustomer && (
+                          <span className="block text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate">
+                            {selectedCustomer.whatsapp_number || selectedCustomer.contact_number || 'No number on file'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={clearSelectedCustomer}
+                      className="touch-target px-3 py-2 shrink-0 rounded-xl text-[11px] font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 active:scale-95 transition flex items-center justify-center"
+                    >
+                      Change
+                    </button>
+                  </div>
+                )}
+
                 {/* Registry search sits under the two shortcuts — the fallback
                     path for a customer already on file. */}
                 <div ref={customerSearchRef}>
@@ -1474,41 +1524,37 @@ export function SalesPage() {
         )}
 
         {/* Wizard Footer Controls.
-            Step 1 (Customer) and step 2 (Billing Terms) both advance on tap,
-            so the only thing the footer owes them is a Back button. Step 1
-            also needs a Next in the two states that have no card left to tap:
-            the quick-registration form, and a one-time walk-in the operator
-            has stepped back into from Order Details. */}
-        {(step > 1 || showMiniCustomerForm || oneTimeMode) && (
-          <div className="flex justify-between items-center mt-4 border-t border-slate-100 dark:border-slate-800 pt-3">
-            {step > 1 ? (
-              <Button variant="secondary" onClick={prevStep} disabled={actionLoading} className="flex items-center space-x-1">
-                <ArrowLeft size={14} />
-                <span>Back</span>
-              </Button>
-            ) : (
-              // Step 1 is the first step; there is nothing behind it.
-              <div />
-            )}
+            Step 1 always shows Next now: picking a customer no longer moves
+            the wizard on by itself, so this button is the only way forward
+            and has to be there from the moment the step opens. Step 2 still
+            advances when a Billing Terms card is tapped, so it needs Back
+            alone. */}
+        <div className="flex justify-between items-center mt-4 border-t border-slate-100 dark:border-slate-800 pt-3">
+          {step > 1 ? (
+            <Button variant="secondary" onClick={prevStep} disabled={actionLoading} className="flex items-center space-x-1">
+              <ArrowLeft size={14} />
+              <span>Back</span>
+            </Button>
+          ) : (
+            // Step 1 is the first step; there is nothing behind it.
+            <div />
+          )}
 
-            {step === 1 && !showMiniCustomerForm && !oneTimeMode ? (
-              <div />
-            ) : step === 2 ? (
-              // Tapping Cash or Debt advances (see the cards above).
-              <div />
-            ) : step < 4 ? (
-              <Button variant="primary" onClick={nextStep} className="flex items-center space-x-1">
-                <span>Next</span>
-                <ArrowRight size={14} />
-              </Button>
-            ) : (
-              <Button variant="primary" onClick={handlePlaceOrder} isLoading={actionLoading} className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700">
-                <Check size={16} />
-                <span>Complete Order</span>
-              </Button>
-            )}
-          </div>
-        )}
+          {step === 2 ? (
+            // Tapping Cash or Debt advances (see the cards above).
+            <div />
+          ) : step < 4 ? (
+            <Button variant="primary" onClick={nextStep} className="flex items-center space-x-1">
+              <span>Next</span>
+              <ArrowRight size={14} />
+            </Button>
+          ) : (
+            <Button variant="primary" onClick={handlePlaceOrder} isLoading={actionLoading} className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700">
+              <Check size={16} />
+              <span>Complete Order</span>
+            </Button>
+          )}
+        </div>
       </Modal>
 
 
