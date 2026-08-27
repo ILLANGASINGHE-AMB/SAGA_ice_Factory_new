@@ -302,44 +302,49 @@ export function AppShell({ children }) {
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         
         {/* Top Header Bar - Optimized Compact Height for Landscape */}
-        <header className="theme-nav flex items-center justify-between h-13 sm:h-14 md:h-14 px-4 sm:px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 z-20">
-          <div className="flex items-center space-x-3">
+        <header className="theme-nav flex items-center gap-2 sm:gap-4 h-13 sm:h-14 md:h-14 px-4 sm:px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 z-20">
+          <div className="flex items-center space-x-3 shrink-0 min-w-0">
             {/* Mobile Header Branding (phones only, portrait or landscape) */}
             {isMobileLayout ? (
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-2 min-w-0">
                 {settings?.logo_url ? (
-                  <img src={settings.logo_url} alt="Logo" className="w-6 h-6 rounded object-cover" />
+                  <img src={settings.logo_url} alt="Logo" className="w-6 h-6 rounded object-cover shrink-0" />
                 ) : (
-                  <div className="w-6 h-6 rounded bg-navy-600 flex items-center justify-center text-white font-bold text-xs font-heading">
+                  <div className="w-6 h-6 rounded bg-navy-600 flex items-center justify-center text-white font-bold text-xs font-heading shrink-0">
                     S
                   </div>
                 )}
-                <span className="font-heading font-bold text-xs text-slate-900 dark:text-slate-100">
+                <span className="font-heading font-bold text-xs text-slate-900 dark:text-slate-100 truncate">
                   {settings?.company_name || 'Sagacious'}
                 </span>
               </div>
             ) : (
-              <h2 className="text-base sm:text-lg font-bold font-heading text-slate-800 dark:text-slate-100 tracking-tight">
+              <h2 className="text-base sm:text-lg font-bold font-heading text-slate-800 dark:text-slate-100 tracking-tight truncate">
                 {getPageTitle()}
               </h2>
             )}
           </div>
 
-          {/* Right Header items: Search | Recent Actions | Trash | Settings | Theme | Profile | Logout */}
-          <div className="flex items-center space-x-1 sm:space-x-2">
-            {/* Global Search Button */}
+          {/* Global Search — sits in the middle of the bar (`flex-1
+              justify-center` between two shrink-0 groups) rather than
+              crowded in with the icon cluster on the right, so it reads as
+              the header's own control instead of one more toolbar button. */}
+          <div className="flex-1 flex justify-center min-w-0">
             <button
               onClick={() => setIsSearchOpen(true)}
-              className="flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 text-xs font-medium transition active:scale-95 touch-target"
+              className="flex items-center space-x-2 px-3 py-1.5 w-full max-w-xs rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 text-xs font-medium transition active:scale-95 touch-target"
               title="Search System (⌘K)"
             >
-              <Search size={14} />
-              <span className="hidden sm:inline">Search...</span>
-              <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded shadow-2xs">
+              <Search size={14} className="shrink-0" />
+              <span className="hidden sm:inline truncate">Search...</span>
+              <kbd className="hidden sm:inline-block ml-auto px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded shadow-2xs shrink-0">
                 ⌘K
               </kbd>
             </button>
+          </div>
 
+          {/* Right Header items: Recent Actions | Trash | Settings | Theme | Profile | Logout */}
+          <div className="flex items-center space-x-1 sm:space-x-2 shrink-0">
             {isAdmin && (
               <button
                 onClick={() => navigate('/recent-actions')}
