@@ -465,19 +465,16 @@ export function SettlementReceiptPreview({ settlement, settings }) {
             ['Address', settlement.customer?.address || 'N/A']
           ]}
         />
-        <div className="space-y-1">
-          <FieldBlock
-            label="Settlement Details"
-            rows={[
-              ['Date & Time', toLocalDateTimeStr(settlement.settlement_date) || 'N/A'],
-              ['Sale Reference', saleRefText],
-              ['Payment Method', `${(settlement.payment_method || 'cash').replace('_', ' ').toUpperCase()}${methodDetail}`],
-              ['Authorized By', settlement.created_by || 'System'],
-              ...(settlement.notes ? [['Note', settlement.notes]] : [])
-            ]}
-          />
-          <OutstandingBlock record={settlement} />
-        </div>
+        <FieldBlock
+          label="Settlement Details"
+          rows={[
+            ['Date & Time', toLocalDateTimeStr(settlement.settlement_date) || 'N/A'],
+            ['Sale Reference', saleRefText],
+            ['Payment Method', `${(settlement.payment_method || 'cash').replace('_', ' ').toUpperCase()}${methodDetail}`],
+            ['Authorized By', settlement.created_by || 'System'],
+            ...(settlement.notes ? [['Note', settlement.notes]] : [])
+          ]}
+        />
       </div>
 
       <LineTable
@@ -493,6 +490,11 @@ export function SettlementReceiptPreview({ settlement, settings }) {
             <p className="text-sm font-extrabold font-mono text-slate-900 dark:text-slate-100">
               {money(settlement.amount_paid)} Paid
             </p>
+            {/* Sits with the payment, matching the PDF: what was just paid
+                and what is still owed are the same question. */}
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-1.5 text-center">
+              <OutstandingBlock record={settlement} />
+            </div>
           </div>
         </SummaryCard>
       </div>

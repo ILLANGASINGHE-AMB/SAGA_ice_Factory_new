@@ -208,8 +208,10 @@ function fieldLine(doc, text, x, y) {
 // timestamp saying when it was true.
 //
 // Drawn in rose when something is owed and emerald when nothing is, matching
-// the on-screen ledger. Returns the Y the caller should continue at.
-function drawOutstandingLines(doc, record, x, y) {
+// the on-screen ledger. `align` is 'center' inside the settlement receipt's
+// centred confirmation card, where left-aligned text would sit off-axis from
+// the pill and the amount above it. Returns the Y the caller should continue at.
+function drawOutstandingLines(doc, record, x, y, align = 'left') {
   const total = Number(record?.customer_debt_total) || 0;
   const asOf = record?.customer_debt_updated_at;
 
@@ -219,13 +221,13 @@ function drawOutstandingLines(doc, record, x, y) {
   doc.setTextColor(r, g, b);
   doc.text(
     `Existing Debt to Pay: LKR ${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-    x, y
+    x, y, { align }
   );
 
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
-  doc.text(`Debt last updated: ${asOf ? toLocalDateTimeStr(asOf) : 'No debt activity'}`, x, y + 4.2);
+  doc.text(`Debt last updated: ${asOf ? toLocalDateTimeStr(asOf) : 'No debt activity'}`, x, y + 4.2, { align });
 
   return y + 4.2;
 }
@@ -557,15 +559,11 @@ export function generateSettlementReceiptPDF(settlement, settings) {
   fieldLine(doc, `Payment Method: ${(settlement.payment_method || 'cash').replace('_', ' ').toUpperCase()}${methodDetail}`, 115, y0 + 15.5);
   fieldLine(doc, `Authorized By: ${settlement.created_by || 'System'}`, 115, y0 + 20.5);
 
-  let outstandingY = y0 + 27;
+  let tableStartY = y0 + 28;
   if (settlement.notes) {
     fieldLine(doc, `Note: ${settlement.notes}`, 115, y0 + 25.5);
-    outstandingY = y0 + 32;
+    tableStartY = y0 + 33;
   }
-
-  // What the customer still owes AFTER this payment — the first thing anyone
-  // holding a settlement receipt wants to know.
-  const tableStartY = drawOutstandingLines(doc, settlement, 115, outstandingY) + 5;
 
   // Summary Table of payments
   const tableData = settlement.settlements?.length
@@ -619,18 +617,27 @@ export function generateSettlementReceiptPDF(settlement, settings) {
     }
   });
 
-  // Confirmation card — flat, with a settled-style pill
+  // Confirmation card — flat, with a settled-style pill. 36mm rather than 24:
+  // the customer's standing balance sits here under a divider, with the
+  // payment it belongs to. "What you just paid" and "what you still owe" are
+  // the same question, answered in one place — the same move the sales
+  // invoice's payment-status card makes.
   const finalY = doc.lastAutoTable.finalY + 12;
   doc.setDrawColor(BORDER[0], BORDER[1], BORDER[2]);
   doc.setFillColor(CARD_BG[0], CARD_BG[1], CARD_BG[2]);
   doc.setLineWidth(0.4);
-  doc.roundedRect(60, finalY, 90, 24, 2, 2, 'FD');
+  doc.roundedRect(60, finalY, 90, 36, 2, 2, 'FD');
 
-  drawPill(doc, 'RECEIPTED & VERIFIED', 105, finalY + 9, EMERALD_BG, EMERALD_TEXT, 9);
+  drawPill(doc, 'RECEIPTED & VERIFIED', 105, finalY + 8, EMERALD_BG, EMERALD_TEXT, 9);
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(INK[0], INK[1], INK[2]);
-  doc.text(`LKR ${settlement.amount_paid.toLocaleString()} Paid`, 105, finalY + 18.5, { align: 'center' });
+  doc.text(`LKR ${settlement.amount_paid.toLocaleString()} Paid`, 105, finalY + 17, { align: 'center' });
+
+  doc.setDrawColor(BORDER[0], BORDER[1], BORDER[2]);
+  doc.setLineWidth(0.2);
+  doc.line(66, finalY + 21, 144, finalY + 21);
+  drawOutstandingLines(doc, settlement, 105, finalY + 26, 'center');
 
   drawFooter(doc);
   return doc;
