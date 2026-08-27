@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, Fragment } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useDebts } from '../hooks/useDebts';
 import { useSettings } from '../hooks/useSettings';
@@ -14,7 +14,7 @@ import { buildSettlementNotification, notificationUrl, toWhatsAppNumber } from '
 import { SendNotificationDialog } from '../components/SendNotificationDialog';
 import { DocumentPreviewModal, DebtStatementPreview, SettlementReceiptPreview } from '../components/DocumentPreview';
 import { recordNotification } from '../hooks/useNotifications';
-import { DollarSign, RefreshCcw, FileDown, Users, History, Search, Landmark, ChevronDown, ChevronRight, Receipt } from 'lucide-react';
+import { DollarSign, RefreshCcw, FileDown, Users, History, Search, Landmark, Receipt } from 'lucide-react';
 
 // Roll a set of debt rows up into one outstanding-balance line per customer,
 // heaviest debtor first. Shared by the ledger's "Debt by Customers" view and
@@ -116,8 +116,6 @@ export function DebtsPage() {
   const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false);
   const [receiptRecord, setReceiptRecord] = useState(null);
 
-  // Which Debt History row has its settlement breakdown open.
-  const [expandedDebtId, setExpandedDebtId] = useState(null);
 
   // WhatsApp Prompt State
   const [whatsappPromptOpen, setWhatsappPromptOpen] = useState(false);
@@ -329,12 +327,11 @@ export function DebtsPage() {
     setBillDebt(null);
   };
 
-  // One settlement line's own receipt. Built from the settlement row plus the
-  // debt it was applied to, with the balance that debt was left at by THIS
-  // payment (not the debt's balance today) — so a receipt reopened after a
-  // later payment still states what the customer was told at the time.
-  const openReceiptPreview = (line) => {
-    setReceiptRecord(line.receipt);
+  // A settlement row's own receipt, stating the balance that debt was left at
+  // by THIS payment (not the debt's balance today) — so a receipt reopened
+  // after a later payment still says what the customer was told at the time.
+  const openReceiptPreview = (row) => {
+    setReceiptRecord(row.receipt);
     setReceiptPreviewOpen(true);
   };
 
@@ -452,60 +449,25 @@ export function DebtsPage() {
     );
   }, [allDebtorGroups, pickerQuery]);
 
-  // Debt History — one row per debt.
+  // Debt History — an append-only event ledger.
   //
-  // It used to emit a separate row for every settlement, so a debt and the
-  // payment that cleared it appeared as two disconnected lines. Per
-  // DebtTab.md the settlement now folds back into the debt's own row: that
-  // row carries what was owed, what has been paid, how it was paid and what
-  // is left, and updates in place as the debt is settled. A debt cleared by
-  // a later cash order therefore stops reading "Not Settled / 25,000" and
-  // starts reading "Settled by Cash Order [SC009] / 0" on the same line.
+  // Every debt gets a row for the moment it was incurred, and EVERY payment
+  // against it gets its own row. Nothing is rewritten in place: the debt's row
+  // keeps saying what was owed when it was taken on, and a settlement is a new
+  // line dated when the money actually arrived. A part payment therefore
+  // leaves a trail of lines rather than one figure that quietly changes, and
+  // two payments on the same debt are two rows, not one.
+  //
+  // Each settlement row's Remaining Amount is that debt's balance immediately
+  // AFTER that payment, replayed from the payments in order — not the debt's
+  // balance today, which only ever reflects the state after the last one.
   const debtHistoryRows = useMemo(() => {
-    const rows = filteredDebts.map(debt => {
+    const rows = [];
+
+    filteredDebts.forEach(debt => {
       const debtAmount = Number(debt.total_amount) || 0;
-      const remainingAmount = Number(debt.remaining_amount) || 0;
-      // Oldest payment first, so the running balance below reads down the
-      // list the way a passbook does. `.slice()` because the array belongs to
-      // the fetched row and sort mutates in place.
-      const settlements = (debt.debt_settlements || [])
-        .slice()
-        .sort((a, b) => new Date(a.settlement_date) - new Date(b.settlement_date));
-
-      // `debts.paid_amount` is the maintained figure; the settlements sum is
-      // a fallback for rows written before it was kept up to date.
-      const settledSum = settlements.reduce((sum, setl) => sum + (Number(setl.amount_paid) || 0), 0);
-      const paidAmount = Number(debt.paid_amount) || settledSum;
-
-      // Which cash orders auto-cleared this debt, de-duplicated.
-      const settledByOrders = [...new Set(
-        settlements
-          .filter(setl => setl.is_auto_applied)
-          .map(setl => AUTO_APPLIED_SALE_RE.exec(setl.created_by || '')?.[1])
-          .filter(Boolean)
-      )];
-
-      // Methods for payments a person actually took at the counter.
-      const manualMethods = [...new Set(
-        settlements
-          .filter(setl => !setl.is_auto_applied)
-          .map(setl => formatPaymentMethod(setl.payment_method))
-      )];
-
-      const methodParts = [];
-      if (settledByOrders.length > 0) {
-        methodParts.push(`Settled by Cash Order [${settledByOrders.join(', ')}]`);
-      } else if (settlements.some(setl => setl.is_auto_applied)) {
-        // Auto-applied, but the settling order's code was never stamped.
-        methodParts.push('Settled by Cash Order');
-      }
-      methodParts.push(...manualMethods);
-
-      // A debt can be cleared without leaving a settlement row behind (an
-      // adjustment, or a legacy record). Calling that "Not Settled" next to a
-      // zero balance would read as a contradiction.
-      const isCleared = debtAmount > 0 && remainingAmount <= 0;
-      if (methodParts.length === 0 && isCleared) methodParts.push('Settled');
+      const customerName = debt.customer?.name || 'Unknown';
+      const saleCode = debt.sale?.sale_code || `DEBT-${debt.id}`;
 
       // A debt hanging off a CASH sale is not a credit sale — it is the
       // shortfall FIN-17 opens when that order's cash was diverted to the
@@ -514,40 +476,65 @@ export function DebtsPage() {
       const isCashShortfall = debt.sale?.payment_type === 'cash';
       const orderTotal = Number(debt.sale?.total_amount) || 0;
 
-      // Every payment against this debt, individually — date, receipt code,
-      // amount, how it was taken, and the balance it left behind. The row used
-      // to collapse all of this into one word ("Cash"), so a settlement was
-      // effectively invisible: an operator could not see WHEN a debt was
-      // settled, under which receipt number, or how a part payment was split.
-      // The running balance is recomputed here rather than read off the debt,
-      // whose remaining_amount only ever reflects the state *after the last*
-      // payment.
+      // Oldest payment first, so the running balance below reads down the list
+      // the way a passbook does. `.slice()` because the array belongs to the
+      // fetched row and sort mutates in place.
+      const settlements = (debt.debt_settlements || [])
+        .slice()
+        .sort((a, b) => new Date(a.settlement_date) - new Date(b.settlement_date));
+
+      // 1. The debt itself, as it stood the moment it was incurred.
+      rows.push({
+        id: `debt-${debt.id}`,
+        kind: 'debt',
+        occurredAt: debt.created_at,
+        customerName,
+        saleCode,
+        isCashShortfall,
+        orderTotal,
+        debtAmount,
+        paidAmount: 0,
+        paymentMethod: 'Not Settled',
+        remainingAmount: debtAmount,
+        settlementState: 'pending',
+        debt
+      });
+
+      // 2. One row per payment taken against it.
       let runningPaid = 0;
-      const settlementLines = settlements.map((setl, idx) => {
+      settlements.forEach((setl, idx) => {
         const amount = Number(setl.amount_paid) || 0;
         runningPaid += amount;
         const remainingAfter = Math.max(0, debtAmount - runningPaid);
         const statusAfter = remainingAfter <= 0 ? 'settled' : 'partial';
+        // An auto-applied settlement records the settling order only inside
+        // its created_by string — that is the only place the sale code is.
         const settledByOrder = setl.is_auto_applied
           ? AUTO_APPLIED_SALE_RE.exec(setl.created_by || '')?.[1] || null
           : null;
+        const settlementCode = setl.settlement_code || `SETTLEMENT-${setl.id ?? idx}`;
 
-        return {
-          id: setl.id ?? `${debt.id}-${idx}`,
-          settlementCode: setl.settlement_code || '—',
-          settledAt: setl.settlement_date,
-          amount,
-          isAuto: !!setl.is_auto_applied,
-          settledByOrder,
-          methodLabel: setl.is_auto_applied
-            ? `Cash Order${settledByOrder ? ` [${settledByOrder}]` : ''}`
+        rows.push({
+          id: `settlement-${setl.id ?? `${debt.id}-${idx}`}`,
+          kind: 'settlement',
+          occurredAt: setl.settlement_date,
+          customerName,
+          saleCode,
+          settlementCode,
+          isCashShortfall: false,
+          orderTotal: 0,
+          debtAmount,
+          paidAmount: amount,
+          paymentMethod: setl.is_auto_applied
+            ? `Settled by Cash Order${settledByOrder ? ` [${settledByOrder}]` : ''}`
             : formatPaymentMethod(setl.payment_method),
           notes: setl.notes || null,
-          remainingAfter,
-          statusAfter,
+          remainingAmount: remainingAfter,
+          settlementState: statusAfter,
+          debt,
           // Shaped for generateSettlementReceiptPDF / SettlementReceiptPreview.
           receipt: {
-            settlement_code: setl.settlement_code || `SETTLEMENT-${setl.id}`,
+            settlement_code: settlementCode,
             settlement_date: setl.settlement_date,
             payment_method: setl.payment_method || 'cash',
             notes: setl.notes || null,
@@ -558,80 +545,48 @@ export function DebtsPage() {
             customer: debt.customer,
             sale: debt.sale
           }
-        };
+        });
       });
-
-      const lastSettlement = settlementLines[settlementLines.length - 1] || null;
-
-      return {
-        id: `debt-${debt.id}`,
-        occurredAt: debt.created_at,
-        customerName: debt.customer?.name || 'Unknown',
-        saleCode: debt.sale?.sale_code || `DEBT-${debt.id}`,
-        isCashShortfall,
-        orderTotal,
-        debtAmount,
-        paidAmount,
-        paymentMethod: methodParts.length > 0 ? methodParts.join(' + ') : 'Not Settled',
-        remainingAmount,
-        settlementLines,
-        lastSettledAt: lastSettlement?.settledAt || null,
-        // What the table sorts on: the last thing that HAPPENED to this debt —
-        // the most recent payment against it, or the day it was incurred if
-        // nothing has been paid yet. See the sort below.
-        lastActivityAt: lastSettlement?.settledAt || debt.created_at,
-        // Drives the row tint. Derived from the balance rather than
-        // `debt.status` so it can't disagree with the numbers beside it.
-        settlementState: isCleared ? 'settled' : paidAmount > 0 ? 'partial' : 'pending',
-        debt
-      };
     });
 
-    // Newest activity first, not newest debt first.
+    // Newest event first, so the settlement just taken is the top line.
     //
-    // Sorting on `occurredAt` alone (the date the debt was incurred, which
-    // never moves) buried a debt settled a minute ago far down the ledger
-    // among months-old rows — the operator had to hunt for the settlement they
-    // had just taken. A debt's last payment brings it back to the top, and a
-    // debt with no payments still sorts by the day it was incurred, so an
-    // untouched ledger reads exactly as it did.
-    //
-    // Ties fall back to the incurrence date: several debts cleared by one
-    // FIFO payment share a settlement timestamp to the microsecond, and the
-    // oldest invoice should still lead that group.
+    // Ties are real: one FIFO payment clears several debts inside a single
+    // transaction and stamps every row with the same timestamp. A settlement
+    // outranks a debt at the same instant (the payment is the later event),
+    // and within the same kind the oldest invoice leads — the order the
+    // payment was actually applied in.
     return rows.sort((a, b) => {
-      const diff = new Date(b.lastActivityAt) - new Date(a.lastActivityAt);
-      if (diff !== 0) return diff;
-      return new Date(a.occurredAt) - new Date(b.occurredAt);
+      const byTime = new Date(b.occurredAt) - new Date(a.occurredAt);
+      if (byTime !== 0) return byTime;
+      if (a.kind !== b.kind) return a.kind === 'settlement' ? -1 : 1;
+      return String(a.saleCode).localeCompare(String(b.saleCode));
     });
   }, [filteredDebts]);
 
-  // Status bar across the rows currently in view — how much was charged,
-  // how much has come back in, and what's still standing. Now that a row is
-  // a debt rather than an event, these are plain column sums.
+  // Status bar across what is currently in view.
+  //
+  // Charged and outstanding are counted off the DEBTS, and collected off the
+  // settlement rows — summing the columns straight down would double-count
+  // now that one debt contributes several rows.
   const debtHistorySummary = useMemo(() => {
-    let charged = 0;
-    let collected = 0;
-    let outstanding = 0;
-    let settled = 0;
-
-    debtHistoryRows.forEach(row => {
-      charged += row.debtAmount;
-      collected += row.paidAmount;
-      outstanding += row.remainingAmount;
-      if (row.settlementState === 'settled') settled++;
-    });
+    const charged = filteredDebts.reduce((sum, d) => sum + (Number(d.total_amount) || 0), 0);
+    const outstanding = filteredDebts.reduce((sum, d) => sum + (Number(d.remaining_amount) || 0), 0);
+    const settlementRows = debtHistoryRows.filter(row => row.kind === 'settlement');
+    const collected = settlementRows.reduce((sum, row) => sum + row.paidAmount, 0);
+    const settled = filteredDebts.filter(d => (Number(d.remaining_amount) || 0) <= 0).length;
 
     return {
       charged,
       collected,
       outstanding,
-      debts: debtHistoryRows.length,
+      debts: filteredDebts.length,
+      payments: settlementRows.length,
       settled,
-      open: debtHistoryRows.length - settled,
+      open: filteredDebts.length - settled,
       collectedPct: charged > 0 ? Math.min(100, (collected / charged) * 100) : 0
     };
-  }, [debtHistoryRows]);
+  }, [filteredDebts, debtHistoryRows]);
 
   return (
     <div className="space-y-6">
@@ -859,6 +814,7 @@ export function DebtsPage() {
               </h3>
               <span className="text-[11px] font-semibold text-slate-400">
                 {debtHistorySummary.debts.toLocaleString()} {debtHistorySummary.debts === 1 ? 'debt' : 'debts'} ·{' '}
+                {debtHistorySummary.payments.toLocaleString()} {debtHistorySummary.payments === 1 ? 'payment' : 'payments'} ·{' '}
                 {debtHistorySummary.settled.toLocaleString()} settled ·{' '}
                 {debtHistorySummary.open.toLocaleString()} outstanding
               </span>
@@ -915,38 +871,30 @@ export function DebtsPage() {
             isLoading={isLoading}
             emptyMessage="No debts matched the parameters."
             renderRow={(row) => {
-              const isExpanded = expandedDebtId === row.id;
-              const hasSettlements = row.settlementLines.length > 0;
+              const isSettlement = row.kind === 'settlement';
               return (
-              <Fragment key={row.id}>
-              <tr className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
+              <tr
+                key={row.id}
+                className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800 ${
+                  isSettlement ? 'bg-emerald-50/30 dark:bg-emerald-950/10' : ''
+                }`}
+              >
                 <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono text-xs text-slate-500 whitespace-nowrap">
-                  <div className="flex items-center gap-1.5">
-                    {/* Opens this debt's payment breakdown. Rendered as a
-                        placeholder (not hidden) when there are no payments, so
-                        the date column stays aligned down the table. */}
-                    {hasSettlements ? (
-                      <button
-                        type="button"
-                        onClick={() => setExpandedDebtId(isExpanded ? null : row.id)}
-                        className="p-0.5 rounded text-slate-400 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition shrink-0"
-                        aria-expanded={isExpanded}
-                        aria-label={isExpanded ? 'Hide settlement history' : `Show ${row.settlementLines.length} settlement(s)`}
-                        title={isExpanded ? 'Hide settlement history' : `Show ${row.settlementLines.length} settlement(s)`}
-                      >
-                        {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      </button>
-                    ) : (
-                      <span className="w-[22px] shrink-0" aria-hidden="true" />
-                    )}
-                    <span>{toLocalDateTimeStr(row.occurredAt) || '—'}</span>
-                  </div>
+                  {toLocalDateTimeStr(row.occurredAt) || '—'}
                 </td>
                 <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-semibold text-slate-900 dark:text-slate-100">
                   {row.customerName}
                 </td>
                 <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-medium text-navy-600 dark:text-navy-400 whitespace-nowrap">
                   {row.saleCode}
+                  {/* A settlement line names the debt it paid AND its own
+                      receipt number, so the customer quoting either one can be
+                      matched to this row. */}
+                  {isSettlement && (
+                    <span className="block text-[10px] font-sans font-normal text-emerald-600 dark:text-emerald-400">
+                      Receipt {row.settlementCode}
+                    </span>
+                  )}
                   {row.isCashShortfall && (
                     <span className="block text-[10px] font-sans font-normal text-slate-400">
                       Cash order LKR {row.orderTotal.toLocaleString()}
@@ -975,16 +923,11 @@ export function DebtsPage() {
                   }`} title={row.paymentMethod}>
                     {row.paymentMethod}
                   </span>
-                  {/* When the debt was actually settled. The row's own Date
-                      column is the date the debt was INCURRED and never moves,
-                      so without this a settled row gave no clue when the money
-                      came in. */}
-                  {row.lastSettledAt && (
-                    <span className="block text-[10px] font-mono text-slate-400">
-                      {row.settlementState === 'partial' ? 'Last paid ' : 'Paid '}
-                      {toLocalDateTimeStr(row.lastSettledAt)}
-                      {row.settlementLines.length > 1 ? ` · ${row.settlementLines.length} payments` : ''}
-                    </span>
+                  {isSettlement && row.settlementState === 'partial' && (
+                    <span className="block text-[10px] text-slate-400">Part paid</span>
+                  )}
+                  {row.notes && (
+                    <span className="block text-[10px] text-slate-400">{row.notes}</span>
                   )}
                 </td>
                 <td className={`px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-semibold whitespace-nowrap ${
@@ -995,87 +938,20 @@ export function DebtsPage() {
                   LKR {row.remainingAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </td>
                 <td className="px-2.5 sm:px-4 py-2.5 sm:py-3">
+                  {/* A debt line prints the debt statement; a settlement line
+                      prints its own receipt. */}
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => handleViewBill(row.debt)}
+                    onClick={() => isSettlement ? openReceiptPreview(row) : handleViewBill(row.debt)}
                     className="flex items-center space-x-1"
+                    title={isSettlement ? `View settlement receipt ${row.settlementCode}` : 'View debt statement'}
                   >
-                    <FileDown size={13} />
-                    <span>PDF</span>
+                    {isSettlement ? <Receipt size={13} /> : <FileDown size={13} />}
+                    <span>{isSettlement ? 'Receipt' : 'PDF'}</span>
                   </Button>
                 </td>
               </tr>
-
-              {/* Settlement breakdown — one line per payment taken against
-                  this debt, each with its own receipt. */}
-              {isExpanded && hasSettlements && (
-                <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40">
-                  <td colSpan={8} className="px-2.5 sm:px-4 py-3">
-                    <div className="space-y-2">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                        Settlements against {row.saleCode}
-                      </p>
-                      <div className="overflow-x-auto touch-scroll">
-                        <table className="w-full min-w-[36rem] border-collapse text-xs">
-                          <thead>
-                            <tr className="text-[10px] uppercase tracking-wider text-slate-400">
-                              <th className="text-left font-semibold px-2 py-1">Date &amp; Time</th>
-                              <th className="text-left font-semibold px-2 py-1">Receipt No</th>
-                              <th className="text-right font-semibold px-2 py-1">Amount Paid</th>
-                              <th className="text-left font-semibold px-2 py-1">Method</th>
-                              <th className="text-right font-semibold px-2 py-1">Balance After</th>
-                              <th className="text-right font-semibold px-2 py-1">Receipt</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {row.settlementLines.map(line => (
-                              <tr key={line.id} className="border-t border-slate-200/70 dark:border-slate-800">
-                                <td className="px-2 py-1.5 font-mono text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                                  {toLocalDateTimeStr(line.settledAt) || '—'}
-                                </td>
-                                <td className="px-2 py-1.5 font-mono text-navy-600 dark:text-navy-400 whitespace-nowrap">
-                                  {line.settlementCode}
-                                </td>
-                                <td className="px-2 py-1.5 text-right font-mono font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                                  LKR {line.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                </td>
-                                <td className="px-2 py-1.5 text-slate-600 dark:text-slate-300">
-                                  <span className={line.isAuto ? 'font-semibold text-sky-600 dark:text-sky-400' : ''}>
-                                    {line.isAuto ? `Settled by ${line.methodLabel}` : line.methodLabel}
-                                  </span>
-                                  {line.notes && (
-                                    <span className="block text-[10px] text-slate-400">{line.notes}</span>
-                                  )}
-                                </td>
-                                <td className={`px-2 py-1.5 text-right font-mono font-semibold whitespace-nowrap ${
-                                  line.remainingAfter > 0
-                                    ? 'text-rose-600 dark:text-rose-400'
-                                    : 'text-emerald-600 dark:text-emerald-400'
-                                }`}>
-                                  LKR {line.remainingAfter.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                </td>
-                                <td className="px-2 py-1.5 text-right">
-                                  <button
-                                    type="button"
-                                    onClick={() => openReceiptPreview(line)}
-                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-slate-500 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                                    title={`View settlement receipt ${line.settlementCode}`}
-                                  >
-                                    <Receipt size={13} />
-                                    <span>View</span>
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              )}
-              </Fragment>
               );
             }}
           />
