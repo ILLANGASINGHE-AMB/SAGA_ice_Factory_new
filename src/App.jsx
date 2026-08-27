@@ -28,6 +28,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ defa
 const ExpenseLedgerPage = lazy(() => import('./pages/ExpenseLedgerPage').then(m => ({ default: m.ExpenseLedgerPage })));
 const CashBankPage = lazy(() => import('./pages/CashBankPage').then(m => ({ default: m.CashBankPage })));
 const PublicBillPage = lazy(() => import('./pages/PublicBillPage').then(m => ({ default: m.PublicBillPage })));
+const PublicReceiptPage = lazy(() => import('./pages/PublicReceiptPage').then(m => ({ default: m.PublicReceiptPage })));
 const RecentActionsPage = lazy(() => import('./pages/RecentActionsPage').then(m => ({ default: m.RecentActionsPage })));
 const TrashPage = lazy(() => import('./pages/TrashPage').then(m => ({ default: m.TrashPage })));
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage').then(m => ({ default: m.NotificationsPage })));
@@ -94,6 +95,8 @@ function App() {
               {/* Public Routes */}
               <Route path="/login" element={<LoginPage />} />
               <Route path="/bill/:saleCode" element={<PublicBillPage />} />
+              {/* 24-hour debt-settlement receipt link, sent with the settlement message. */}
+              <Route path="/receipt/:settlementCode" element={<PublicReceiptPage />} />
 
               {/* Protected App Shell Routes */}
               <Route

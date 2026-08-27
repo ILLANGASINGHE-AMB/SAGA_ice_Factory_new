@@ -140,8 +140,9 @@ export function buildSettlementNotification({
   ];
 
   if (receiptUrl) {
-    lines.push('', '📄 View/Download your receipt:', receiptUrl);
+    lines.push('', '📄 View/Download your receipt (valid 24 hours):', receiptUrl);
   }
 
+  lines.push('', 'Thank you for your payment.');
   return lines.join('\n');
 }

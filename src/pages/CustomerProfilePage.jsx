@@ -17,9 +17,10 @@ import { Button } from '../components/Button';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { CustomerFormModal } from '../components/CustomerFormModal';
 import { CustomerPriceModal } from '../components/CustomerPriceModal';
-import { generateBillPDF } from '../utils/pdfGenerator';
+import { generateBillPDF, generateSettlementReceiptPDF } from '../utils/pdfGenerator';
+import { DocumentPreviewModal, SaleInvoicePreview, SettlementReceiptPreview } from '../components/DocumentPreview';
 import {
-  ArrowLeft, Edit2, Trash2, Table2, LineChart as LineChartIcon, FileDown, ExternalLink, DollarSign, Send
+  ArrowLeft, Edit2, Trash2, Table2, LineChart as LineChartIcon, Eye, DollarSign, Send
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -78,6 +79,15 @@ export function CustomerProfilePage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [priceModalOpen, setPriceModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Document previews. Both columns are headed "View", but neither actually
+  // showed anything: the sale button downloaded the PDF straight to disk, and
+  // the payment button opened `bill_pdf_url` — a Storage signed URL minted for
+  // 24 hours when the settlement was recorded, so for any payment older than a
+  // day it opened an expired link. Both now open the same in-app preview the
+  // Sales and Debts ledgers use, with the PDF regenerated on demand.
+  const [previewSale, setPreviewSale] = useState(null);
+  const [previewReceipt, setPreviewReceipt] = useState(null);
 
   // Daily/Monthly/Yearly sets both the bucket size AND a matching lookback
   // window wide enough to actually show several buckets — "just today" (or
@@ -278,17 +288,36 @@ export function CustomerProfilePage() {
     return Array.from(buckets.values()).sort((a, b) => a.sortDate - b.sortDate);
   }, [filteredSales, filteredPayments, filteredAutoApplied, granularity, dateFrom, dateTo, customerSales, payments]);
 
-  const handleViewSale = (sale) => {
-    const doc = generateBillPDF(sale, settings);
-    doc.save(`${sale.sale_code}_invoice.pdf`);
-  };
+  const handleViewSale = (sale) => setPreviewSale(sale);
 
+  // The receipt as it stood at the time of the payment: the balance shown is
+  // the one THIS payment left on its debt, rebuilt by replaying that debt's
+  // payments in order, not the debt's balance today.
   const handleViewPayment = (payment) => {
-    if (payment.bill_pdf_url) {
-      window.open(payment.bill_pdf_url, '_blank', 'noopener,noreferrer');
-    } else {
-      toast.info('No PDF receipt available for this payment.');
+    const sameDebt = payments
+      .filter(p => p.debt_id === payment.debt_id)
+      .sort((a, b) => new Date(a.settlement_date) - new Date(b.settlement_date));
+
+    let runningPaid = 0;
+    for (const p of sameDebt) {
+      runningPaid += Number(p.amount_paid) || 0;
+      if (p.id === payment.id) break;
     }
+    const debtTotal = Number(payment.debt?.total_amount) || 0;
+    const remainingAfter = Math.max(0, debtTotal - runningPaid);
+
+    setPreviewReceipt({
+      settlement_code: payment.settlement_code || `SETTLEMENT-${payment.id}`,
+      settlement_date: payment.settlement_date,
+      payment_method: payment.payment_method || 'cash',
+      notes: payment.notes || null,
+      created_by: payment.created_by || 'System',
+      amount_paid: Number(payment.amount_paid) || 0,
+      remaining_amount: remainingAfter,
+      status: remainingAfter <= 0 ? 'settled' : 'partial',
+      customer,
+      sale: payment.debt?.sale || null
+    });
   };
 
   const handleSaved = ({ mode, name, error }) => {
@@ -626,9 +655,10 @@ export function CustomerProfilePage() {
                     <button
                       onClick={() => handleViewSale(sale)}
                       className="p-1.5 rounded-lg text-slate-500 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition active:scale-95 touch-target flex items-center justify-center cursor-pointer"
-                      title="View Sale (download bill PDF)"
+                      title="View Bill Preview"
+                      aria-label="View Bill Preview"
                     >
-                      <FileDown size={15} />
+                      <Eye size={15} />
                     </button>
                   </td>
                 </tr>
@@ -683,8 +713,9 @@ export function CustomerProfilePage() {
                       onClick={() => handleViewPayment(payment)}
                       className="p-1.5 rounded-lg text-slate-500 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition active:scale-95 touch-target flex items-center justify-center cursor-pointer"
                       title="View Payment Receipt"
+                      aria-label="View Payment Receipt"
                     >
-                      <ExternalLink size={15} />
+                      <Eye size={15} />
                     </button>
                   </td>
                 </tr>
@@ -854,6 +885,28 @@ export function CustomerProfilePage() {
         confirmLabel="Confirm Delete"
         isLoading={actionLoading}
       />
+
+      {/* --- Bill Preview (Sales History) --- */}
+      <DocumentPreviewModal
+        isOpen={!!previewSale}
+        onClose={() => setPreviewSale(null)}
+        title={`Bill Preview ${previewSale ? `— ${previewSale.sale_code}` : ''}`}
+        buildDoc={() => generateBillPDF(previewSale, settings)}
+        fileName={`${previewSale?.sale_code || 'invoice'}_invoice.pdf`}
+      >
+        <SaleInvoicePreview sale={previewSale} settings={settings} />
+      </DocumentPreviewModal>
+
+      {/* --- Settlement Receipt Preview (Payment History) --- */}
+      <DocumentPreviewModal
+        isOpen={!!previewReceipt}
+        onClose={() => setPreviewReceipt(null)}
+        title={`Payment Receipt ${previewReceipt ? `— ${previewReceipt.settlement_code}` : ''}`}
+        buildDoc={() => generateSettlementReceiptPDF(previewReceipt, settings)}
+        fileName={`${previewReceipt?.settlement_code || 'settlement'}_receipt.pdf`}
+      >
+        <SettlementReceiptPreview settlement={previewReceipt} settings={settings} />
+      </DocumentPreviewModal>
 
     </div>
   );

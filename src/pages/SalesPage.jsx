@@ -17,9 +17,10 @@ import { Input, Select } from '../components/FormFields';
 import { generateBillPDF } from '../utils/pdfGenerator';
 import { buildSaleNotification, notificationUrl, toWhatsAppNumber } from '../utils/notifications';
 import { SendNotificationDialog } from '../components/SendNotificationDialog';
-import { recordNotification } from '../hooks/useNotifications';
-import { toLocalDateStr, todayStr, thisMonthStr, thisYearStr } from '../utils/date';
-import { ShoppingCart, Search, FileDown, ArrowRight, ArrowLeft, Check, Trash2, Eye, Pencil, CalendarRange, UserPlus, Zap } from 'lucide-react';
+import { DocumentPreviewModal, SaleInvoicePreview } from '../components/DocumentPreview';
+import { recordNotification, useNotificationStatus } from '../hooks/useNotifications';
+import { toLocalDateStr, toLocalDateTimeStr, todayStr, thisMonthStr, thisYearStr } from '../utils/date';
+import { ShoppingCart, Search, FileDown, ArrowRight, ArrowLeft, Check, Trash2, Eye, Pencil, CalendarRange, UserPlus, Zap, BellRing, BellOff } from 'lucide-react';
 
 export function SalesPage() {
   const { sales, isLoading: salesLoading, placeOrder, updateSale, saleDeletionImpact, deleteSale } = useSales();
@@ -28,6 +29,10 @@ export function SalesPage() {
   const { customerPrices } = useCustomerPrices();
   const { debts } = useDebts();
   const { settings } = useSettings();
+  // Whether each order's invoice was actually dispatched to the customer.
+  // Keyed by sale_code, which is what recordNotification writes as the
+  // notification_log reference_code for a 'sale_invoice'.
+  const { statusMap: saleNotifications } = useNotificationStatus('sale_invoice');
   const { user, isAdmin } = useAuth();
   const toast = useToast();
   const location = useLocation();
@@ -97,9 +102,11 @@ export function SalesPage() {
   // automatically applied to. The operator has to see which ones first.
   const [deleteImpact, setDeleteImpact] = useState(null);
 
-  // View bill preview state
+  // View bill preview state. The preview is rendered as HTML (see
+  // DocumentPreview.jsx) rather than an embedded PDF, so there is no blob URL
+  // to hold on to any more — the PDF is only built when the operator actually
+  // asks to download or open it.
   const [viewModalOpen, setViewModalOpen] = useState(false);
-  const [viewPdfUrl, setViewPdfUrl] = useState(null);
   const [viewSale, setViewSale] = useState(null);
 
   // Edit bill state. The edit form mirrors the till: one pooled quantity, an
@@ -565,20 +572,15 @@ export function SalesPage() {
     toast.info(`Downloaded invoice ${sale.sale_code}`);
   };
 
-  // View bill: render the invoice PDF in-app as a preview, no download required
+  // View bill: show the invoice on screen, no download required.
   const handleViewClick = (sale) => {
-    const doc = generateBillPDF(sale, settings);
-    const blobUrl = doc.output('bloburl');
-    setViewPdfUrl(blobUrl);
     setViewSale(sale);
     setViewModalOpen(true);
   };
 
   const handleCloseViewModal = () => {
-    if (viewPdfUrl) URL.revokeObjectURL(viewPdfUrl);
     setViewModalOpen(false);
     setViewSale(null);
-    setViewPdfUrl(null);
   };
 
   // Edit bill: open the correction form pre-filled with the sale's current values
@@ -718,13 +720,22 @@ export function SalesPage() {
         valB = b.customer?.name || '';
       }
 
+      // Notification Status isn't a column on `sales` — it's whether a
+      // notification_log row exists for the sale_code. Sorted as a boolean so
+      // one direction groups every un-notified order together, which is the
+      // point of having the column.
+      if (sortKey === 'notificationStatus') {
+        valA = saleNotifications.has(a.sale_code) ? 1 : 0;
+        valB = saleNotifications.has(b.sale_code) ? 1 : 0;
+      }
+
       if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
       if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
 
     return result;
-  }, [sales, searchQuery, sortKey, sortDirection, periodType, fromDate, toDate, fromMonth, toMonth, fromYear, toYear, paymentFilter]);
+  }, [sales, searchQuery, sortKey, sortDirection, periodType, fromDate, toDate, fromMonth, toMonth, fromYear, toYear, paymentFilter, saleNotifications]);
 
   // Totals across the currently filtered set — shown as a footer row so the
   // user can see at a glance what a period/payment filter adds up to.
@@ -882,6 +893,7 @@ export function SalesPage() {
           { key: 'total_amount', label: 'Amount', sortable: true },
           { key: 'payment_type', label: 'Payment', sortable: true },
           { key: 'sale_date', label: 'Date', sortable: true },
+          { key: 'notificationStatus', label: 'Notification Status', sortable: true },
           { key: 'bill', label: isAdmin ? 'Actions' : 'Invoice', sortable: false }
         ]}
         data={filteredSales}
@@ -902,11 +914,12 @@ export function SalesPage() {
             <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-bold text-slate-900 dark:text-slate-100">
               LKR {filteredTotals.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </td>
-            <td colSpan={3} className="px-2.5 sm:px-4 py-2.5 sm:py-3"></td>
+            <td colSpan={4} className="px-2.5 sm:px-4 py-2.5 sm:py-3"></td>
           </tr>
         }
         renderRow={(sale) => {
           const isMultiItem = (sale.sale_items?.length || 0) > 1;
+          const notification = saleNotifications.get(sale.sale_code);
           return (
           <tr key={sale.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
             <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-medium text-navy-600 dark:text-navy-400">{sale.sale_code}</td>
@@ -940,6 +953,29 @@ export function SalesPage() {
             <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-semibold font-mono text-slate-800 dark:text-slate-200">LKR {sale.total_amount.toLocaleString()}</td>
             <td className="px-2.5 sm:px-4 py-2.5 sm:py-3"><Badge type={sale.payment_type} /></td>
             <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 text-xs text-slate-400 whitespace-nowrap">{new Date(sale.sale_date).toLocaleString()}</td>
+            {/* Notification Status: was this order's invoice actually sent to
+                the customer? "Yes" only when a notification_log row exists for
+                this sale_code — the operator can skip the prompt, and a
+                customer with no phone number never gets one at all. */}
+            <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 whitespace-nowrap">
+              {notification ? (
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
+                  title={`Sent via ${notification.channel === 'sms' ? 'SMS' : 'WhatsApp'} on ${toLocalDateTimeStr(notification.sentAt)}`}
+                >
+                  <BellRing size={11} />
+                  Yes
+                </span>
+              ) : (
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                  title="No invoice notification has been sent to this customer for this order"
+                >
+                  <BellOff size={11} />
+                  No
+                </span>
+              )}
+            </td>
             <td className="px-2.5 sm:px-4 py-2.5 sm:py-3">
               <div className="flex items-center space-x-1">
                 <button
@@ -1649,32 +1685,16 @@ export function SalesPage() {
       </Modal>
 
       {/* --- View Bill Preview Modal --- */}
-      <Modal
+      <DocumentPreviewModal
         isOpen={viewModalOpen}
         onClose={handleCloseViewModal}
         title={`Bill Preview ${viewSale ? `— ${viewSale.sale_code}` : ''}`}
-        size="2xl"
+        buildDoc={() => generateBillPDF(viewSale, settings)}
+        fileName={`${viewSale?.sale_code || 'invoice'}_invoice.pdf`}
+        onDownloaded={() => toast.info(`Downloaded invoice ${viewSale?.sale_code || ''}`)}
       >
-        <div className="space-y-3">
-          {viewPdfUrl && (
-            <iframe
-              src={viewPdfUrl}
-              title="Bill PDF Preview"
-              className="w-full h-[70vh] rounded-xl border border-slate-200 dark:border-slate-800"
-            />
-          )}
-          <div className="flex justify-end">
-            <Button
-              variant="primary"
-              onClick={() => viewSale && downloadInvoice(viewSale)}
-              className="flex items-center space-x-1.5"
-            >
-              <FileDown size={16} />
-              <span>Download PDF</span>
-            </Button>
-          </div>
-        </div>
-      </Modal>
+        <SaleInvoicePreview sale={viewSale} settings={settings} />
+      </DocumentPreviewModal>
 
       {/* --- Edit Bill Modal --- */}
       <Modal

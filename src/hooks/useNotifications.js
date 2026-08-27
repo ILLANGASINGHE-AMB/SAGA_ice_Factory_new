@@ -87,3 +87,63 @@ export async function recordNotification({
     console.warn("Failed to record notification dispatch:", err);
   }
 }
+
+/**
+ * "Has this reference been notified?" for a whole ledger at once.
+ *
+ * The Sales table needs a Yes/No per order, so fetching a notification history
+ * per row is out. This pulls just the identifying columns for one
+ * notification_type and returns a Map keyed by reference_code (a sale_code or
+ * settlement_code) holding the MOST RECENT dispatch for it — rows arrive
+ * newest-first and the first one seen for a code wins.
+ *
+ * Deliberately narrow (`reference_code, channel, sent_at`) rather than
+ * `select('*')`: the message body is the bulk of a notification_log row and
+ * nothing here renders it.
+ */
+export function useNotificationStatus(notificationType) {
+  const [statusMap, setStatusMap] = useState(() => new Map());
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchStatuses = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('notification_log')
+      .select('reference_code, channel, sent_at')
+      .eq('notification_type', notificationType)
+      .order('sent_at', { ascending: false });
+
+    if (error) {
+      console.error("Failed to fetch notification statuses:", error);
+      setIsLoading(false);
+      return;
+    }
+
+    const map = new Map();
+    (data || []).forEach(row => {
+      if (!row.reference_code || map.has(row.reference_code)) return;
+      map.set(row.reference_code, { channel: row.channel, sentAt: row.sent_at });
+    });
+    setStatusMap(map);
+    setIsLoading(false);
+  }, [notificationType]);
+
+  useEffect(() => {
+    const refetchStatuses = coalesceRefetch(fetchStatuses);
+    // Subscribing to an external system (Supabase) and pushing what it reports
+    // into state — the case the rule explicitly allows for.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchStatuses();
+
+    const channel = supabase
+      .channel(`notification-status-${notificationType}-${Math.random()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notification_log' }, refetchStatuses)
+      .subscribe();
+
+    return () => {
+      refetchStatuses.cancel();
+      supabase.removeChannel(channel);
+    };
+  }, [notificationType, fetchStatuses]);
+
+  return { statusMap, isLoading };
+}

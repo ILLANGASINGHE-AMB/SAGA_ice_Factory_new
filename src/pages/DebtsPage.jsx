@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, Fragment } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useDebts } from '../hooks/useDebts';
 import { useSettings } from '../hooks/useSettings';
@@ -8,12 +8,13 @@ import { Table } from '../components/Table';
 import { Button } from '../components/Button';
 import { Modal } from '../components/Modal';
 import { Input, Select, TextArea } from '../components/FormFields';
-import { generateDebtStatementPDF } from '../utils/pdfGenerator';
-import { toLocalDateTimeStr } from '../utils/date';
+import { generateDebtStatementPDF, generateSettlementReceiptPDF } from '../utils/pdfGenerator';
+import { toLocalDateTimeStr, isWithinLocalRange } from '../utils/date';
 import { buildSettlementNotification, notificationUrl, toWhatsAppNumber } from '../utils/notifications';
 import { SendNotificationDialog } from '../components/SendNotificationDialog';
+import { DocumentPreviewModal, DebtStatementPreview, SettlementReceiptPreview } from '../components/DocumentPreview';
 import { recordNotification } from '../hooks/useNotifications';
-import { DollarSign, RefreshCcw, FileDown, Users, History, Search, Landmark } from 'lucide-react';
+import { DollarSign, RefreshCcw, FileDown, Users, History, Search, Landmark, ChevronDown, ChevronRight, Receipt } from 'lucide-react';
 
 // Roll a set of debt rows up into one outstanding-balance line per customer,
 // heaviest debtor first. Shared by the ledger's "Debt by Customers" view and
@@ -105,10 +106,18 @@ export function DebtsPage() {
   // it any more (see pendingReceiptNotification / handleSendReceiptNotification).
   const [settlementReceiptRecord, setSettlementReceiptRecord] = useState(null);
 
-  // Debt History bill preview modal state
+  // Debt History statement preview modal state. Rendered as HTML (see
+  // DocumentPreview.jsx) rather than an embedded PDF — a blob: <iframe> shows
+  // nothing at all on the tablets and phones this runs on.
   const [billPreviewOpen, setBillPreviewOpen] = useState(false);
-  const [billPdfUrl, setBillPdfUrl] = useState(null);
   const [billDebt, setBillDebt] = useState(null);
+
+  // Settlement receipt preview, opened from a settlement line in Debt History.
+  const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false);
+  const [receiptRecord, setReceiptRecord] = useState(null);
+
+  // Which Debt History row has its settlement breakdown open.
+  const [expandedDebtId, setExpandedDebtId] = useState(null);
 
   // WhatsApp Prompt State
   const [whatsappPromptOpen, setWhatsappPromptOpen] = useState(false);
@@ -251,10 +260,17 @@ export function DebtsPage() {
       .filter(d => Number(d.customer_id) === Number(settlementReceiptRecord.customer_id) && d.status !== 'settled')
       .reduce((sum, d) => sum + (Number(d.remaining_amount) || 0), 0);
 
+    // The customer's 24-hour link to view and download this settlement's PDF
+    // receipt — the settlement twin of the /bill/<sale_code> link a sale's
+    // message carries. Served anonymously by get_public_settlement_receipt,
+    // which enforces the 24 hours server-side.
+    const receiptUrl = `${window.location.origin}/receipt/${settlementReceiptRecord.settlement_code}`;
+
     return {
       phone,
       amountPaid,
       remaining,
+      receiptUrl,
       message: buildSettlementNotification({
         customerName: settlementReceiptRecord.customer?.name,
         settlementCode: settlementReceiptRecord.settlement_code,
@@ -262,7 +278,8 @@ export function DebtsPage() {
         currentAmount: amountPaid,
         totalAmount: amountPaid + remaining,
         paymentType: settlementReceiptRecord.payment_method,
-        remainingAmount: remaining
+        remainingAmount: remaining,
+        receiptUrl
       })
     };
   }, [settlementReceiptRecord, debts]);
@@ -271,7 +288,7 @@ export function DebtsPage() {
   // own messaging app for a customer who doesn't use it.
   const handleSendReceiptNotification = async (channel) => {
     if (!settlementReceiptRecord || !pendingReceiptNotification) return;
-    const { phone, message, amountPaid, remaining } = pendingReceiptNotification;
+    const { phone, message, amountPaid, remaining, receiptUrl } = pendingReceiptNotification;
 
     if (!toWhatsAppNumber(phone)) {
       toast.error("This customer has no phone number on file — can't send a notification.");
@@ -292,6 +309,7 @@ export function DebtsPage() {
       remainingAmount: remaining,
       paymentType: settlementReceiptRecord.payment_method,
       message,
+      linkUrl: receiptUrl,
       sentBy: user?.fullName || 'Staff Operator'
     });
 
@@ -302,24 +320,27 @@ export function DebtsPage() {
   // history, and (once settled) the settled amount/date — generated, not
   // auto-downloaded.
   const handleViewBill = (debt) => {
-    const doc = generateDebtStatementPDF(debt, settings);
-    const blobUrl = doc.output('bloburl');
-    setBillPdfUrl(blobUrl);
     setBillDebt(debt);
     setBillPreviewOpen(true);
   };
 
-  const downloadBill = (debt) => {
-    if (!debt) return;
-    const doc = generateDebtStatementPDF(debt, settings);
-    doc.save(`${debt.sale?.sale_code || `DEBT-${debt.id}`}_statement.pdf`);
+  const closeBillPreview = () => {
+    setBillPreviewOpen(false);
+    setBillDebt(null);
   };
 
-  const closeBillPreview = () => {
-    if (billPdfUrl) URL.revokeObjectURL(billPdfUrl);
-    setBillPreviewOpen(false);
-    setBillPdfUrl(null);
-    setBillDebt(null);
+  // One settlement line's own receipt. Built from the settlement row plus the
+  // debt it was applied to, with the balance that debt was left at by THIS
+  // payment (not the debt's balance today) — so a receipt reopened after a
+  // later payment still states what the customer was told at the time.
+  const openReceiptPreview = (line) => {
+    setReceiptRecord(line.receipt);
+    setReceiptPreviewOpen(true);
+  };
+
+  const closeReceiptPreview = () => {
+    setReceiptPreviewOpen(false);
+    setReceiptRecord(null);
   };
 
   // Customer Debt Aging (0-30, 31-60, 61-90, 90+ days)
@@ -392,20 +413,26 @@ export function DebtsPage() {
       );
     }
 
-    // 4. Date Range Filter
-    if (fromDate) {
-      const from = new Date(fromDate);
-      from.setHours(0, 0, 0, 0);
-      result = result.filter(d => new Date(d.created_at) >= from);
-    }
-    if (toDate) {
-      const to = new Date(toDate);
-      to.setHours(23, 59, 59, 999);
-      result = result.filter(d => new Date(d.created_at) <= to);
+    // 4. Date Range Filter.
+    //
+    // In the Debt History view a debt matches if EITHER the date it was
+    // incurred or the date of any payment against it falls in the range. The
+    // range used to test `created_at` alone, so "show me this week" hid every
+    // settlement taken this week against an older debt — the settles were in
+    // the ledger but not on the screen. "Debt by Customers" is a snapshot of
+    // what is owed now, so it keeps matching on the incurrence date only.
+    if (fromDate || toDate) {
+      result = result.filter(d => {
+        if (isWithinLocalRange(d.created_at, fromDate, toDate)) return true;
+        if (viewMode !== 'history') return false;
+        return (d.debt_settlements || []).some(setl =>
+          isWithinLocalRange(setl.settlement_date, fromDate, toDate)
+        );
+      });
     }
 
     return result;
-  }, [debts, statusFilter, agingFilter, searchQuery, fromDate, toDate]);
+  }, [debts, statusFilter, agingFilter, searchQuery, fromDate, toDate, viewMode]);
 
   // Debt by Customers: group the (already filtered) outstanding debts by customer
   const customerGroups = useMemo(() => groupDebtsByCustomer(filteredDebts), [filteredDebts]);
@@ -438,7 +465,12 @@ export function DebtsPage() {
     const rows = filteredDebts.map(debt => {
       const debtAmount = Number(debt.total_amount) || 0;
       const remainingAmount = Number(debt.remaining_amount) || 0;
-      const settlements = debt.debt_settlements || [];
+      // Oldest payment first, so the running balance below reads down the
+      // list the way a passbook does. `.slice()` because the array belongs to
+      // the fetched row and sort mutates in place.
+      const settlements = (debt.debt_settlements || [])
+        .slice()
+        .sort((a, b) => new Date(a.settlement_date) - new Date(b.settlement_date));
 
       // `debts.paid_amount` is the maintained figure; the settlements sum is
       // a fallback for rows written before it was kept up to date.
@@ -482,6 +514,55 @@ export function DebtsPage() {
       const isCashShortfall = debt.sale?.payment_type === 'cash';
       const orderTotal = Number(debt.sale?.total_amount) || 0;
 
+      // Every payment against this debt, individually — date, receipt code,
+      // amount, how it was taken, and the balance it left behind. The row used
+      // to collapse all of this into one word ("Cash"), so a settlement was
+      // effectively invisible: an operator could not see WHEN a debt was
+      // settled, under which receipt number, or how a part payment was split.
+      // The running balance is recomputed here rather than read off the debt,
+      // whose remaining_amount only ever reflects the state *after the last*
+      // payment.
+      let runningPaid = 0;
+      const settlementLines = settlements.map((setl, idx) => {
+        const amount = Number(setl.amount_paid) || 0;
+        runningPaid += amount;
+        const remainingAfter = Math.max(0, debtAmount - runningPaid);
+        const statusAfter = remainingAfter <= 0 ? 'settled' : 'partial';
+        const settledByOrder = setl.is_auto_applied
+          ? AUTO_APPLIED_SALE_RE.exec(setl.created_by || '')?.[1] || null
+          : null;
+
+        return {
+          id: setl.id ?? `${debt.id}-${idx}`,
+          settlementCode: setl.settlement_code || '—',
+          settledAt: setl.settlement_date,
+          amount,
+          isAuto: !!setl.is_auto_applied,
+          settledByOrder,
+          methodLabel: setl.is_auto_applied
+            ? `Cash Order${settledByOrder ? ` [${settledByOrder}]` : ''}`
+            : formatPaymentMethod(setl.payment_method),
+          notes: setl.notes || null,
+          remainingAfter,
+          statusAfter,
+          // Shaped for generateSettlementReceiptPDF / SettlementReceiptPreview.
+          receipt: {
+            settlement_code: setl.settlement_code || `SETTLEMENT-${setl.id}`,
+            settlement_date: setl.settlement_date,
+            payment_method: setl.payment_method || 'cash',
+            notes: setl.notes || null,
+            created_by: setl.created_by || 'System',
+            amount_paid: amount,
+            remaining_amount: remainingAfter,
+            status: statusAfter,
+            customer: debt.customer,
+            sale: debt.sale
+          }
+        };
+      });
+
+      const lastSettlement = settlementLines[settlementLines.length - 1] || null;
+
       return {
         id: `debt-${debt.id}`,
         occurredAt: debt.created_at,
@@ -493,6 +574,8 @@ export function DebtsPage() {
         paidAmount,
         paymentMethod: methodParts.length > 0 ? methodParts.join(' + ') : 'Not Settled',
         remainingAmount,
+        settlementLines,
+        lastSettledAt: lastSettlement?.settledAt || null,
         // Drives the row tint. Derived from the balance rather than
         // `debt.status` so it can't disagree with the numbers beside it.
         settlementState: isCleared ? 'settled' : paidAmount > 0 ? 'partial' : 'pending',
@@ -811,10 +894,33 @@ export function DebtsPage() {
             data={debtHistoryRows}
             isLoading={isLoading}
             emptyMessage="No debts matched the parameters."
-            renderRow={(row) => (
-              <tr key={row.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
+            renderRow={(row) => {
+              const isExpanded = expandedDebtId === row.id;
+              const hasSettlements = row.settlementLines.length > 0;
+              return (
+              <Fragment key={row.id}>
+              <tr className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
                 <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono text-xs text-slate-500 whitespace-nowrap">
-                  {toLocalDateTimeStr(row.occurredAt) || '—'}
+                  <div className="flex items-center gap-1.5">
+                    {/* Opens this debt's payment breakdown. Rendered as a
+                        placeholder (not hidden) when there are no payments, so
+                        the date column stays aligned down the table. */}
+                    {hasSettlements ? (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedDebtId(isExpanded ? null : row.id)}
+                        className="p-0.5 rounded text-slate-400 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition shrink-0"
+                        aria-expanded={isExpanded}
+                        aria-label={isExpanded ? 'Hide settlement history' : `Show ${row.settlementLines.length} settlement(s)`}
+                        title={isExpanded ? 'Hide settlement history' : `Show ${row.settlementLines.length} settlement(s)`}
+                      >
+                        {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </button>
+                    ) : (
+                      <span className="w-[22px] shrink-0" aria-hidden="true" />
+                    )}
+                    <span>{toLocalDateTimeStr(row.occurredAt) || '—'}</span>
+                  </div>
                 </td>
                 <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-semibold text-slate-900 dark:text-slate-100">
                   {row.customerName}
@@ -849,8 +955,16 @@ export function DebtsPage() {
                   }`} title={row.paymentMethod}>
                     {row.paymentMethod}
                   </span>
-                  {row.settlementState === 'partial' && (
-                    <span className="block text-[10px] text-slate-400">Part paid</span>
+                  {/* When the debt was actually settled. The row's own Date
+                      column is the date the debt was INCURRED and never moves,
+                      so without this a settled row gave no clue when the money
+                      came in. */}
+                  {row.lastSettledAt && (
+                    <span className="block text-[10px] font-mono text-slate-400">
+                      {row.settlementState === 'partial' ? 'Last paid ' : 'Paid '}
+                      {toLocalDateTimeStr(row.lastSettledAt)}
+                      {row.settlementLines.length > 1 ? ` · ${row.settlementLines.length} payments` : ''}
+                    </span>
                   )}
                 </td>
                 <td className={`px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-semibold whitespace-nowrap ${
@@ -872,7 +986,78 @@ export function DebtsPage() {
                   </Button>
                 </td>
               </tr>
-            )}
+
+              {/* Settlement breakdown — one line per payment taken against
+                  this debt, each with its own receipt. */}
+              {isExpanded && hasSettlements && (
+                <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40">
+                  <td colSpan={8} className="px-2.5 sm:px-4 py-3">
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        Settlements against {row.saleCode}
+                      </p>
+                      <div className="overflow-x-auto touch-scroll">
+                        <table className="w-full min-w-[36rem] border-collapse text-xs">
+                          <thead>
+                            <tr className="text-[10px] uppercase tracking-wider text-slate-400">
+                              <th className="text-left font-semibold px-2 py-1">Date &amp; Time</th>
+                              <th className="text-left font-semibold px-2 py-1">Receipt No</th>
+                              <th className="text-right font-semibold px-2 py-1">Amount Paid</th>
+                              <th className="text-left font-semibold px-2 py-1">Method</th>
+                              <th className="text-right font-semibold px-2 py-1">Balance After</th>
+                              <th className="text-right font-semibold px-2 py-1">Receipt</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {row.settlementLines.map(line => (
+                              <tr key={line.id} className="border-t border-slate-200/70 dark:border-slate-800">
+                                <td className="px-2 py-1.5 font-mono text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                                  {toLocalDateTimeStr(line.settledAt) || '—'}
+                                </td>
+                                <td className="px-2 py-1.5 font-mono text-navy-600 dark:text-navy-400 whitespace-nowrap">
+                                  {line.settlementCode}
+                                </td>
+                                <td className="px-2 py-1.5 text-right font-mono font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                                  LKR {line.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="px-2 py-1.5 text-slate-600 dark:text-slate-300">
+                                  <span className={line.isAuto ? 'font-semibold text-sky-600 dark:text-sky-400' : ''}>
+                                    {line.isAuto ? `Settled by ${line.methodLabel}` : line.methodLabel}
+                                  </span>
+                                  {line.notes && (
+                                    <span className="block text-[10px] text-slate-400">{line.notes}</span>
+                                  )}
+                                </td>
+                                <td className={`px-2 py-1.5 text-right font-mono font-semibold whitespace-nowrap ${
+                                  line.remainingAfter > 0
+                                    ? 'text-rose-600 dark:text-rose-400'
+                                    : 'text-emerald-600 dark:text-emerald-400'
+                                }`}>
+                                  LKR {line.remainingAfter.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="px-2 py-1.5 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => openReceiptPreview(line)}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-slate-500 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                    title={`View settlement receipt ${line.settlementCode}`}
+                                  >
+                                    <Receipt size={13} />
+                                    <span>View</span>
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
+              );
+            }}
           />
         </div>
       )}
@@ -1111,32 +1296,26 @@ export function DebtsPage() {
       </Modal>
 
       {/* --- Debt History Statement Preview Modal --- */}
-      <Modal
+      <DocumentPreviewModal
         isOpen={billPreviewOpen}
         onClose={closeBillPreview}
         title={`Debt Statement ${billDebt?.sale ? `— ${billDebt.sale.sale_code}` : ''}`}
-        size="2xl"
+        buildDoc={() => generateDebtStatementPDF(billDebt, settings)}
+        fileName={`${billDebt?.sale?.sale_code || `DEBT-${billDebt?.id}`}_statement.pdf`}
       >
-        <div className="space-y-3">
-          {billPdfUrl && (
-            <iframe
-              src={billPdfUrl}
-              title="Debt Statement PDF Preview"
-              className="w-full h-[70vh] rounded-xl border border-slate-200 dark:border-slate-800"
-            />
-          )}
-          <div className="flex justify-end">
-            <Button
-              variant="primary"
-              onClick={() => downloadBill(billDebt)}
-              className="flex items-center space-x-1.5"
-            >
-              <FileDown size={16} />
-              <span>Download PDF</span>
-            </Button>
-          </div>
-        </div>
-      </Modal>
+        <DebtStatementPreview debt={billDebt} settings={settings} />
+      </DocumentPreviewModal>
+
+      {/* --- Settlement Receipt Preview Modal --- */}
+      <DocumentPreviewModal
+        isOpen={receiptPreviewOpen}
+        onClose={closeReceiptPreview}
+        title={`Settlement Receipt ${receiptRecord ? `— ${receiptRecord.settlement_code}` : ''}`}
+        buildDoc={() => generateSettlementReceiptPDF(receiptRecord, settings)}
+        fileName={`${receiptRecord?.settlement_code || 'settlement'}_receipt.pdf`}
+      >
+        <SettlementReceiptPreview settlement={receiptRecord} settings={settings} />
+      </DocumentPreviewModal>
 
       {/* --- Settlement Receipt Notification Prompt --- */}
       <SendNotificationDialog
