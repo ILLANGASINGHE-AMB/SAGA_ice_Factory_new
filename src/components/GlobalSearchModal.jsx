@@ -14,6 +14,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { debtReference } from '../utils/customerDebt';
 import { useBackdropDismiss } from '../hooks/useBackdropDismiss';
 
 const MIN_QUERY_LENGTH = 2;
@@ -144,7 +145,7 @@ export function GlobalSearchModal({ isOpen, onClose }) {
         (debts || []).forEach(d => results.push({
           type: 'Debt Record',
           icon: <DollarSign size={16} className="text-rose-500" />,
-          title: `${d.customer?.name || 'Customer'} (${d.sale?.sale_code || 'Debt'})`,
+          title: `${d.customer?.name || 'Customer'} (${debtReference(d)})`,
           subtitle: `Outstanding: LKR ${Number(d.remaining_amount || 0).toLocaleString()} • Status: ${d.status}`,
           path: '/debts'
         }));

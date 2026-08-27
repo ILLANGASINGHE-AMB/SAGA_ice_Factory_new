@@ -3,6 +3,7 @@ import { Modal } from './Modal';
 import { Button } from './Button';
 import { FileDown, ExternalLink } from 'lucide-react';
 import { toLocalDateTimeStr } from '../utils/date';
+import { debtReference } from '../utils/customerDebt';
 
 // On-screen previews of the documents pdfGenerator.js prints.
 //
@@ -364,7 +365,7 @@ export function DebtStatementPreview({ debt, settings }) {
 
   return (
     <Sheet>
-      <SheetHeader settings={settings} title="Debt Statement" meta={`#${debt.sale?.sale_code || `DEBT-${debt.id}`}`} />
+      <SheetHeader settings={settings} title="Debt Statement" meta={`#${debtReference(debt)}`} />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <FieldBlock
@@ -379,7 +380,7 @@ export function DebtStatementPreview({ debt, settings }) {
           <FieldBlock
             label="Debt Details"
             rows={[
-              ['Sale Reference', debt.sale?.sale_code || 'N/A'],
+              ['Sale Reference', debtReference(debt)],
               ['Date & Time Issued', toLocalDateTimeStr(debt.created_at) || 'N/A'],
               ['Total Debt Amount', money(debt.total_amount)],
               ['Status', (debt.status || 'N/A').toUpperCase()]
@@ -425,7 +426,7 @@ export function SettlementReceiptPreview({ settlement, settings }) {
   // so every covered sale reference is shown — not just the first.
   const lines = settlement.settlements?.length ? settlement.settlements : null;
   const saleRefText = lines
-    ? lines.map(s => s.sale_code).filter(Boolean).join(', ') || 'N/A'
+    ? lines.map(s => s.sale_code || 'Initial Debt').join(', ') || 'N/A'
     : (settlement.sale?.sale_code || 'N/A');
 
   const methodDetail = settlement.payment_method === 'cheque'
@@ -436,7 +437,7 @@ export function SettlementReceiptPreview({ settlement, settings }) {
 
   const rows = lines
     ? lines.map(s => [
-        `Settlement against Order Reference #${s.sale_code || 'N/A'}`,
+        `Settlement against Order Reference #${s.sale_code || 'Initial Debt'}`,
         money(s.amount_applied),
         money(s.remaining_amount),
         (s.status || '').toUpperCase()

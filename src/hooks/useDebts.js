@@ -269,11 +269,63 @@ export function useDebts() {
     };
   };
 
+  // A customer's opening balance: what they already owed when they arrived
+  // from the old paper book. Written as an ordinary debt with no sale behind
+  // it, so it ages, settles FIFO and is cleared by a later cash order exactly
+  // like a debt raised here. Admin-gated server-side — the RLS policy on
+  // `debts` has to allow any authenticated insert for the order RPCs, so the
+  // check lives in the function.
+  const addInitialDebt = async ({ customerId, amount, incurredAt = null, notes = null, createdBy }) => {
+    const { data, error: rpcErr } = await supabase.rpc('add_customer_initial_debt', {
+      p_customer_id: customerId,
+      p_amount: Number(amount),
+      p_incurred_at: incurredAt,
+      p_notes: notes,
+      p_created_by: createdBy || 'Admin'
+    });
+
+    if (rpcErr || !data) {
+      throw new Error(rpcErr?.message || "Failed to record the initial debt");
+    }
+
+    logActivity({
+      action: 'create',
+      entityType: 'debt',
+      entityId: data.id,
+      entityLabel: data.customer_code,
+      description: `Recorded initial debt of LKR ${Number(data.total_amount).toLocaleString()} for ${data.customer_code || customerId}`,
+      performedBy: createdBy
+    });
+
+    return data;
+  };
+
+  // Undo a mistyped opening balance while nothing has been paid against it.
+  // The server refuses once a settlement exists: deleting the debt would
+  // cascade that settlement away and take real money out of Cash Balance
+  // with it.
+  const removeInitialDebt = async (debtId, performedBy) => {
+    const { error: rpcErr } = await supabase.rpc('delete_customer_initial_debt', {
+      p_debt_id: debtId
+    });
+    if (rpcErr) throw new Error(rpcErr.message || "Failed to remove the initial debt");
+
+    logActivity({
+      action: 'delete',
+      entityType: 'debt',
+      entityId: debtId,
+      description: `Removed initial debt #${debtId}`,
+      performedBy
+    });
+  };
+
   return {
     debts,
     isLoading,
     error,
     settleDebt,
-    settleCustomerDebt
+    settleCustomerDebt,
+    addInitialDebt,
+    removeInitialDebt
   };
 }

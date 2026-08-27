@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import { applyPlugin } from 'jspdf-autotable';
 import { toLocalDateTimeStr } from './date';
+import { debtReference } from './customerDebt';
 
 applyPlugin(jsPDF);
 
@@ -422,14 +423,14 @@ export function generateDebtStatementPDF(debt, settings) {
 
   const isSettled = debt.status === 'settled';
 
-  const y0 = drawHeader(doc, settings, 'Debt Statement', `#${debt.sale?.sale_code || `DEBT-${debt.id}`}`);
+  const y0 = drawHeader(doc, settings, 'Debt Statement', `#${debtReference(debt)}`);
   fieldLabel(doc, 'Customer Details', 14, y0);
   fieldLine(doc, `Customer Name: ${debt.customer?.name || 'Walk-in Customer'}`, 14, y0 + 5.5);
   fieldLine(doc, `WhatsApp: ${debt.customer?.whatsapp_number || debt.customer?.contact_number || 'N/A'}`, 14, y0 + 10.5);
   fieldLine(doc, `Address: ${debt.customer?.address || 'N/A'}`, 14, y0 + 15.5);
 
   fieldLabel(doc, 'Debt Details', 115, y0);
-  fieldLine(doc, `Sale Reference: ${debt.sale?.sale_code || 'N/A'}`, 115, y0 + 5.5);
+  fieldLine(doc, `Sale Reference: ${debtReference(debt)}`, 115, y0 + 5.5);
   fieldLine(doc, `Date & Time Issued: ${toLocalDateTimeStr(debt.created_at)}`, 115, y0 + 10.5);
   fieldLine(doc, `Total Debt Amount: LKR ${Number(debt.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 115, y0 + 15.5);
   fieldLine(doc, `Status: ${debt.status?.toUpperCase() || 'N/A'}`, 115, y0 + 20.5);
@@ -532,7 +533,7 @@ export function generateSettlementReceiptPDF(settlement, settings) {
   // customer-level payment applied FIFO across several outstanding sales —
   // show every covered sale reference instead of just one.
   const saleRefText = settlement.settlements?.length
-    ? settlement.settlements.map(s => s.sale_code).filter(Boolean).join(', ') || 'N/A'
+    ? settlement.settlements.map(s => s.sale_code || 'Initial Debt').join(', ') || 'N/A'
     : (settlement.sale?.sale_code || 'N/A');
 
   fieldLabel(doc, 'Settlement Details', 115, y0);
@@ -561,7 +562,7 @@ export function generateSettlementReceiptPDF(settlement, settings) {
   // Summary Table of payments
   const tableData = settlement.settlements?.length
     ? settlement.settlements.map(s => [
-        `Settlement against Order Reference #${s.sale_code || 'N/A'}`,
+        `Settlement against Order Reference #${s.sale_code || 'Initial Debt'}`,
         `LKR ${Number(s.amount_applied).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         `LKR ${Number(s.remaining_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         s.status?.toUpperCase()

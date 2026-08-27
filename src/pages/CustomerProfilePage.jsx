@@ -15,19 +15,21 @@ import { Table } from '../components/Table';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { Modal } from '../components/Modal';
+import { Input, TextArea } from '../components/FormFields';
 import { CustomerFormModal } from '../components/CustomerFormModal';
 import { CustomerPriceModal } from '../components/CustomerPriceModal';
 import { generateBillPDF, generateSettlementReceiptPDF } from '../utils/pdfGenerator';
 import { DocumentPreviewModal, SaleInvoicePreview, SettlementReceiptPreview } from '../components/DocumentPreview';
 import {
-  ArrowLeft, Edit2, Trash2, Table2, LineChart as LineChartIcon, Eye, DollarSign, Send
+  ArrowLeft, Edit2, Trash2, Table2, LineChart as LineChartIcon, Eye, DollarSign, Send, FilePlus2, X
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
-import { toLocalDateStr, isWithinLocalRange } from '../utils/date';
+import { toLocalDateStr, isWithinLocalRange, nowLocalDatetimeStr, toLocalDateTimeStr } from '../utils/date';
 import { isCustomerPayment } from '../utils/cashBankMath';
-import { debtFieldsFor } from '../utils/customerDebt';
+import { debtFieldsFor, debtReference } from '../utils/customerDebt';
 
 const GRAPH_COLORS = { orders: '#ef4444', payments: '#22c55e', autoApplied: '#94a3b8' };
 const PAYMENT_METHOD_LABELS = { cash: 'Cash', card: 'Card', bank_transfer: 'Bank Transfer', cheque: 'Cheque', other: 'Other' };
@@ -42,7 +44,7 @@ export function CustomerProfilePage() {
   const customerId = Number(id);
 
   const { customers, isLoading: customersLoading, updateCustomer, deleteCustomer } = useCustomers();
-  const { debts, isLoading: debtsLoading } = useDebts();
+  const { debts, isLoading: debtsLoading, addInitialDebt, removeInitialDebt } = useDebts();
   const { sales, isLoading: salesLoading } = useSales();
   const { payments, isLoading: paymentsLoading, error: paymentsError } = useCustomerPayments(customerId);
   const { cheques, isLoading: chequesLoading } = useCustomerCheques(customerId);
@@ -50,7 +52,7 @@ export function CustomerProfilePage() {
   const { customerPrices, setCustomPrice, clearCustomPrice } = useCustomerPrices();
   const { inventory } = useInventory();
   const { settings } = useSettings();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const toast = useToast();
 
   const inventoryDefaults = useMemo(() => {
@@ -89,6 +91,14 @@ export function CustomerProfilePage() {
   // Sales and Debts ledgers use, with the PDF regenerated on demand.
   const [previewSale, setPreviewSale] = useState(null);
   const [previewReceipt, setPreviewReceipt] = useState(null);
+
+  // Initial debt (opening balance) entry.
+  const [initialDebtOpen, setInitialDebtOpen] = useState(false);
+  const [initialDebtAmount, setInitialDebtAmount] = useState('');
+  const [initialDebtAt, setInitialDebtAt] = useState(nowLocalDatetimeStr);
+  const [initialDebtNote, setInitialDebtNote] = useState('');
+  const [initialDebtLoading, setInitialDebtLoading] = useState(false);
+  const [removeInitialDebtOpen, setRemoveInitialDebtOpen] = useState(false);
 
   // Daily/Monthly/Yearly sets both the bucket size AND a matching lookback
   // window wide enough to actually show several buckets — "just today" (or
@@ -293,6 +303,63 @@ export function CustomerProfilePage() {
   // figure last moved.
   const debtFields = useMemo(() => debtFieldsFor(debts, customerId), [debts, customerId]);
 
+  // The customer's opening balance, if one has been recorded. At most one
+  // exists — the DB carries a partial unique index saying so.
+  const initialDebt = useMemo(
+    () => customerDebts.find(d => d.is_opening_balance) || null,
+    [customerDebts]
+  );
+
+  const openInitialDebtModal = () => {
+    setInitialDebtAmount('');
+    setInitialDebtAt(nowLocalDatetimeStr());
+    setInitialDebtNote('');
+    setInitialDebtOpen(true);
+  };
+
+  const handleSaveInitialDebt = async (e) => {
+    e.preventDefault();
+    const amount = parseFloat(initialDebtAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast.error("Please enter a valid positive initial debt amount");
+      return;
+    }
+
+    setInitialDebtLoading(true);
+    try {
+      await addInitialDebt({
+        customerId,
+        amount,
+        // A datetime-local value is a wall-clock string with no zone; the
+        // Date constructor reads it as local time, which is what the operator
+        // typed, and toISOString hands the server the correct instant.
+        incurredAt: initialDebtAt ? new Date(initialDebtAt).toISOString() : null,
+        notes: initialDebtNote.trim() || null,
+        createdBy: user?.fullName || 'Admin'
+      });
+      toast.success(`Initial debt of ${money(amount)} recorded for ${customer?.name || 'this customer'}`);
+      setInitialDebtOpen(false);
+    } catch (err) {
+      toast.error(err.message || "Failed to record the initial debt");
+    } finally {
+      setInitialDebtLoading(false);
+    }
+  };
+
+  const handleRemoveInitialDebt = async () => {
+    if (!initialDebt) return;
+    setInitialDebtLoading(true);
+    try {
+      await removeInitialDebt(initialDebt.id, user?.fullName || 'Admin');
+      toast.success('Initial debt removed');
+      setRemoveInitialDebtOpen(false);
+    } catch (err) {
+      toast.error(err.message || "Failed to remove the initial debt");
+    } finally {
+      setInitialDebtLoading(false);
+    }
+  };
+
   const handleViewSale = (sale) => setPreviewSale({ ...sale, ...debtFields });
 
   // The receipt as it stood at the time of the payment: the balance shown is
@@ -480,9 +547,38 @@ export function CustomerProfilePage() {
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5 space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <h3 className="text-sm font-bold font-heading text-slate-800 dark:text-slate-100">Debt Details</h3>
-          <span className="text-xs font-bold text-rose-600 dark:text-rose-400">
-            Outstanding: {money(totalOutstandingDebt)}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold text-rose-600 dark:text-rose-400">
+              Outstanding: {money(totalOutstandingDebt)}
+            </span>
+            {/* Opening balance: what the customer already owed when they came
+                across from the old book. Admin-only, and offered only while
+                there isn't one — a second would silently double the
+                receivable with nothing to reconcile it against. */}
+            {isAdmin && !initialDebt && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={openInitialDebtModal}
+                className="flex items-center space-x-1.5"
+              >
+                <FilePlus2 size={14} />
+                <span>Add Initial Debt</span>
+              </Button>
+            )}
+            {isAdmin && initialDebt && Number(initialDebt.paid_amount) === 0 && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setRemoveInitialDebtOpen(true)}
+                className="flex items-center space-x-1.5"
+                title="Remove the initial debt — only possible while nothing has been paid against it"
+              >
+                <X size={14} />
+                <span>Remove Initial Debt</span>
+              </Button>
+            )}
+          </div>
         </div>
         <Table
           enablePagination={false}
@@ -505,7 +601,14 @@ export function CustomerProfilePage() {
               .sort((a, b) => new Date(b.settlement_date) - new Date(a.settlement_date))[0];
             return (
               <tr key={debt.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
-                <td className="px-2 sm:px-3 py-2 font-mono text-navy-600 dark:text-navy-400">{debt.sale?.sale_code || '—'}</td>
+                <td className="px-2 sm:px-3 py-2 font-mono text-navy-600 dark:text-navy-400">
+                  {debtReference(debt)}
+                  {debt.is_opening_balance && (
+                    <span className="block text-[10px] font-sans font-normal text-slate-400">
+                      Opening balance{debt.notes ? ` · ${debt.notes}` : ''}
+                    </span>
+                  )}
+                </td>
                 <td className="px-2 sm:px-3 py-2 font-mono">{money(debt.total_amount)}</td>
                 <td className="px-2 sm:px-3 py-2 font-mono">{money(debt.paid_amount)}</td>
                 <td className="px-2 sm:px-3 py-2 font-mono text-slate-500">{new Date(debt.created_at).toLocaleDateString()}</td>
@@ -890,6 +993,87 @@ export function CustomerProfilePage() {
         message="Deleting this customer will remove them from the system database permanently. Please confirm you want to proceed."
         confirmLabel="Confirm Delete"
         isLoading={actionLoading}
+      />
+
+      {/* --- Add Initial Debt (opening balance) --- */}
+      <Modal
+        isOpen={initialDebtOpen}
+        onClose={() => setInitialDebtOpen(false)}
+        title={`Add Initial Debt — ${customer?.name || ''}`}
+      >
+        <form onSubmit={handleSaveInitialDebt} className="space-y-4">
+          <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+            What this customer already owed before their first order in this
+            system — a balance carried forward from the old book. It is saved
+            as an ordinary debt: it ages, it is collected oldest-first, and a
+            later cash order clears it automatically, exactly like a debt
+            raised here.
+          </div>
+
+          <Input
+            label="Initial Debt Amount (LKR)"
+            name="initialDebtAmount"
+            type="number"
+            step="0.01"
+            min="0.01"
+            required
+            autoFocus
+            placeholder="0.00"
+            value={initialDebtAmount}
+            onChange={(e) => setInitialDebtAmount(e.target.value)}
+          />
+
+          <div>
+            <Input
+              label="Date & Time Incurred"
+              name="initialDebtAt"
+              type="datetime-local"
+              max={nowLocalDatetimeStr()}
+              value={initialDebtAt}
+              onChange={(e) => setInitialDebtAt(e.target.value)}
+            />
+            {/* This date drives the aging bucket and the customer's FIFO
+                collection order, so a balance from months ago must be dated
+                when it was actually taken on — leaving it at today would park
+                an old debt under "0-30 days (current)" and let it jump ahead
+                of newer invoices. */}
+            <p className="text-[11px] text-slate-400 mt-1.5">
+              Use the date the debt was originally taken on — it sets the aging
+              bracket and the order this debt is collected in.
+            </p>
+          </div>
+
+          <TextArea
+            label="Note (optional)"
+            name="initialDebtNote"
+            rows={2}
+            placeholder="e.g. Brought forward from the 2025 ledger, page 14"
+            value={initialDebtNote}
+            onChange={(e) => setInitialDebtNote(e.target.value)}
+          />
+
+          <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <Button variant="secondary" onClick={() => setInitialDebtOpen(false)} disabled={initialDebtLoading}>
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit" isLoading={initialDebtLoading}>
+              Save Initial Debt
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* --- Remove Initial Debt --- */}
+      <ConfirmDialog
+        isOpen={removeInitialDebtOpen}
+        onClose={() => setRemoveInitialDebtOpen(false)}
+        onConfirm={handleRemoveInitialDebt}
+        title="Remove Initial Debt?"
+        message={initialDebt
+          ? `This removes the ${money(initialDebt.total_amount)} opening balance recorded on ${toLocalDateTimeStr(initialDebt.created_at)}. Only possible while nothing has been paid against it.`
+          : ''}
+        confirmLabel="Remove"
+        isLoading={initialDebtLoading}
       />
 
       {/* --- Bill Preview (Sales History) --- */}

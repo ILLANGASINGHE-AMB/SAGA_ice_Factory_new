@@ -4,11 +4,26 @@ import { isCollectedCashSettlement } from '../utils/cashBankMath';
 import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { toLocalDateStr } from '../utils/date';
 
+// Free cubes issued on one sale.
+//
+// A `sale_items` row flagged `is_free` is authoritative — that is how the
+// pooled-order RPC records complimentary stock, split across Production and
+// Resell like any other line. `sales.free_quantity` is the fallback for rows
+// written before those line items existed.
+function freeCubesOn(sale) {
+  const fromItems = (sale.sale_items || [])
+    .filter(item => item.is_free)
+    .reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+  return fromItems || Number(sale.free_quantity) || 0;
+}
+
 const defaultDashboardData = {
   stats: {
     mfcSoldToday: 0,
     rscSoldToday: 0,
     totalCubesSoldToday: 0,
+    freeCubesToday: 0,
+    totalFreeCubes: 0,
     totalInventory: 0,
     mfcInventory: 0,
     rscInventory: 0,
@@ -29,6 +44,7 @@ const defaultDashboardData = {
     monthlyCubesProduction: 0,
     monthlyCubesResell: 0,
     monthlyCubesTotal: 0,
+    monthlyCubesFree: 0,
     salesDistributionTotal: 0,
     trendProductionTotal: 0,
     trendPurchaseTotal: 0
@@ -79,6 +95,8 @@ export function useDashboard() {
 
       let mfcSoldToday = 0;
       let rscSoldToday = 0;
+      let freeCubesToday = 0;
+      let totalFreeCubes = 0;
       let revenueToday = 0;
       let totalRevenue = 0;
       let monthlyRevenue = 0;
@@ -87,16 +105,22 @@ export function useDashboard() {
       salesList.forEach(sale => {
         const amt = Number(sale.total_amount) || 0;
         totalRevenue += amt;
+        totalFreeCubes += freeCubesOn(sale);
 
         const saleDate = new Date(sale.sale_date);
         if (saleDate >= startOfToday) {
           (sale.sale_items || []).forEach(item => {
+            // Complimentary cubes left the store but were never sold — they
+            // earn nothing and are reported on their own card, so counting
+            // them here inflated "Sold Today" by every giveaway.
+            if (item.is_free) return;
             if (item.cube_type === 'manufactured') {
               mfcSoldToday += Number(item.quantity) || 0;
             } else if (item.cube_type === 'resell') {
               rscSoldToday += Number(item.quantity) || 0;
             }
           });
+          freeCubesToday += freeCubesOn(sale);
           revenueToday += amt;
         }
 
@@ -149,17 +173,24 @@ export function useDashboard() {
         let dayRev = 0;
         let mfcQty = 0;
         let rscQty = 0;
+        let freeQty = 0;
         salesList.forEach(sale => {
           const sDate = new Date(sale.sale_date);
           if (sDate >= dayStart && sDate <= dayEnd) {
             dayRev += Number(sale.total_amount) || 0;
             (sale.sale_items || []).forEach(item => {
+              // Free cubes are excluded here for the same reason as the
+              // "Sold Today" card: this is a SALES chart, and a bar that
+              // silently included giveaways disagreed with the card above it.
+              // They are carried alongside as `Free` so nothing is lost.
+              if (item.is_free) return;
               if (item.cube_type === 'manufactured') {
                 mfcQty += Number(item.quantity) || 0;
               } else if (item.cube_type === 'resell') {
                 rscQty += Number(item.quantity) || 0;
               }
             });
+            freeQty += freeCubesOn(sale);
           }
         });
 
@@ -168,8 +199,10 @@ export function useDashboard() {
           Revenue: dayRev,
           Production: mfcQty,
           Resell: rscQty,
+          Free: freeQty,
           // "Total" makes the combined Production + Resell cube count readable
           // straight off the chart instead of having to add two bars by eye.
+          // Billed cubes only — see the is_free skip above.
           Total: mfcQty + rscQty
         });
       }
@@ -205,6 +238,7 @@ export function useDashboard() {
 
       const monthlyCubesProduction = monthlyData.reduce((sum, d) => sum + d.Production, 0);
       const monthlyCubesResell = monthlyData.reduce((sum, d) => sum + d.Resell, 0);
+      const monthlyCubesFree = monthlyData.reduce((sum, d) => sum + d.Free, 0);
 
       // Sales Distribution (Monthly): cash vs debt sales for the current
       // calendar month only, not all-time.
@@ -268,6 +302,8 @@ export function useDashboard() {
           mfcSoldToday,
           rscSoldToday,
           totalCubesSoldToday,
+          freeCubesToday,
+          totalFreeCubes,
           totalInventory,
           mfcInventory,
           rscInventory,
@@ -288,6 +324,7 @@ export function useDashboard() {
           monthlyCubesProduction,
           monthlyCubesResell,
           monthlyCubesTotal: monthlyCubesProduction + monthlyCubesResell,
+          monthlyCubesFree,
           // The pie's `|| 1` placeholder must never leak into the displayed
           // total, so sum the real figures rather than the chart data.
           salesDistributionTotal: cashTotal + debtTotal,

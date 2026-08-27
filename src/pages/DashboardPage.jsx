@@ -21,7 +21,8 @@ import {
   CreditCard,
   ShoppingCart,
   HandCoins,
-  ClipboardCheck
+  ClipboardCheck,
+  Gift
 } from 'lucide-react';
 
 export function DashboardPage() {
@@ -59,7 +60,7 @@ export function DashboardPage() {
       <div className="space-y-4 sm:space-y-6">
         {/* Metric Cards Loading */}
         <div className="grid grid-cols-2 lg:grid-cols-4 landscape:grid-cols-4 gap-3 sm:gap-5">
-          {Array.from({ length: 8 }).map((_, i) => (
+          {Array.from({ length: 9 }).map((_, i) => (
             <Skeleton key={i} className="h-24 sm:h-28 rounded-2xl" />
           ))}
         </div>
@@ -81,9 +82,24 @@ export function DashboardPage() {
     // Row 1 — cube counts
     {
       title: 'Sold Today',
+      // Billed cubes only. Complimentary stock left the store but was never
+      // sold and earns nothing, so it is reported on its own card rather than
+      // padding this one.
       value: `${stats.totalCubesSoldToday.toLocaleString()} Cubes`,
+      subtitle: stats.freeCubesToday > 0
+        ? `excludes ${stats.freeCubesToday.toLocaleString()} free issued today`
+        : null,
       icon: <Boxes size={20} className="text-sky-500" />,
       bg: 'bg-sky-50 dark:bg-sky-950/30 border-sky-100 dark:border-sky-900/50 text-sky-500'
+    },
+    {
+      title: 'Total Free Cubes Offered',
+      value: `${stats.totalFreeCubes.toLocaleString()} Cubes`,
+      // The lifetime figure is what "total offered" means, but the day's
+      // giveaway is what reconciles against the Sold Today card beside it.
+      subtitle: `${stats.freeCubesToday.toLocaleString()} issued today`,
+      icon: <Gift size={20} className="text-violet-500" />,
+      bg: 'bg-violet-50 dark:bg-violet-950/30 border-violet-100 dark:border-violet-900/50 text-violet-500'
     },
     {
       title: 'Production Cubes',
@@ -193,6 +209,11 @@ export function DashboardPage() {
               <h3 className="text-sm sm:text-base md:text-lg font-bold font-heading text-slate-900 dark:text-slate-50 mt-0.5 truncate">
                 {card.value}
               </h3>
+              {card.subtitle && (
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate" title={card.subtitle}>
+                  {card.subtitle}
+                </p>
+              )}
             </div>
           </div>
         ))}
@@ -214,8 +235,10 @@ export function DashboardPage() {
 
           {/* Period totals — Production + Resell and their combined figure,
               so the chart answers "how many cubes did we sell this period?"
-              without the reader having to add the bars up. */}
-          <div className="grid grid-cols-3 gap-2 text-center">
+              without the reader having to add the bars up. Free cubes are
+              carried as a fourth tile rather than folded into the bars: this
+              is a sales chart, and a giveaway is not a sale. */}
+          <div className="grid grid-cols-4 gap-2 text-center">
             <div className="rounded-xl bg-green-50 dark:bg-green-950/20 border border-green-100 dark:border-green-900/40 py-1.5">
               <span className="block text-[10px] font-bold uppercase tracking-wider text-green-700 dark:text-green-400">Production</span>
               <span className="block text-xs sm:text-sm font-bold font-mono text-green-700 dark:text-green-400">
@@ -228,8 +251,14 @@ export function DashboardPage() {
                 {totals.monthlyCubesResell.toLocaleString()}
               </span>
             </div>
+            <div className="rounded-xl bg-fuchsia-50 dark:bg-fuchsia-950/20 border border-fuchsia-100 dark:border-fuchsia-900/40 py-1.5">
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-fuchsia-700 dark:text-fuchsia-400">Free Issued</span>
+              <span className="block text-xs sm:text-sm font-bold font-mono text-fuchsia-700 dark:text-fuchsia-400">
+                {totals.monthlyCubesFree.toLocaleString()}
+              </span>
+            </div>
             <div className="rounded-xl bg-violet-50 dark:bg-violet-950/20 border border-violet-100 dark:border-violet-900/40 py-1.5">
-              <span className="block text-[10px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-400">Total Cubes</span>
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-400">Total Sold</span>
               <span className="block text-xs sm:text-sm font-bold font-mono text-violet-700 dark:text-violet-400">
                 {totals.monthlyCubesTotal.toLocaleString()}
               </span>

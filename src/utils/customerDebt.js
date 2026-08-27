@@ -68,3 +68,16 @@ export function debtFieldsFor(debts, customerId) {
   const { total, updatedAt } = customerDebtSummary(debts, customerId);
   return { customer_debt_total: total, customer_debt_updated_at: updatedAt };
 }
+
+/**
+ * What to print in a "Sale Code" column for a debt.
+ *
+ * An initial debt is an opening balance carried forward from the old book and
+ * has no sale behind it, so the sale-code fallback (`DEBT-12`) told the reader
+ * nothing. Every ledger, statement and receipt names it the same way.
+ */
+export function debtReference(debt) {
+  if (!debt) return '—';
+  if (debt.is_opening_balance) return 'Initial Debt';
+  return debt.sale?.sale_code || `DEBT-${debt.id}`;
+}

@@ -10,7 +10,7 @@ import { Modal } from '../components/Modal';
 import { Input, Select, TextArea } from '../components/FormFields';
 import { generateDebtStatementPDF, generateSettlementReceiptPDF } from '../utils/pdfGenerator';
 import { toLocalDateTimeStr, isWithinLocalRange } from '../utils/date';
-import { debtFieldsFor } from '../utils/customerDebt';
+import { debtFieldsFor, debtReference } from '../utils/customerDebt';
 import { buildSettlementNotification, notificationUrl, toWhatsAppNumber } from '../utils/notifications';
 import { SendNotificationDialog } from '../components/SendNotificationDialog';
 import { DocumentPreviewModal, DebtStatementPreview, SettlementReceiptPreview } from '../components/DocumentPreview';
@@ -243,8 +243,11 @@ export function DebtsPage() {
     if (!settlementReceiptRecord) return null;
 
     const phone = settlementReceiptRecord.customer?.whatsapp_number || settlementReceiptRecord.customer?.contact_number;
+    // A settlement line against an opening balance has no sale_code — the
+    // server's FIFO join returns null for it — so it is named rather than
+    // silently dropped from the receipt reference.
     const saleRef = settlementReceiptRecord.settlements?.length
-      ? settlementReceiptRecord.settlements.map(s => s.sale_code).filter(Boolean).join(', ')
+      ? settlementReceiptRecord.settlements.map(s => s.sale_code || 'Initial Debt').join(', ')
       : (settlementReceiptRecord.sale?.sale_code || 'N/A');
     const amountPaid = Number(settlementReceiptRecord.amount_paid) || 0;
 
@@ -414,7 +417,9 @@ export function DebtsPage() {
     if (query) {
       result = result.filter(d =>
         d.customer?.name?.toLowerCase().includes(query) ||
-        d.sale?.sale_code?.toLowerCase().includes(query)
+        // debtReference, not sale_code: an opening balance has no sale behind
+        // it and was unreachable by search.
+        debtReference(d).toLowerCase().includes(query)
       );
     }
 
@@ -475,7 +480,7 @@ export function DebtsPage() {
     filteredDebts.forEach(debt => {
       const debtAmount = Number(debt.total_amount) || 0;
       const customerName = debt.customer?.name || 'Unknown';
-      const saleCode = debt.sale?.sale_code || `DEBT-${debt.id}`;
+      const saleCode = debtReference(debt);
 
       // A debt hanging off a CASH sale is not a credit sale — it is the
       // shortfall FIN-17 opens when that order's cash was diverted to the
@@ -1223,7 +1228,7 @@ export function DebtsPage() {
         onClose={closeBillPreview}
         title={`Debt Statement ${billDebt?.sale ? `— ${billDebt.sale.sale_code}` : ''}`}
         buildDoc={() => generateDebtStatementPDF(billDebtWithBalance, settings)}
-        fileName={`${billDebt?.sale?.sale_code || `DEBT-${billDebt?.id}`}_statement.pdf`}
+        fileName={`${billDebt ? debtReference(billDebt).replace(/\s+/g, '_') : 'debt'}_statement.pdf`}
       >
         <DebtStatementPreview debt={billDebtWithBalance} settings={settings} />
       </DocumentPreviewModal>
