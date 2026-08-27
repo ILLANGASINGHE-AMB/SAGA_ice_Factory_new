@@ -18,7 +18,7 @@ import { buildSaleNotification, notificationUrl, toWhatsAppNumber } from '../uti
 import { SendNotificationDialog } from '../components/SendNotificationDialog';
 import { recordNotification } from '../hooks/useNotifications';
 import { toLocalDateStr, todayStr, thisMonthStr, thisYearStr } from '../utils/date';
-import { ShoppingCart, Search, FileDown, ArrowRight, ArrowLeft, Check, Trash2, Eye, Pencil, CalendarRange } from 'lucide-react';
+import { ShoppingCart, Search, FileDown, ArrowRight, ArrowLeft, Check, Trash2, Eye, Pencil, CalendarRange, UserPlus, Zap } from 'lucide-react';
 
 export function SalesPage() {
   const { sales, isLoading: salesLoading, placeOrder, updateSale, saleDeletionImpact, deleteSale } = useSales();
@@ -1055,30 +1055,37 @@ export function SalesPage() {
                   )}
                 </div>
 
-                <div className="text-center pt-1.5 space-y-1">
-                  <div>
-                    <span className="text-xs text-slate-400">Not in system registry?</span>{' '}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowMiniCustomerForm(true);
-                        setCustomerId('');
-                      }}
-                      className="text-xs text-navy-600 dark:text-sky-400 font-bold hover:underline"
-                    >
-                      Register Mini-Form
-                    </button>
-                  </div>
-                  <div>
-                    <span className="text-xs text-slate-400">Just passing through?</span>{' '}
-                    <button
-                      type="button"
-                      onClick={selectOneTime}
-                      className="text-xs text-navy-600 dark:text-sky-400 font-bold hover:underline"
-                    >
-                      One-Time Sale
-                    </button>
-                  </div>
+                {/* The two ways out of the registry search. These were inline
+                    text links — far too small to hit reliably on the factory's
+                    touch panel — so they are proper tap targets sized like the
+                    Billing Terms cards on the next step. */}
+                <div className="grid grid-cols-2 gap-3 pt-1.5">
+                  <button
+                    type="button"
+                    onClick={selectOneTime}
+                    className="p-3.5 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50/50 dark:hover:bg-slate-800/10 hover:border-emerald-400 dark:hover:border-emerald-600 transition flex flex-col items-center justify-center text-center space-y-1.5 cursor-pointer active:scale-[0.97]"
+                  >
+                    <div className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
+                      <Zap size={18} />
+                    </div>
+                    <span className="font-semibold text-xs sm:text-sm text-slate-700 dark:text-slate-300">One-Time Sale</span>
+                    <span className="text-[10px] opacity-80">Walk-in, cash only</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMiniCustomerForm(true);
+                      setCustomerId('');
+                    }}
+                    className="p-3.5 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50/50 dark:hover:bg-slate-800/10 hover:border-navy-400 dark:hover:border-sky-600 transition flex flex-col items-center justify-center text-center space-y-1.5 cursor-pointer active:scale-[0.97]"
+                  >
+                    <div className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
+                      <UserPlus size={18} />
+                    </div>
+                    <span className="font-semibold text-xs sm:text-sm text-slate-700 dark:text-slate-300">Register New</span>
+                    <span className="text-[10px] opacity-80">Add to the registry</span>
+                  </button>
                 </div>
               </>
             ) : (
