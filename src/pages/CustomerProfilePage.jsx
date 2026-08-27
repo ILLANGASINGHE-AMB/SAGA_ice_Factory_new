@@ -474,11 +474,43 @@ export function CustomerProfilePage() {
             </h2>
           </div>
           {isAdmin ? (
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center flex-wrap gap-2">
               <Button variant="secondary" size="sm" onClick={() => setPriceModalOpen(true)} className="flex items-center space-x-1.5">
                 <DollarSign size={14} />
                 <span>Custom Prices</span>
               </Button>
+
+              {/* Opening balance: what this customer already owed when they
+                  came across from the old book. Offered only while there isn't
+                  one — a second would silently double the receivable with
+                  nothing to reconcile it against. Once recorded, the action
+                  turns into Remove, and stays available only while nothing has
+                  been paid against it. Branch customers get it too: they carry
+                  balances like anyone else. */}
+              {!initialDebt ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={openInitialDebtModal}
+                  className="flex items-center space-x-1.5"
+                  title="Record what this customer already owed before their first order here"
+                >
+                  <FilePlus2 size={14} />
+                  <span>Add Initial Debt</span>
+                </Button>
+              ) : Number(initialDebt.paid_amount) === 0 ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setRemoveInitialDebtOpen(true)}
+                  className="flex items-center space-x-1.5"
+                  title={`Initial debt of ${money(initialDebt.total_amount)} recorded — remove it while nothing has been paid against it`}
+                >
+                  <X size={14} />
+                  <span>Remove Initial Debt</span>
+                </Button>
+              ) : null}
+
               {customer.is_branch ? (
                 <span className="text-xs text-slate-400 font-medium" title="Branch customers are edited/deleted from Settings → Set Branch">
                   Managed in Settings
@@ -547,38 +579,9 @@ export function CustomerProfilePage() {
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5 space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <h3 className="text-sm font-bold font-heading text-slate-800 dark:text-slate-100">Debt Details</h3>
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-bold text-rose-600 dark:text-rose-400">
-              Outstanding: {money(totalOutstandingDebt)}
-            </span>
-            {/* Opening balance: what the customer already owed when they came
-                across from the old book. Admin-only, and offered only while
-                there isn't one — a second would silently double the
-                receivable with nothing to reconcile it against. */}
-            {isAdmin && !initialDebt && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={openInitialDebtModal}
-                className="flex items-center space-x-1.5"
-              >
-                <FilePlus2 size={14} />
-                <span>Add Initial Debt</span>
-              </Button>
-            )}
-            {isAdmin && initialDebt && Number(initialDebt.paid_amount) === 0 && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setRemoveInitialDebtOpen(true)}
-                className="flex items-center space-x-1.5"
-                title="Remove the initial debt — only possible while nothing has been paid against it"
-              >
-                <X size={14} />
-                <span>Remove Initial Debt</span>
-              </Button>
-            )}
-          </div>
+          <span className="text-xs font-bold text-rose-600 dark:text-rose-400">
+            Outstanding: {money(totalOutstandingDebt)}
+          </span>
         </div>
         <Table
           enablePagination={false}
