@@ -223,7 +223,7 @@ export function GlobalSearchModal({ isOpen, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-4 sm:pt-16 p-4 overflow-y-auto">
       {/* Backdrop */}
       <div
         aria-hidden="true"
@@ -265,7 +265,7 @@ export function GlobalSearchModal({ isOpen, onClose }) {
         </div>
 
         {/* Results Box */}
-        <div className="max-h-[60vh] overflow-y-auto touch-scroll overscroll-contain p-2">
+        <div className="max-h-[55dvh] overflow-y-auto touch-scroll overscroll-contain p-2">
           {isLoading ? (
             <div className="p-8 text-center text-xs text-slate-400 animate-pulse">
               Searching system registries...

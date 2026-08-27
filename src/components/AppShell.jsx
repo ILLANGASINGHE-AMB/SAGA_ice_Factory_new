@@ -456,7 +456,7 @@ export function AppShell({ children }) {
           className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-900/60 backdrop-blur-sm"
           {...sheetBackdropHandlers}
         >
-          <div className="bg-white dark:bg-slate-900 rounded-t-2xl p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800 shadow-2xl max-h-[75vh] overflow-y-auto touch-scroll overscroll-contain">
+          <div className="bg-white dark:bg-slate-900 rounded-t-2xl p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800 shadow-2xl max-h-[75dvh] overflow-y-auto touch-scroll overscroll-contain">
             {/* Grab handle — the standard "this is a sheet you can dismiss"
                 affordance on a touch screen. */}
             <div aria-hidden="true" className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-slate-300 dark:bg-slate-700" />

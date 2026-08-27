@@ -132,7 +132,7 @@ export function Modal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-2.5 sm:p-4 overflow-y-auto">
       {/* Backdrop overlay. Inert unless the caller opted into dismissal. */}
       <div
         aria-hidden="true"
@@ -140,14 +140,21 @@ export function Modal({
         {...(dismissOnBackdrop ? backdropHandlers : {})}
       />
 
-      {/* Modal Content Box */}
+      {/* Modal Content Box.
+          Top-anchored (`items-start` above, `mt-*`/`mb-auto` here) rather than
+          centred: a centred dialog puts its lower half exactly where the
+          on-screen keyboard appears, so the fields being typed into ended up
+          hidden behind it. The height cap uses `dvh`, which tracks the
+          viewport as the keyboard shrinks it — `vh` is frozen to the full
+          screen and would keep sizing the panel as if the keyboard were not
+          there. */}
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`relative w-full ${sizes[size]} max-h-[92vh] landscape:max-h-[88vh] flex flex-col rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-4 sm:p-6 landscape:p-4 transform transition-all duration-300 animate-in fade-in-50 zoom-in-95 my-auto z-10 focus:outline-none`}
+        className={`relative w-full ${sizes[size]} max-h-[92dvh] landscape:max-h-[88dvh] flex flex-col rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-4 sm:p-6 landscape:p-4 transform transition-all duration-300 animate-in fade-in-50 zoom-in-95 mt-2 sm:mt-6 landscape:mt-2 mb-auto z-10 focus:outline-none`}
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 mb-3 shrink-0">

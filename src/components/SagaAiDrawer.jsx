@@ -162,7 +162,7 @@ export function SagaAiDrawer({ isOpen, onClose }) {
     <div className={`fixed z-50 transition-all duration-200 ${
       isExpanded 
         ? 'inset-4 md:inset-8' 
-        : 'bottom-4 right-4 left-4 sm:left-auto sm:w-[440px] h-[600px] max-h-[82vh]'
+        : 'bottom-4 right-4 left-4 sm:left-auto sm:w-[440px] h-[600px] max-h-[82dvh]'
     }`}>
       <div className="flex flex-col h-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl overflow-hidden">
         

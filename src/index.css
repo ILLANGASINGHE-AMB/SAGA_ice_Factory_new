@@ -249,7 +249,10 @@ input, select, textarea {
     padding-bottom: 0.75rem !important;
   }
   .landscape-modal-body {
-    max-height: 65vh !important;
+    /* dvh, not vh: vh is frozen to the full screen, so a body capped in vh
+       stays the same height after the on-screen keyboard has taken half the
+       viewport and simply runs off the bottom. */
+    max-height: 65dvh !important;
   }
 }
 
