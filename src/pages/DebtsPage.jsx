@@ -5,7 +5,6 @@ import { useSettings } from '../hooks/useSettings';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { Table } from '../components/Table';
-import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { Modal } from '../components/Modal';
 import { Input, Select, TextArea } from '../components/FormFields';
@@ -42,6 +41,25 @@ function groupDebtsByCustomer(rows) {
     }
   });
   return Array.from(map.values()).sort((a, b) => b.total_debt - a.total_debt);
+}
+
+// An auto-applied settlement records the settling order only inside its
+// `created_by` string — the order RPC writes '<user> (auto-applied from sale
+// SC009)' and the mark_auto_applied_settlement trigger stamps is_auto_applied
+// to match. This is the only place the settling sale code is available.
+const AUTO_APPLIED_SALE_RE = /\(auto-applied from sale ([^)]+)\)/;
+
+const PAYMENT_METHOD_LABELS = {
+  cash: 'Cash',
+  bank_transfer: 'Bank Transfer',
+  cheque: 'Cheque',
+  card: 'Card',
+  other: 'Other'
+};
+
+function formatPaymentMethod(method) {
+  if (!method) return 'Payment';
+  return PAYMENT_METHOD_LABELS[method] || method.replace(/_/g, ' ');
 }
 
 export function DebtsPage() {
@@ -407,104 +425,107 @@ export function DebtsPage() {
     );
   }, [allDebtorGroups, pickerQuery]);
 
-  // Debt History as a true transaction ledger.
+  // Debt History — one row per debt.
   //
-  // It previously listed one row per *debt* showing that debt's running
-  // total/paid/remaining — so a customer who paid three times showed a single
-  // aggregate line and the individual payments were invisible. Each row here
-  // is one real event against a debt: the credit sale that opened it, then
-  // every settlement paid against it, each with the balance as it stood
-  // immediately after that event.
+  // It used to emit a separate row for every settlement, so a debt and the
+  // payment that cleared it appeared as two disconnected lines. Per
+  // DebtTab.md the settlement now folds back into the debt's own row: that
+  // row carries what was owed, what has been paid, how it was paid and what
+  // is left, and updates in place as the debt is settled. A debt cleared by
+  // a later cash order therefore stops reading "Not Settled / 25,000" and
+  // starts reading "Settled by Cash Order [SC009] / 0" on the same line.
   const debtHistoryRows = useMemo(() => {
-    const rows = [];
+    const rows = filteredDebts.map(debt => {
+      const debtAmount = Number(debt.total_amount) || 0;
+      const remainingAmount = Number(debt.remaining_amount) || 0;
+      const settlements = debt.debt_settlements || [];
 
-    filteredDebts.forEach(debt => {
-      const total = Number(debt.total_amount) || 0;
+      // `debts.paid_amount` is the maintained figure; the settlements sum is
+      // a fallback for rows written before it was kept up to date.
+      const settledSum = settlements.reduce((sum, setl) => sum + (Number(setl.amount_paid) || 0), 0);
+      const paidAmount = Number(debt.paid_amount) || settledSum;
+
+      // Which cash orders auto-cleared this debt, de-duplicated.
+      const settledByOrders = [...new Set(
+        settlements
+          .filter(setl => setl.is_auto_applied)
+          .map(setl => AUTO_APPLIED_SALE_RE.exec(setl.created_by || '')?.[1])
+          .filter(Boolean)
+      )];
+
+      // Methods for payments a person actually took at the counter.
+      const manualMethods = [...new Set(
+        settlements
+          .filter(setl => !setl.is_auto_applied)
+          .map(setl => formatPaymentMethod(setl.payment_method))
+      )];
+
+      const methodParts = [];
+      if (settledByOrders.length > 0) {
+        methodParts.push(`Settled by Cash Order [${settledByOrders.join(', ')}]`);
+      } else if (settlements.some(setl => setl.is_auto_applied)) {
+        // Auto-applied, but the settling order's code was never stamped.
+        methodParts.push('Settled by Cash Order');
+      }
+      methodParts.push(...manualMethods);
+
+      // A debt can be cleared without leaving a settlement row behind (an
+      // adjustment, or a legacy record). Calling that "Not Settled" next to a
+      // zero balance would read as a contradiction.
+      const isCleared = debtAmount > 0 && remainingAmount <= 0;
+      if (methodParts.length === 0 && isCleared) methodParts.push('Settled');
 
       // A debt hanging off a CASH sale is not a credit sale — it is the
       // shortfall FIN-17 opens when that order's cash was diverted to the
-      // customer's older invoices. Its total_amount is the shortfall alone,
-      // so what the customer was actually billed and what they handed over at
-      // the counter both have to come from the sale.
-      //
-      //   25,000 cash order, 17,500 diverted to an old debt
-      //   -> billed 25,000, paid 7,500 at the counter, 17,500 still owed
-      //
-      // Labelling that "Credit Sale +17,500" told the operator the customer
-      // had taken 17,500 on credit, when they had in fact paid 25,000 cash.
+      // customer's older invoices. Kept as a sub-label so the operator can
+      // still tell the two apart at a glance.
       const isCashShortfall = debt.sale?.payment_type === 'cash';
       const orderTotal = Number(debt.sale?.total_amount) || 0;
-      const paidAtCounter = isCashShortfall ? Math.max(0, orderTotal - total) : 0;
 
-      rows.push({
+      return {
         id: `debt-${debt.id}`,
         occurredAt: debt.created_at,
-        kind: 'charge',
-        isCashShortfall,
         customerName: debt.customer?.name || 'Unknown',
-        saleCode: debt.sale?.sale_code || '—',
-        reference: isCashShortfall
-          ? `Cash order LKR ${orderTotal.toLocaleString()} — LKR ${paidAtCounter.toLocaleString()} paid at counter`
-          : (debt.sale?.sale_code || `DEBT-${debt.id}`),
-        amount: total,
-        balanceAfter: total,
-        status: debt.status,
-        note: null,
+        saleCode: debt.sale?.sale_code || `DEBT-${debt.id}`,
+        isCashShortfall,
+        orderTotal,
+        debtAmount,
+        paidAmount,
+        paymentMethod: methodParts.length > 0 ? methodParts.join(' + ') : 'Not Settled',
+        remainingAmount,
+        // Drives the row tint. Derived from the balance rather than
+        // `debt.status` so it can't disagree with the numbers beside it.
+        settlementState: isCleared ? 'settled' : paidAmount > 0 ? 'partial' : 'pending',
         debt
-      });
-
-      // Replay settlements oldest-first so each row can carry the balance as
-      // it actually stood at that moment, rather than today's figure.
-      const settlements = [...(debt.debt_settlements || [])]
-        .sort((a, b) => new Date(a.settlement_date) - new Date(b.settlement_date));
-
-      let running = total;
-      settlements.forEach(setl => {
-        const paid = Number(setl.amount_paid) || 0;
-        running = Math.max(0, running - paid);
-        rows.push({
-          id: `settlement-${setl.id}`,
-          occurredAt: setl.settlement_date,
-          kind: 'payment',
-          customerName: debt.customer?.name || 'Unknown',
-          saleCode: debt.sale?.sale_code || '—',
-          reference: setl.payment_method ? `Payment (${setl.payment_method.replace('_', ' ')})` : 'Payment',
-          amount: paid,
-          balanceAfter: running,
-          status: running <= 0 ? 'settled' : 'partial',
-          note: setl.notes || null,
-          debt
-        });
-      });
+      };
     });
 
     return rows.sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt));
   }, [filteredDebts]);
 
   // Status bar across the rows currently in view — how much was charged,
-  // how much has come back in, and what's still standing.
+  // how much has come back in, and what's still standing. Now that a row is
+  // a debt rather than an event, these are plain column sums.
   const debtHistorySummary = useMemo(() => {
     let charged = 0;
     let collected = 0;
-    let charges = 0;
-    let payments = 0;
+    let outstanding = 0;
+    let settled = 0;
 
     debtHistoryRows.forEach(row => {
-      if (row.kind === 'charge') {
-        charged += row.amount;
-        charges++;
-      } else {
-        collected += row.amount;
-        payments++;
-      }
+      charged += row.debtAmount;
+      collected += row.paidAmount;
+      outstanding += row.remainingAmount;
+      if (row.settlementState === 'settled') settled++;
     });
 
     return {
       charged,
       collected,
-      outstanding: Math.max(0, charged - collected),
-      charges,
-      payments,
+      outstanding,
+      debts: debtHistoryRows.length,
+      settled,
+      open: debtHistoryRows.length - settled,
       collectedPct: charged > 0 ? Math.min(100, (collected / charged) * 100) : 0
     };
   }, [debtHistoryRows]);
@@ -734,9 +755,9 @@ export function DebtsPage() {
                 Debt History
               </h3>
               <span className="text-[11px] font-semibold text-slate-400">
-                {debtHistoryRows.length.toLocaleString()} transactions ·{' '}
-                {debtHistorySummary.charges.toLocaleString()} credit {debtHistorySummary.charges === 1 ? 'sale' : 'sales'} ·{' '}
-                {debtHistorySummary.payments.toLocaleString()} {debtHistorySummary.payments === 1 ? 'payment' : 'payments'}
+                {debtHistorySummary.debts.toLocaleString()} {debtHistorySummary.debts === 1 ? 'debt' : 'debts'} ·{' '}
+                {debtHistorySummary.settled.toLocaleString()} settled ·{' '}
+                {debtHistorySummary.open.toLocaleString()} outstanding
               </span>
             </div>
 
@@ -780,45 +801,64 @@ export function DebtsPage() {
             headers={[
               { key: 'occurredAt', label: 'Date & Time', sortable: false },
               { key: 'customerName', label: 'Customer Name', sortable: false },
-              { key: 'saleCode', label: 'Sale Code', sortable: false },
-              { key: 'kind', label: 'Transaction', sortable: false },
-              { key: 'amount', label: 'Amount', sortable: false },
-              { key: 'balanceAfter', label: 'Balance After', sortable: false },
-              { key: 'status', label: 'Status', sortable: false },
-              { key: 'note', label: 'Note', sortable: false },
-              { key: 'downloadPdf', label: 'Statement', sortable: false }
+              { key: 'saleCode', label: 'Sales Code', sortable: false },
+              { key: 'debtAmount', label: 'Debt Amount', sortable: false },
+              { key: 'paidAmount', label: 'Paid Amount', sortable: false },
+              { key: 'paymentMethod', label: 'Payment Method', sortable: false },
+              { key: 'remainingAmount', label: 'Remaining Amount', sortable: false },
+              { key: 'downloadPdf', label: 'Download PDF', sortable: false }
             ]}
             data={debtHistoryRows}
             isLoading={isLoading}
-            emptyMessage="No debt transactions matched the parameters."
+            emptyMessage="No debts matched the parameters."
             renderRow={(row) => (
               <tr key={row.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
-                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 text-xs text-slate-500 whitespace-nowrap">
-                  {new Date(row.occurredAt).toLocaleString()}
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono text-xs text-slate-500 whitespace-nowrap">
+                  {toLocalDateTimeStr(row.occurredAt) || '—'}
                 </td>
-                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-semibold text-slate-900 dark:text-slate-100">{row.customerName}</td>
-                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-medium text-navy-600 dark:text-navy-400">{row.saleCode}</td>
-                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3">
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${
-                    row.kind === 'charge'
-                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                      : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                  }`}>
-                    {row.kind !== 'charge' ? 'Payment' : row.isCashShortfall ? 'Cash Order Balance' : 'Credit Sale'}
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-semibold text-slate-900 dark:text-slate-100">
+                  {row.customerName}
+                </td>
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-medium text-navy-600 dark:text-navy-400 whitespace-nowrap">
+                  {row.saleCode}
+                  {row.isCashShortfall && (
+                    <span className="block text-[10px] font-sans font-normal text-slate-400">
+                      Cash order LKR {row.orderTotal.toLocaleString()}
+                    </span>
+                  )}
+                </td>
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                  LKR {row.debtAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </td>
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-semibold whitespace-nowrap">
+                  {row.paidAmount > 0 ? (
+                    <span className="text-emerald-600 dark:text-emerald-400">
+                      LKR {row.paidAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                  ) : (
+                    <span className="font-sans text-xs font-semibold text-slate-400">Not Paid</span>
+                  )}
+                </td>
+                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 text-xs max-w-[200px]">
+                  <span className={`font-semibold ${
+                    row.settlementState === 'settled'
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : row.settlementState === 'partial'
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-slate-400'
+                  }`} title={row.paymentMethod}>
+                    {row.paymentMethod}
                   </span>
-                  <span className="block text-[10px] text-slate-400 mt-0.5">{row.reference}</span>
+                  {row.settlementState === 'partial' && (
+                    <span className="block text-[10px] text-slate-400">Part paid</span>
+                  )}
                 </td>
-                <td className={`px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-semibold ${
-                  row.kind === 'charge' ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'
+                <td className={`px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-semibold whitespace-nowrap ${
+                  row.remainingAmount > 0
+                    ? 'text-rose-600 dark:text-rose-400'
+                    : 'text-emerald-600 dark:text-emerald-400'
                 }`}>
-                  {row.kind === 'charge' ? '+' : '−'}LKR {row.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </td>
-                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono text-slate-700 dark:text-slate-300">
-                  LKR {row.balanceAfter.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </td>
-                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3"><Badge type={row.status} /></td>
-                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 text-xs text-slate-500 dark:text-slate-400 max-w-[160px] truncate" title={row.note || ''}>
-                  {row.note || '—'}
+                  LKR {row.remainingAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </td>
                 <td className="px-2.5 sm:px-4 py-2.5 sm:py-3">
                   <Button
