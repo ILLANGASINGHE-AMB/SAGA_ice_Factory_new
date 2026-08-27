@@ -504,6 +504,13 @@ export function DebtsPage() {
       let runningPaid = 0;
       settlements.forEach((setl, idx) => {
         const amount = Number(setl.amount_paid) || 0;
+        // The balance BROUGHT FORWARD into this payment — what this bill still
+        // owed the moment before the money was taken. That, not the debt's
+        // original total, is this row's Debt Amount: on a bill of 25,000 part
+        // paid by 10,000, the next payment is settling 15,000, and repeating
+        // 25,000 down every line would keep quoting a figure the customer no
+        // longer owes.
+        const remainingBefore = Math.max(0, debtAmount - runningPaid);
         runningPaid += amount;
         const remainingAfter = Math.max(0, debtAmount - runningPaid);
         const statusAfter = remainingAfter <= 0 ? 'settled' : 'partial';
@@ -523,7 +530,10 @@ export function DebtsPage() {
           settlementCode,
           isCashShortfall: false,
           orderTotal: 0,
-          debtAmount,
+          debtAmount: remainingBefore,
+          // The debt's original total, kept for the column's tooltip so the
+          // brought-forward figure can still be traced back to the bill.
+          debtOriginalAmount: debtAmount,
           paidAmount: amount,
           paymentMethod: setl.is_auto_applied
             ? `Settled by Cash Order${settledByOrder ? ` [${settledByOrder}]` : ''}`
@@ -901,7 +911,12 @@ export function DebtsPage() {
                     </span>
                   )}
                 </td>
-                <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                <td
+                  className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap"
+                  title={isSettlement
+                    ? `Balance brought forward · original debt LKR ${row.debtOriginalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                    : 'Debt taken on'}
+                >
                   LKR {row.debtAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </td>
                 <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-semibold whitespace-nowrap">
