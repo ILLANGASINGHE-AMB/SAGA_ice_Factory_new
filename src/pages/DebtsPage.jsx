@@ -576,6 +576,10 @@ export function DebtsPage() {
         remainingAmount,
         settlementLines,
         lastSettledAt: lastSettlement?.settledAt || null,
+        // What the table sorts on: the last thing that HAPPENED to this debt —
+        // the most recent payment against it, or the day it was incurred if
+        // nothing has been paid yet. See the sort below.
+        lastActivityAt: lastSettlement?.settledAt || debt.created_at,
         // Drives the row tint. Derived from the balance rather than
         // `debt.status` so it can't disagree with the numbers beside it.
         settlementState: isCleared ? 'settled' : paidAmount > 0 ? 'partial' : 'pending',
@@ -583,7 +587,23 @@ export function DebtsPage() {
       };
     });
 
-    return rows.sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt));
+    // Newest activity first, not newest debt first.
+    //
+    // Sorting on `occurredAt` alone (the date the debt was incurred, which
+    // never moves) buried a debt settled a minute ago far down the ledger
+    // among months-old rows — the operator had to hunt for the settlement they
+    // had just taken. A debt's last payment brings it back to the top, and a
+    // debt with no payments still sorts by the day it was incurred, so an
+    // untouched ledger reads exactly as it did.
+    //
+    // Ties fall back to the incurrence date: several debts cleared by one
+    // FIFO payment share a settlement timestamp to the microsecond, and the
+    // oldest invoice should still lead that group.
+    return rows.sort((a, b) => {
+      const diff = new Date(b.lastActivityAt) - new Date(a.lastActivityAt);
+      if (diff !== 0) return diff;
+      return new Date(a.occurredAt) - new Date(b.occurredAt);
+    });
   }, [filteredDebts]);
 
   // Status bar across the rows currently in view — how much was charged,
