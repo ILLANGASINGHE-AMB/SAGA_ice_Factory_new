@@ -123,6 +123,11 @@ create table public.settings (
   favicon_url text,
   gemini_api_key text default '',
   ai_enabled boolean default true,
+  -- Feature visibility toggles. Kept on `settings` rather than per-device:
+  -- whether Production and Resell are priced separately is an accounting
+  -- decision the whole factory has to agree on, not a display preference.
+  separate_cube_prices boolean not null default true,
+  undo_enabled boolean not null default false,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 

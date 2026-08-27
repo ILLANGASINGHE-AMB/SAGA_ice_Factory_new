@@ -56,7 +56,13 @@ export function useSettings() {
     logo_url,
     favicon_url,
     gemini_api_key,
-    ai_enabled
+    ai_enabled,
+    separate_cube_prices,
+    undo_enabled,
+    // Lets a partial save say what it actually changed, instead of filling
+    // Recent Actions with identical "Updated system settings" lines every
+    // time a Feature Visibility switch is tapped.
+    logDescription
   }) => {
     const { data: current, error: getErr } = await supabase
       .from('settings')
@@ -76,6 +82,12 @@ export function useSettings() {
       updated_at: new Date().toISOString()
     };
 
+    // Undefined means "not part of this save" — the Feature Visibility card
+    // flips one switch at a time and must not overwrite the others.
+    Object.keys(settingsData).forEach(key => {
+      if (settingsData[key] === undefined) delete settingsData[key];
+    });
+
     if (gemini_api_key !== undefined) {
       settingsData.gemini_api_key = gemini_api_key;
       // Also cache in localStorage for instant access
@@ -92,20 +104,41 @@ export function useSettings() {
       window.dispatchEvent(new Event('ai-enabled-changed'));
     }
 
+    if (separate_cube_prices !== undefined) {
+      settingsData.separate_cube_prices = separate_cube_prices;
+    }
+
+    if (undo_enabled !== undefined) {
+      settingsData.undo_enabled = undo_enabled;
+    }
+
+    const describeError = (error) => {
+      const missingColumn = error.code === 'PGRST204' || error.code === '42703';
+      const touchesNewFlags = separate_cube_prices !== undefined || undo_enabled !== undefined;
+      if (missingColumn && touchesNewFlags) {
+        return 'This toggle needs the 20260827100000_settings_feature_toggles migration. Run it in Supabase, then try again.';
+      }
+      return error.message;
+    };
+
     if (!current || current.length === 0) {
       const { error: insertErr } = await supabase
         .from('settings')
         .insert(settingsData);
-      if (insertErr) throw new Error(insertErr.message);
+      if (insertErr) throw new Error(describeError(insertErr));
     } else {
       const { error: updateErr } = await supabase
         .from('settings')
         .update(settingsData)
         .eq('id', current[0].id);
-      if (updateErr) throw new Error(updateErr.message);
+      if (updateErr) throw new Error(describeError(updateErr));
     }
 
-    logActivity({ action: 'update', entityType: 'settings', description: 'Updated system settings' });
+    logActivity({
+      action: 'update',
+      entityType: 'settings',
+      description: logDescription || 'Updated system settings'
+    });
   };
 
   return {

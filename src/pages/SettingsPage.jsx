@@ -34,7 +34,11 @@ import {
   Moon,
   Palmtree,
   Waves,
-  Droplets
+  Droplets,
+  ToggleRight,
+  Sparkles,
+  Tag,
+  Undo2
 } from 'lucide-react';
 
 const THEME_ICONS = { light: Sun, dark: Moon, beach: Palmtree, ocean: Waves, liquidglass: Droplets };
@@ -119,6 +123,13 @@ export function SettingsPage() {
   const [faviconBase64, setFaviconBase64] = useState(null);
   const [geminiApiKey, setGeminiApiKey] = useState('');
   const [aiEnabled, setAiEnabled] = useState(true);
+  // Feature Visibility switches. These save the moment they are tapped rather
+  // than waiting on a form's Save button — they are single booleans, and on a
+  // touch panel a switch that silently needs confirming elsewhere reads as
+  // broken.
+  const [separateCubePrices, setSeparateCubePrices] = useState(true);
+  const [undoEnabled, setUndoEnabled] = useState(false);
+  const [featureSaving, setFeatureSaving] = useState(null); // which key is in flight
   const [showApiKey, setShowApiKey] = useState(false);
   const [testingAi, setTestingAi] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
@@ -168,6 +179,11 @@ export function SettingsPage() {
       setGeminiApiKey(savedKey);
       const isEnabled = settings.ai_enabled !== undefined ? settings.ai_enabled : (localStorage.getItem('saga_ai_enabled') !== 'false');
       setAiEnabled(isEnabled);
+      // `!== false` rather than a truthy test: the column is only false when
+      // an admin has actually turned it off, and a row written before this
+      // migration reports undefined, which must read as the default.
+      setSeparateCubePrices(settings.separate_cube_prices !== false);
+      setUndoEnabled(settings.undo_enabled === true);
     }
   }, [settings]);
 
@@ -254,6 +270,34 @@ export function SettingsPage() {
       toast.error(err.message || "Failed to save settings");
     } finally {
       setSaveLoading(false);
+    }
+  };
+
+  // Feature Visibility switches save on tap. Each sends only its own field —
+  // updateSettings drops undefined keys — so flipping one switch can never
+  // clobber the company details a colleague is halfway through editing.
+  const saveFeatureToggle = async (key, value, label) => {
+    const setter = {
+      ai_enabled: setAiEnabled,
+      separate_cube_prices: setSeparateCubePrices,
+      undo_enabled: setUndoEnabled
+    }[key];
+
+    // Optimistic: the switch moves under the finger, and rolls back if the
+    // write fails.
+    setter(value);
+    setFeatureSaving(key);
+    try {
+      await updateSettings({
+        [key]: value,
+        logDescription: `${label} ${value ? 'enabled' : 'disabled'}`
+      });
+      toast.success(`${label} ${value ? 'enabled' : 'disabled'}`);
+    } catch (err) {
+      setter(!value);
+      toast.error(err.message || `Failed to update ${label}`);
+    } finally {
+      setFeatureSaving(null);
     }
   };
 
@@ -862,30 +906,13 @@ export function SettingsPage() {
               </div>
             </div>
 
-            {/* Toggle ON/OFF Switch */}
-            <div className="flex items-center justify-between p-3.5 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800">
-              <div>
-                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
-                  Enable SAGA AI Assistant
-                </span>
-                <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                  {aiEnabled ? 'SAGA AI floating button is ON across the system' : 'SAGA AI assistant is OFF and hidden'}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setAiEnabled(!aiEnabled)}
-                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                  aiEnabled ? 'bg-navy-600' : 'bg-slate-300 dark:bg-slate-700'
-                }`}
-              >
-                <span
-                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                    aiEnabled ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </div>
+            {/* The AI on/off switch used to live here. It now sits with the
+                other two show/hide switches in Feature Visibility, so all
+                three are in one place; this card keeps the key config. */}
+            <p className="text-[11px] text-slate-400 dark:text-slate-500">
+              Show or hide the floating SAGA AI button under{' '}
+              <strong className="text-slate-500 dark:text-slate-400">Feature Visibility</strong>.
+            </p>
           </div>
 
           <div className="flex justify-end pt-3 border-t border-slate-100 dark:border-slate-800">
@@ -898,7 +925,89 @@ export function SettingsPage() {
 
       {/* 2. Style / Layout Toggles & Data Backup */}
       <div className="space-y-6">
-        
+
+        {/* Feature Visibility Card — the three system-wide show/hide switches.
+            Each one saves on tap; there is no Save button to miss. */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 space-y-4">
+          <div className="flex items-center space-x-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+            <ToggleRight className="text-navy-500" size={20} />
+            <h3 className="text-base font-bold font-heading text-slate-800 dark:text-slate-100">
+              Feature Visibility
+            </h3>
+          </div>
+
+          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+            Show or hide optional parts of the system. These apply to every device,
+            not just this one, and take effect immediately.
+          </p>
+
+          <div className="space-y-2.5">
+            {[
+              {
+                key: 'ai_enabled',
+                icon: Sparkles,
+                title: 'SAGA AI Floating Button',
+                label: 'SAGA AI',
+                value: aiEnabled,
+                on: 'The SAGA AI button is visible on every screen.',
+                off: 'The SAGA AI button is hidden system-wide.'
+              },
+              {
+                key: 'separate_cube_prices',
+                icon: Tag,
+                title: 'Separate Production & Resell Prices',
+                label: 'Separate cube prices',
+                value: separateCubePrices,
+                on: 'Inventory prices Production and Resell cubes independently.',
+                off: 'Inventory shows one price, applied to both Production and Resell.'
+              },
+              {
+                key: 'undo_enabled',
+                icon: Undo2,
+                title: 'Undo Button in Recent Actions',
+                label: 'Undo button',
+                value: undoEnabled,
+                on: 'Deletions in Recent Actions can be undone from their Trash snapshot.',
+                off: 'Recent Actions is a read-only log.'
+              }
+            ].map(({ key, icon: Icon, title, label, value, on, off }) => (
+              <div
+                key={key}
+                className="flex items-center justify-between gap-3 p-3.5 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800"
+              >
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <Icon size={16} className={`mt-0.5 shrink-0 ${value ? 'text-navy-500' : 'text-slate-400'}`} />
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                      {title}
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {value ? on : off}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={value}
+                  aria-label={title}
+                  disabled={featureSaving === key}
+                  onClick={() => saveFeatureToggle(key, !value, label)}
+                  className={`relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
+                    value ? 'bg-navy-600' : 'bg-slate-300 dark:bg-slate-700'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                      value ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Style & Themes Card */}
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 space-y-4">
           <div className="flex items-center space-x-2 border-b border-slate-100 dark:border-slate-800 pb-3">

@@ -1,12 +1,13 @@
 import { useState, useMemo } from 'react';
 import { useInventory } from '../hooks/useInventory';
+import { useSettings } from '../hooks/useSettings';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { Modal } from '../components/Modal';
 import { Input } from '../components/FormFields';
-import { Plus, Minus, Edit, AlertTriangle, Table2, LineChart as LineChartIcon } from 'lucide-react';
+import { Plus, Minus, Edit, AlertTriangle, Table2, LineChart as LineChartIcon, Tag } from 'lucide-react';
 import { toLocalDateStr, toLocalMonthStr, todayStr, thisMonthStr, thisYearStr } from '../utils/date';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -97,8 +98,31 @@ function CubeTrendTooltip({ active, payload, label }) {
 
 export function InventoryPage() {
   const { inventory, transactions, isLoading, addStock, removeStock, updatePrice } = useInventory();
+  const { settings } = useSettings();
   const { user, isAdmin } = useAuth();
   const toast = useToast();
+
+  // Settings → Feature Visibility → "Separate Production & Resell Prices".
+  // Off means the two sellable pools are billed at one rate, so Inventory
+  // collapses its two price controls into a single one that writes both.
+  // `!== false` so a settings row written before the column existed keeps the
+  // original separate-price behaviour.
+  const separatePrices = settings?.separate_cube_prices !== false;
+
+  const sellableItems = useMemo(
+    () => (inventory || []).filter(i => SELLABLE_TYPES.includes(i.type)),
+    [inventory]
+  );
+
+  // In unified mode the pools are supposed to agree. If they don't — a price
+  // set before the toggle was turned off — say so rather than silently
+  // showing one of them.
+  const unifiedPrice = useMemo(() => {
+    const prices = sellableItems
+      .map(i => (i.price_per_cube === null || i.price_per_cube === undefined ? null : Number(i.price_per_cube)));
+    if (prices.length === 0 || prices.some(p => p === null)) return null;
+    return prices.every(p => p === prices[0]) ? prices[0] : 'mixed';
+  }, [sellableItems]);
 
   // Modal control states
   const [activeModal, setActiveModal] = useState(null); // 'add' | 'remove' | 'editPrice' | null
@@ -131,6 +155,15 @@ export function InventoryPage() {
     setActiveModal(type);
     setQuantityInput('');
     setPriceInput(item?.price_per_cube !== null && item?.price_per_cube !== undefined ? item.price_per_cube.toString() : '');
+  };
+
+  // Unified mode: one dialog, no single item behind it. Pre-fills with the
+  // shared price when both pools already agree.
+  const openUnifiedPriceModal = () => {
+    setSelectedItem(null);
+    setActiveModal('editUnifiedPrice');
+    setQuantityInput('');
+    setPriceInput(typeof unifiedPrice === 'number' ? unifiedPrice.toString() : '');
   };
 
   const closeModal = () => {
@@ -205,6 +238,32 @@ export function InventoryPage() {
       closeModal();
     } catch (err) {
       toast.error(err.message || "Failed to update price");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Writes the one rate to every sellable pool. Sequential rather than
+  // Promise.all: update_inventory_price logs an activity row per call, and a
+  // partial failure should leave the pools it already wrote intact and say
+  // which one broke, not fail opaquely in parallel.
+  const handleEditUnifiedPrice = async (e) => {
+    e.preventDefault();
+    const price = parseFloat(priceInput);
+    if (isNaN(price) || price <= 0) {
+      toast.error("Please enter a price greater than zero");
+      return;
+    }
+
+    setActionLoading(true);
+    try {
+      for (const item of sellableItems) {
+        await updatePrice(item.id, price);
+      }
+      toast.success(`Cube price set to LKR ${price.toFixed(2)} for Production and Resell`);
+      closeModal();
+    } catch (err) {
+      toast.error(err.message || "Failed to update the cube price");
     } finally {
       setActionLoading(false);
     }
@@ -417,6 +476,53 @@ export function InventoryPage() {
         </div>
       </div>
 
+      {/* One price for both sellable pools. Replaces the two per-card Price
+          buttons when Settings → Feature Visibility has separate pricing off,
+          so there is exactly one place to set the rate. */}
+      {!separatePrices && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-4 sm:p-5 flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="p-2 rounded-xl bg-navy-50 dark:bg-navy-950/30 text-navy-600 dark:text-navy-400 shrink-0">
+              <Tag size={18} />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold font-heading text-slate-800 dark:text-slate-100">
+                Cube Price
+              </h3>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                One rate for Production and Resell. Change it under Settings → Feature
+                Visibility to price them separately.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 shrink-0">
+            {unifiedPrice === null ? (
+              <span className="text-xs font-semibold text-rose-500 bg-rose-50 dark:bg-rose-950/20 px-2.5 py-1 rounded-lg border border-rose-200 dark:border-rose-900/50 flex items-center">
+                <AlertTriangle size={12} className="mr-1" /> Unset
+              </span>
+            ) : unifiedPrice === 'mixed' ? (
+              <span className="text-xs font-semibold text-amber-600 bg-amber-50 dark:bg-amber-950/20 px-2.5 py-1 rounded-lg border border-amber-200 dark:border-amber-900/50 flex items-center" title="Production and Resell still hold different prices from before this was switched on. Set the price to bring them in line.">
+                <AlertTriangle size={12} className="mr-1" /> Pools differ
+              </span>
+            ) : (
+              <span className="text-lg sm:text-xl font-extrabold font-mono text-emerald-600 dark:text-emerald-400">
+                LKR {unifiedPrice.toFixed(2)}
+              </span>
+            )}
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={openUnifiedPriceModal}
+              className="flex items-center justify-center space-x-1"
+            >
+              <Edit size={14} />
+              <span>Set Price</span>
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Stock Cards Layout - 4-Column Landscape Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 landscape:grid-cols-4 gap-3 sm:gap-5">
         {inventory.map((item) => {
@@ -507,8 +613,10 @@ export function InventoryPage() {
                   </Button>
                 )}
 
-                {/* Edit Price — everyone; Brine and Damaged have no price */}
-                {!isStockOnly ? (
+                {/* Edit Price — everyone; Brine and Damaged have no price. In
+                    unified mode the shared panel above owns the rate, so the
+                    per-card button would be a second, contradictory way in. */}
+                {!isStockOnly && separatePrices ? (
                   <Button
                     variant="primary"
                     size="sm"
@@ -840,6 +948,38 @@ export function InventoryPage() {
           <Input
             label="Price per Cube (LKR)"
             name="price"
+            type="number"
+            step="0.01"
+            min="0"
+            placeholder="e.g. 12.50"
+            value={priceInput}
+            onChange={(e) => setPriceInput(e.target.value)}
+            required
+          />
+          <div className="flex justify-end space-x-3 pt-2">
+            <Button type="button" variant="secondary" onClick={closeModal}>Cancel</Button>
+            <Button type="submit" variant="primary" disabled={actionLoading}>
+              {actionLoading ? 'Updating...' : 'Save Price'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* 4. Unified Price Modal — one rate written to both sellable pools */}
+      <Modal
+        isOpen={activeModal === 'editUnifiedPrice'}
+        onClose={closeModal}
+        title="Set Cube Price (Production & Resell)"
+        size="sm"
+      >
+        <form onSubmit={handleEditUnifiedPrice} className="space-y-4">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            This rate is saved to both the Production and Resell pools. Existing orders
+            are not repriced.
+          </p>
+          <Input
+            label="Price per Cube (LKR)"
+            name="unifiedPrice"
             type="number"
             step="0.01"
             min="0"

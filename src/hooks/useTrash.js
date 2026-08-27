@@ -30,8 +30,12 @@ export function useTrash() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchTrash();
 
+    // Unique per mount: Recent Actions and the Trash page both use this hook,
+    // and React can briefly have both mounted while navigating between them.
+    // Two subscriptions sharing a channel name collide and one silently stops
+    // receiving events. Matches what useSettings already does.
     const channel = supabase
-      .channel('trash-realtime')
+      .channel(`trash-realtime-${Math.random()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'trash' }, refetchTrash)
       .subscribe();
 

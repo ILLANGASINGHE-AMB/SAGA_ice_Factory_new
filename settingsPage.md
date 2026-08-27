@@ -1,31 +1,13 @@
-## Changes to Settings Page ##
+Add Toggle Buttons
 
-Add a section as "Set Branch"
-This is to save permenet Customers to Customers Tab in System,
+Show / Hide 
 
-Same as,
-Ask 
-Branch Name
-Address
-Phone Number
-Notes (optional)
+01. SAGA AI floating button
 
-Save Branch Button
+02. Separate prices for Production and Resell Cubes
+    (if on, Inventory shows add price for both cube types separately,
+    if off, Invenory shows one price section to add, applies for both Production and Resell Types)
 
-for these type of customers add a small red color B icon next to name to understand clearly,
+03. Undo Button for Recent Actions Tab (For each action done in the system)
 
-this functions and behaves same as a normal customer, but delete and edit happens in settings tab by admin.
-
-This linked to the 
-
-No of Cubes Sent to Branch:- //Number of cubes given for Specific Customer Named Branch PK//
-
-in Daily Manager Report 01. Stock Details
-
-if several brnaces are saved and used for sales,
-they should appear
-
-No of Cubes Sent to [Branch Name1] - [qty]
-No of Cubes Sent to [Branch Name2] - [qty]
-Total Cubes Sent:-          [total of qty]
 
