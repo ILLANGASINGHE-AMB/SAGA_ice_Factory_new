@@ -1049,8 +1049,45 @@ export function SalesPage() {
             ) : !showMiniCustomerForm ? (
               <>
                 <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
-                  Search the registry and tap a result to continue, or register a new client:
+                  Pick how this customer is handled, or search the registry below:
                 </p>
+                {/* The two non-registry paths, placed above the search field:
+                    a walk-in and a brand-new customer are decided before any
+                    typing happens, and on a touch panel the operator should
+                    not have to reach past a keyboard-summoning input to get
+                    to them. Sized like the Billing Terms cards on the next
+                    step. */}
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={selectOneTime}
+                    className="p-3.5 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50/50 dark:hover:bg-slate-800/10 hover:border-emerald-400 dark:hover:border-emerald-600 transition flex flex-col items-center justify-center text-center space-y-1.5 cursor-pointer active:scale-[0.97]"
+                  >
+                    <div className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
+                      <Zap size={18} />
+                    </div>
+                    <span className="font-semibold text-xs sm:text-sm text-slate-700 dark:text-slate-300">One-Time Sale</span>
+                    <span className="text-[10px] opacity-80">Walk-in, cash only</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMiniCustomerForm(true);
+                      setCustomerId('');
+                    }}
+                    className="p-3.5 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50/50 dark:hover:bg-slate-800/10 hover:border-navy-400 dark:hover:border-sky-600 transition flex flex-col items-center justify-center text-center space-y-1.5 cursor-pointer active:scale-[0.97]"
+                  >
+                    <div className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
+                      <UserPlus size={18} />
+                    </div>
+                    <span className="font-semibold text-xs sm:text-sm text-slate-700 dark:text-slate-300">Register New</span>
+                    <span className="text-[10px] opacity-80">Add to the registry</span>
+                  </button>
+                </div>
+
+                {/* Registry search sits under the two shortcuts — the fallback
+                    path for a customer already on file. */}
                 <div ref={customerSearchRef}>
                   <Input
                     label="Customer Search Query"
@@ -1116,38 +1153,6 @@ export function SalesPage() {
                   document.body
                 )}
 
-                {/* The two ways out of the registry search. These were inline
-                    text links — far too small to hit reliably on the factory's
-                    touch panel — so they are proper tap targets sized like the
-                    Billing Terms cards on the next step. */}
-                <div className="grid grid-cols-2 gap-3 pt-1.5">
-                  <button
-                    type="button"
-                    onClick={selectOneTime}
-                    className="p-3.5 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50/50 dark:hover:bg-slate-800/10 hover:border-emerald-400 dark:hover:border-emerald-600 transition flex flex-col items-center justify-center text-center space-y-1.5 cursor-pointer active:scale-[0.97]"
-                  >
-                    <div className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
-                      <Zap size={18} />
-                    </div>
-                    <span className="font-semibold text-xs sm:text-sm text-slate-700 dark:text-slate-300">One-Time Sale</span>
-                    <span className="text-[10px] opacity-80">Walk-in, cash only</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowMiniCustomerForm(true);
-                      setCustomerId('');
-                    }}
-                    className="p-3.5 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50/50 dark:hover:bg-slate-800/10 hover:border-navy-400 dark:hover:border-sky-600 transition flex flex-col items-center justify-center text-center space-y-1.5 cursor-pointer active:scale-[0.97]"
-                  >
-                    <div className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
-                      <UserPlus size={18} />
-                    </div>
-                    <span className="font-semibold text-xs sm:text-sm text-slate-700 dark:text-slate-300">Register New</span>
-                    <span className="text-[10px] opacity-80">Add to the registry</span>
-                  </button>
-                </div>
               </>
             ) : (
               <div className="space-y-3 bg-slate-50 dark:bg-slate-800/20 p-3.5 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-800">
