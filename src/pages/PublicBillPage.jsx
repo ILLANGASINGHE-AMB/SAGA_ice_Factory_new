@@ -132,6 +132,7 @@ export function PublicBillPage() {
   // did — fully paid.
   const outstanding = Number(sale.outstanding) || 0;
   const amountPaid = Number(sale.amount_paid ?? sale.total_amount) || 0;
+  const customerDebtTotal = Number(sale.customer_debt_total) || 0;
 
   // An order is entered as one pooled Ice Cubes quantity that the server draws
   // Production-first, then Resell. The several sale_items rows behind it are a
@@ -234,6 +235,24 @@ export function PublicBillPage() {
               <div className="flex justify-between">
                 <span className="text-slate-500">Payment Terms:</span>
                 <span className="font-bold uppercase text-navy-600 dark:text-navy-400">{sale.payment_type}</span>
+              </div>
+
+              {/* The customer's standing balance across ALL their invoices,
+                  shipped by get_public_bill. This bill's own total is only
+                  part of the answer for a customer carrying a balance, and the
+                  figure is worthless without the timestamp saying when it was
+                  true — so the two are always shown together. */}
+              <div className="flex justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
+                <span className="text-slate-500">Existing Debt to Pay:</span>
+                <span className={`font-bold ${customerDebtTotal > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                  LKR {customerDebtTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400 text-[10px]">Debt last updated:</span>
+                <span className="text-slate-400 text-[10px]">
+                  {sale.customer_debt_updated_at ? toLocalDateTimeStr(sale.customer_debt_updated_at) : 'No debt activity'}
+                </span>
               </div>
             </div>
 

@@ -27,6 +27,7 @@ import {
 } from 'recharts';
 import { toLocalDateStr, isWithinLocalRange } from '../utils/date';
 import { isCustomerPayment } from '../utils/cashBankMath';
+import { debtFieldsFor } from '../utils/customerDebt';
 
 const GRAPH_COLORS = { orders: '#ef4444', payments: '#22c55e', autoApplied: '#94a3b8' };
 const PAYMENT_METHOD_LABELS = { cash: 'Cash', card: 'Card', bank_transfer: 'Bank Transfer', cheque: 'Cheque', other: 'Other' };
@@ -288,7 +289,11 @@ export function CustomerProfilePage() {
     return Array.from(buckets.values()).sort((a, b) => a.sortDate - b.sortDate);
   }, [filteredSales, filteredPayments, filteredAutoApplied, granularity, dateFrom, dateTo, customerSales, payments]);
 
-  const handleViewSale = (sale) => setPreviewSale(sale);
+  // Both documents state what this customer still owes overall, and when that
+  // figure last moved.
+  const debtFields = useMemo(() => debtFieldsFor(debts, customerId), [debts, customerId]);
+
+  const handleViewSale = (sale) => setPreviewSale({ ...sale, ...debtFields });
 
   // The receipt as it stood at the time of the payment: the balance shown is
   // the one THIS payment left on its debt, rebuilt by replaying that debt's
@@ -316,7 +321,8 @@ export function CustomerProfilePage() {
       remaining_amount: remainingAfter,
       status: remainingAfter <= 0 ? 'settled' : 'partial',
       customer,
-      sale: payment.debt?.sale || null
+      sale: payment.debt?.sale || null,
+      ...debtFields
     });
   };
 

@@ -20,6 +20,7 @@ import { SendNotificationDialog } from '../components/SendNotificationDialog';
 import { DocumentPreviewModal, SaleInvoicePreview } from '../components/DocumentPreview';
 import { recordNotification, useNotificationStatus } from '../hooks/useNotifications';
 import { toLocalDateStr, toLocalDateTimeStr, todayStr, thisMonthStr, thisYearStr } from '../utils/date';
+import { debtFieldsFor } from '../utils/customerDebt';
 import { ShoppingCart, Search, FileDown, ArrowRight, ArrowLeft, Check, Trash2, Eye, Pencil, CalendarRange, UserPlus, Zap, BellRing, BellOff } from 'lucide-react';
 
 export function SalesPage() {
@@ -565,9 +566,17 @@ export function SalesPage() {
     }
   };
 
+  // Every printed bill states what the customer still owes overall, and when
+  // that figure last moved — the invoice's own total is only part of the
+  // answer for a customer carrying a balance.
+  const withDebtFields = useCallback(
+    (sale) => sale && ({ ...sale, ...debtFieldsFor(debts, sale.customer_id) }),
+    [debts]
+  );
+
   // Handle table downloads manually
   const downloadInvoice = (sale) => {
-    const doc = generateBillPDF(sale, settings);
+    const doc = generateBillPDF(withDebtFields(sale), settings);
     doc.save(`${sale.sale_code}_invoice.pdf`);
     toast.info(`Downloaded invoice ${sale.sale_code}`);
   };
@@ -1689,11 +1698,11 @@ export function SalesPage() {
         isOpen={viewModalOpen}
         onClose={handleCloseViewModal}
         title={`Bill Preview ${viewSale ? `— ${viewSale.sale_code}` : ''}`}
-        buildDoc={() => generateBillPDF(viewSale, settings)}
+        buildDoc={() => generateBillPDF(withDebtFields(viewSale), settings)}
         fileName={`${viewSale?.sale_code || 'invoice'}_invoice.pdf`}
         onDownloaded={() => toast.info(`Downloaded invoice ${viewSale?.sale_code || ''}`)}
       >
-        <SaleInvoicePreview sale={viewSale} settings={settings} />
+        <SaleInvoicePreview sale={withDebtFields(viewSale)} settings={settings} />
       </DocumentPreviewModal>
 
       {/* --- Edit Bill Modal --- */}

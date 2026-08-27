@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { generateBillPDFBlob } from '../utils/pdfGenerator';
 import { logActivity, currentActor } from '../lib/activityLog';
+import { fetchCustomerDebtSummary } from '../utils/customerDebt';
 
 export function useSales() {
   const [sales, setSales] = useState([]);
@@ -135,9 +136,17 @@ export function useSales() {
     // "PAID IN FULL". The RPC already returns the figure; passing it here is
     // what lets generateBillPDF say "PART PAID" instead. A debt order's own
     // total is not an FIN-17 shortfall and is labelled from payment_type.
+    // Read AFTER the RPC, so the balance printed on the bill already includes
+    // this order's own debt row (or the FIN-17 shortfall a cash order opened).
+    const customerDebt = await fetchCustomerDebtSummary(customer_id);
+
     const billSale = {
       ...fullSale,
-      outstanding: fullSale?.payment_type === 'cash' ? appliedToOldDebt : 0
+      outstanding: fullSale?.payment_type === 'cash' ? appliedToOldDebt : 0,
+      // Printed on the invoice: what the customer owes across all their
+      // invoices, and when that figure last moved.
+      customer_debt_total: customerDebt.total,
+      customer_debt_updated_at: customerDebt.updatedAt
     };
 
     // Generate PDF Blob and upload to private Supabase Storage 'bills' bucket
@@ -241,7 +250,12 @@ export function useSales() {
         .maybeSingle();
 
       if (fullSale) {
-        const pdfBlob = generateBillPDFBlob(fullSale, settings || {});
+        const customerDebt = await fetchCustomerDebtSummary(fullSale.customer_id);
+        const pdfBlob = generateBillPDFBlob({
+          ...fullSale,
+          customer_debt_total: customerDebt.total,
+          customer_debt_updated_at: customerDebt.updatedAt
+        }, settings || {});
         const fileName = `BILL_${fullSale.sale_code}_${Date.now()}.pdf`;
 
         const { data: uploadData, error: uploadErr } = await supabase.storage

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { coalesceRefetch } from '../lib/realtimeRefetch';
 import { generateSettlementReceiptPDF } from '../utils/pdfGenerator';
 import { logActivity } from '../lib/activityLog';
+import { fetchCustomerDebtSummary } from '../utils/customerDebt';
 
 export function useDebts() {
   const [debts, setDebts] = useState([]);
@@ -128,11 +129,17 @@ export function useDebts() {
     // This is best-effort — the financial settlement above already succeeded
     // and is not rolled back if PDF generation/upload fails.
     try {
+      // Read after the settlement committed, so the receipt states the
+      // customer's balance as it stands once this payment is in.
+      const customerDebt = await fetchCustomerDebtSummary(customer_id);
+
       const settlementObj = {
         settlement_code,
         debt_id: debtId,
         customer,
         sale,
+        customer_debt_total: customerDebt.total,
+        customer_debt_updated_at: customerDebt.updatedAt,
         amount_paid,
         payment_method: settledPaymentMethod,
         notes: settledNotes,

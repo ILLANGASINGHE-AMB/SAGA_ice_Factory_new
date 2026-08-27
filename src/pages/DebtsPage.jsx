@@ -10,6 +10,7 @@ import { Modal } from '../components/Modal';
 import { Input, Select, TextArea } from '../components/FormFields';
 import { generateDebtStatementPDF, generateSettlementReceiptPDF } from '../utils/pdfGenerator';
 import { toLocalDateTimeStr, isWithinLocalRange } from '../utils/date';
+import { debtFieldsFor } from '../utils/customerDebt';
 import { buildSettlementNotification, notificationUrl, toWhatsAppNumber } from '../utils/notifications';
 import { SendNotificationDialog } from '../components/SendNotificationDialog';
 import { DocumentPreviewModal, DebtStatementPreview, SettlementReceiptPreview } from '../components/DocumentPreview';
@@ -327,6 +328,13 @@ export function DebtsPage() {
     setBillDebt(null);
   };
 
+  // A debt statement covers one invoice, so it also states the customer's
+  // whole standing balance and when that last moved.
+  const billDebtWithBalance = useMemo(
+    () => billDebt && ({ ...billDebt, ...debtFieldsFor(debts, billDebt.customer_id) }),
+    [billDebt, debts]
+  );
+
   // A settlement row's own receipt, stating the balance that debt was left at
   // by THIS payment (not the debt's balance today) — so a receipt reopened
   // after a later payment still says what the customer was told at the time.
@@ -553,7 +561,10 @@ export function DebtsPage() {
             remaining_amount: remainingAfter,
             status: statusAfter,
             customer: debt.customer,
-            sale: debt.sale
+            sale: debt.sale,
+            // The customer's balance across ALL their invoices, which this
+            // debt's own remainder is only part of.
+            ...debtFieldsFor(debts, debt.customer_id)
           }
         });
       });
@@ -572,7 +583,7 @@ export function DebtsPage() {
       if (a.kind !== b.kind) return a.kind === 'settlement' ? -1 : 1;
       return String(a.saleCode).localeCompare(String(b.saleCode));
     });
-  }, [filteredDebts]);
+  }, [filteredDebts, debts]);
 
   // Status bar across what is currently in view.
   //
@@ -1211,10 +1222,10 @@ export function DebtsPage() {
         isOpen={billPreviewOpen}
         onClose={closeBillPreview}
         title={`Debt Statement ${billDebt?.sale ? `— ${billDebt.sale.sale_code}` : ''}`}
-        buildDoc={() => generateDebtStatementPDF(billDebt, settings)}
+        buildDoc={() => generateDebtStatementPDF(billDebtWithBalance, settings)}
         fileName={`${billDebt?.sale?.sale_code || `DEBT-${billDebt?.id}`}_statement.pdf`}
       >
-        <DebtStatementPreview debt={billDebt} settings={settings} />
+        <DebtStatementPreview debt={billDebtWithBalance} settings={settings} />
       </DocumentPreviewModal>
 
       {/* --- Settlement Receipt Preview Modal --- */}

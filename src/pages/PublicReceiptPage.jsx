@@ -128,7 +128,7 @@ export function PublicReceiptPage() {
 
   const lines = settlement.settlements || [];
   const amountPaid = Number(settlement.amount_paid) || 0;
-  const remainingTotal = Number(settlement.customer_remaining_total) || 0;
+  const remainingTotal = Number(settlement.customer_debt_total ?? settlement.customer_remaining_total) || 0;
   const methodLabel = (settlement.payment_method || 'cash').replace('_', ' ').toUpperCase();
   const methodDetail = settlement.payment_method === 'cheque'
     ? `No. ${settlement.cheque_no || 'N/A'}${settlement.bank_name ? `, ${settlement.bank_name}` : ''}`
@@ -219,11 +219,22 @@ export function PublicReceiptPage() {
               </span>
             </div>
 
-            <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
+            {/* What is still owed across ALL invoices after this payment,
+                with when that figure last moved — the balance changes with
+                every order and every payment, so it is meaningless undated. */}
+            <div className="pt-2 border-t border-slate-200 dark:border-slate-700 space-y-1">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-500 font-semibold">Balance still due</span>
+                <span className="text-slate-500 font-semibold">Existing Debt to Pay</span>
                 <span className={`font-bold ${remainingTotal > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                   LKR {remainingTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-slate-400">
+                <span>Debt last updated</span>
+                <span>
+                  {settlement.customer_debt_updated_at
+                    ? toLocalDateTimeStr(settlement.customer_debt_updated_at)
+                    : 'No debt activity'}
                 </span>
               </div>
             </div>

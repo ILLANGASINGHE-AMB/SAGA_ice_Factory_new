@@ -97,6 +97,26 @@ function FieldBlock({ label, rows }) {
   );
 }
 
+// The customer's standing balance, printed on every document beside the
+// transaction it is about — mirrors drawOutstandingLines in pdfGenerator.js.
+// The figure moves with every order and every payment, so it never appears
+// without the timestamp saying when it was true.
+function OutstandingBlock({ record }) {
+  const total = Number(record?.customer_debt_total) || 0;
+  const asOf = record?.customer_debt_updated_at;
+
+  return (
+    <div className="pt-1">
+      <p className={`text-xs font-bold ${total > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+        Existing Debt to Pay: {money(total)}
+      </p>
+      <p className="text-[10px] text-slate-400">
+        Debt last updated: {asOf ? toLocalDateTimeStr(asOf) : 'No debt activity'}
+      </p>
+    </div>
+  );
+}
+
 function LineTable({ head, rows, aligns = [] }) {
   return (
     <table className="w-full border-collapse text-xs">
@@ -278,14 +298,17 @@ export function SaleInvoicePreview({ sale, settings }) {
             ['Address', sale.customer?.address || 'N/A']
           ]}
         />
-        <FieldBlock
-          label="Transaction Details"
-          rows={[
-            ['Date & Time', toLocalDateTimeStr(sale.sale_date) || 'N/A'],
-            ['Payment Method', (sale.payment_type || '').toUpperCase() || 'N/A'],
-            ['Operator', sale.created_by || 'System']
-          ]}
-        />
+        <div className="space-y-1">
+          <FieldBlock
+            label="Transaction Details"
+            rows={[
+              ['Date & Time', toLocalDateTimeStr(sale.sale_date) || 'N/A'],
+              ['Payment Method', (sale.payment_type || '').toUpperCase() || 'N/A'],
+              ['Operator', sale.created_by || 'System']
+            ]}
+          />
+          <OutstandingBlock record={sale} />
+        </div>
       </div>
 
       <LineTable
@@ -352,15 +375,18 @@ export function DebtStatementPreview({ debt, settings }) {
             ['Address', debt.customer?.address || 'N/A']
           ]}
         />
-        <FieldBlock
-          label="Debt Details"
-          rows={[
-            ['Sale Reference', debt.sale?.sale_code || 'N/A'],
-            ['Date & Time Issued', toLocalDateTimeStr(debt.created_at) || 'N/A'],
-            ['Total Debt Amount', money(debt.total_amount)],
-            ['Status', (debt.status || 'N/A').toUpperCase()]
-          ]}
-        />
+        <div className="space-y-1">
+          <FieldBlock
+            label="Debt Details"
+            rows={[
+              ['Sale Reference', debt.sale?.sale_code || 'N/A'],
+              ['Date & Time Issued', toLocalDateTimeStr(debt.created_at) || 'N/A'],
+              ['Total Debt Amount', money(debt.total_amount)],
+              ['Status', (debt.status || 'N/A').toUpperCase()]
+            ]}
+          />
+          <OutstandingBlock record={debt} />
+        </div>
       </div>
 
       <LineTable
@@ -435,16 +461,19 @@ export function SettlementReceiptPreview({ settlement, settings }) {
             ['Address', settlement.customer?.address || 'N/A']
           ]}
         />
-        <FieldBlock
-          label="Settlement Details"
-          rows={[
-            ['Date & Time', toLocalDateTimeStr(settlement.settlement_date) || 'N/A'],
-            ['Sale Reference', saleRefText],
-            ['Payment Method', `${(settlement.payment_method || 'cash').replace('_', ' ').toUpperCase()}${methodDetail}`],
-            ['Authorized By', settlement.created_by || 'System'],
-            ...(settlement.notes ? [['Note', settlement.notes]] : [])
-          ]}
-        />
+        <div className="space-y-1">
+          <FieldBlock
+            label="Settlement Details"
+            rows={[
+              ['Date & Time', toLocalDateTimeStr(settlement.settlement_date) || 'N/A'],
+              ['Sale Reference', saleRefText],
+              ['Payment Method', `${(settlement.payment_method || 'cash').replace('_', ' ').toUpperCase()}${methodDetail}`],
+              ['Authorized By', settlement.created_by || 'System'],
+              ...(settlement.notes ? [['Note', settlement.notes]] : [])
+            ]}
+          />
+          <OutstandingBlock record={settlement} />
+        </div>
       </div>
 
       <LineTable

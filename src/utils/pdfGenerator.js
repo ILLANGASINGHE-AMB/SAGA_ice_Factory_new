@@ -200,6 +200,35 @@ function fieldLine(doc, text, x, y) {
   doc.text(text, x, y);
 }
 
+// The customer's outstanding balance, printed on every document alongside the
+// transaction it is about, so the paper answers "and what do I still owe?"
+// without the customer having to ask. Two lines, always together: the figure
+// changes with every order and every payment, so it is worthless without the
+// timestamp saying when it was true.
+//
+// Drawn in rose when something is owed and emerald when nothing is, matching
+// the on-screen ledger. Returns the Y the caller should continue at.
+function drawOutstandingLines(doc, record, x, y) {
+  const total = Number(record?.customer_debt_total) || 0;
+  const asOf = record?.customer_debt_updated_at;
+
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(9);
+  const [r, g, b] = total > 0 ? ROSE_TEXT : EMERALD_TEXT;
+  doc.setTextColor(r, g, b);
+  doc.text(
+    `Existing Debt to Pay: LKR ${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    x, y
+  );
+
+  doc.setFont('Helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+  doc.text(`Debt last updated: ${asOf ? toLocalDateTimeStr(asOf) : 'No debt activity'}`, x, y + 4.2);
+
+  return y + 4.2;
+}
+
 // Shared flat table defaults — thin light-gray grid lines, light-gray
 // uppercase header instead of a solid colored fill.
 const TABLE_STYLE_DEFAULTS = {
@@ -226,6 +255,9 @@ export function generateBillPDF(sale, settings) {
   fieldLine(doc, `Date & Time: ${toLocalDateTimeStr(sale.sale_date)}`, 115, y0 + 5.5);
   fieldLine(doc, `Payment Method: ${sale.payment_type?.toUpperCase()}`, 115, y0 + 10.5);
   fieldLine(doc, `Operator: ${sale.created_by || 'System'}`, 115, y0 + 15.5);
+
+  // The customer's standing balance at the time this invoice was produced.
+  drawOutstandingLines(doc, sale, 115, y0 + 22);
 
   // Itemized table using jspdf-autotable. An order is now entered as one
   // pooled Ice Cubes quantity that the server draws Production-first then
@@ -277,7 +309,9 @@ export function generateBillPDF(sale, settings) {
 
   doc.autoTable({
     ...TABLE_STYLE_DEFAULTS,
-    startY: y0 + 24,
+    // y0 + 24 before the outstanding-debt lines were added below the
+    // Transaction Details block; they take the right column down to y0 + 26.2.
+    startY: y0 + 32,
     head: [['ITEM DESCRIPTION', 'QUANTITY', 'RATE', 'TOTAL']],
     body: tableData,
     bodyStyles: { fontSize: 9, textColor: BODY },
@@ -400,6 +434,10 @@ export function generateDebtStatementPDF(debt, settings) {
   fieldLine(doc, `Total Debt Amount: LKR ${Number(debt.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 115, y0 + 15.5);
   fieldLine(doc, `Status: ${debt.status?.toUpperCase() || 'N/A'}`, 115, y0 + 20.5);
 
+  // This statement covers ONE debt; the customer may owe more across their
+  // other invoices, so their whole standing balance is stated too.
+  drawOutstandingLines(doc, debt, 115, y0 + 27);
+
   // Paid History
   const settlements = (debt.debt_settlements || [])
     .slice()
@@ -416,7 +454,8 @@ export function generateDebtStatementPDF(debt, settings) {
 
   doc.autoTable({
     ...TABLE_STYLE_DEFAULTS,
-    startY: y0 + 28,
+    // y0 + 28 before the outstanding-debt lines, which end at y0 + 31.2.
+    startY: y0 + 37,
     head: [['DATE & TIME', 'AMOUNT PAID', 'METHOD', 'NOTE']],
     body: tableData,
     bodyStyles: { fontSize: 8.5, textColor: BODY },
@@ -509,11 +548,15 @@ export function generateSettlementReceiptPDF(settlement, settings) {
   fieldLine(doc, `Payment Method: ${(settlement.payment_method || 'cash').replace('_', ' ').toUpperCase()}${methodDetail}`, 115, y0 + 15.5);
   fieldLine(doc, `Authorized By: ${settlement.created_by || 'System'}`, 115, y0 + 20.5);
 
-  let tableStartY = y0 + 28;
+  let outstandingY = y0 + 27;
   if (settlement.notes) {
     fieldLine(doc, `Note: ${settlement.notes}`, 115, y0 + 25.5);
-    tableStartY = y0 + 33;
+    outstandingY = y0 + 32;
   }
+
+  // What the customer still owes AFTER this payment — the first thing anyone
+  // holding a settlement receipt wants to know.
+  const tableStartY = drawOutstandingLines(doc, settlement, 115, outstandingY) + 5;
 
   // Summary Table of payments
   const tableData = settlement.settlements?.length
