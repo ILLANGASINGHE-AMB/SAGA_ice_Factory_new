@@ -23,7 +23,7 @@ const defaultDashboardData = {
     rscSoldToday: 0,
     totalCubesSoldToday: 0,
     freeCubesToday: 0,
-    totalFreeCubes: 0,
+    freeCubesThisMonth: 0,
     totalInventory: 0,
     mfcInventory: 0,
     rscInventory: 0,
@@ -96,7 +96,7 @@ export function useDashboard() {
       let mfcSoldToday = 0;
       let rscSoldToday = 0;
       let freeCubesToday = 0;
-      let totalFreeCubes = 0;
+      let freeCubesThisMonth = 0;
       let revenueToday = 0;
       let totalRevenue = 0;
       let monthlyRevenue = 0;
@@ -105,7 +105,6 @@ export function useDashboard() {
       salesList.forEach(sale => {
         const amt = Number(sale.total_amount) || 0;
         totalRevenue += amt;
-        totalFreeCubes += freeCubesOn(sale);
 
         const saleDate = new Date(sale.sale_date);
         if (saleDate >= startOfToday) {
@@ -126,6 +125,11 @@ export function useDashboard() {
 
         if (saleDate >= startOfMonth) {
           monthlyRevenue += amt;
+          // Giveaways are reported per calendar month, not for all time: the
+          // question the card answers is "how much have we given away this
+          // month", which only means something if it starts again at zero on
+          // the 1st. startOfMonth is already the local calendar month.
+          freeCubesThisMonth += freeCubesOn(sale);
           if (sale.payment_type === 'cash') {
             monthlyCashSales += amt;
           }
@@ -303,7 +307,7 @@ export function useDashboard() {
           rscSoldToday,
           totalCubesSoldToday,
           freeCubesToday,
-          totalFreeCubes,
+          freeCubesThisMonth,
           totalInventory,
           mfcInventory,
           rscInventory,

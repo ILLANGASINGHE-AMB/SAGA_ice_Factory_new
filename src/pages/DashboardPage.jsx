@@ -94,10 +94,11 @@ export function DashboardPage() {
     },
     {
       title: 'Total Free Cubes Offered',
-      value: `${stats.totalFreeCubes.toLocaleString()} Cubes`,
-      // The lifetime figure is what "total offered" means, but the day's
-      // giveaway is what reconciles against the Sold Today card beside it.
-      subtitle: `${stats.freeCubesToday.toLocaleString()} issued today`,
+      // Resets on the 1st: a lifetime running total only ever grows, so it
+      // stops being something anyone can act on. The month is the period the
+      // rest of the dashboard's takings figures use.
+      value: `${stats.freeCubesThisMonth.toLocaleString()} Cubes`,
+      subtitle: `This month · ${stats.freeCubesToday.toLocaleString()} issued today`,
       icon: <Gift size={20} className="text-violet-500" />,
       bg: 'bg-violet-50 dark:bg-violet-950/30 border-violet-100 dark:border-violet-900/50 text-violet-500'
     },

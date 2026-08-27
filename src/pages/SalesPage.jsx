@@ -1117,19 +1117,20 @@ export function SalesPage() {
                     a walk-in and a brand-new customer are decided before any
                     typing happens, and on a touch panel the operator should
                     not have to reach past a keyboard-summoning input to get
-                    to them. Sized like the Billing Terms cards on the next
-                    step. */}
-                <div className="grid grid-cols-2 gap-3">
+                    to them.
+                    Compact rows rather than the tall stacked cards they were:
+                    these are the two rare paths, and at card size they pushed
+                    the customer search — the common one — below the fold on a
+                    landscape tablet. Still a full touch target at 44px. */}
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={selectOneTime}
-                    className="p-3.5 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50/50 dark:hover:bg-slate-800/10 hover:border-emerald-400 dark:hover:border-emerald-600 transition flex flex-col items-center justify-center text-center space-y-1.5 cursor-pointer active:scale-[0.97]"
+                    className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50/50 dark:hover:bg-slate-800/10 hover:border-emerald-400 dark:hover:border-emerald-600 transition flex items-center gap-2 text-left cursor-pointer active:scale-[0.97]"
+                    title="Walk-in, cash only"
                   >
-                    <div className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
-                      <Zap size={18} />
-                    </div>
-                    <span className="font-semibold text-xs sm:text-sm text-slate-700 dark:text-slate-300">One-Time Sale</span>
-                    <span className="text-[10px] opacity-80">Walk-in, cash only</span>
+                    <Zap size={15} className="shrink-0" />
+                    <span className="font-semibold text-xs text-slate-700 dark:text-slate-300 truncate">One-Time Sale</span>
                   </button>
 
                   <button
@@ -1138,13 +1139,11 @@ export function SalesPage() {
                       setShowMiniCustomerForm(true);
                       setCustomerId('');
                     }}
-                    className="p-3.5 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50/50 dark:hover:bg-slate-800/10 hover:border-navy-400 dark:hover:border-sky-600 transition flex flex-col items-center justify-center text-center space-y-1.5 cursor-pointer active:scale-[0.97]"
+                    className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50/50 dark:hover:bg-slate-800/10 hover:border-navy-400 dark:hover:border-sky-600 transition flex items-center gap-2 text-left cursor-pointer active:scale-[0.97]"
+                    title="Add to the registry"
                   >
-                    <div className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
-                      <UserPlus size={18} />
-                    </div>
-                    <span className="font-semibold text-xs sm:text-sm text-slate-700 dark:text-slate-300">Register New</span>
-                    <span className="text-[10px] opacity-80">Add to the registry</span>
+                    <UserPlus size={15} className="shrink-0" />
+                    <span className="font-semibold text-xs text-slate-700 dark:text-slate-300 truncate">Register New</span>
                   </button>
                 </div>
 

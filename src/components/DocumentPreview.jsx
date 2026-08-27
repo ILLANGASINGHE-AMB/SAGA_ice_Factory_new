@@ -299,17 +299,14 @@ export function SaleInvoicePreview({ sale, settings }) {
             ['Address', sale.customer?.address || 'N/A']
           ]}
         />
-        <div className="space-y-1">
-          <FieldBlock
-            label="Transaction Details"
-            rows={[
-              ['Date & Time', toLocalDateTimeStr(sale.sale_date) || 'N/A'],
-              ['Payment Method', (sale.payment_type || '').toUpperCase() || 'N/A'],
-              ['Operator', sale.created_by || 'System']
-            ]}
-          />
-          <OutstandingBlock record={sale} />
-        </div>
+        <FieldBlock
+          label="Transaction Details"
+          rows={[
+            ['Date & Time', toLocalDateTimeStr(sale.sale_date) || 'N/A'],
+            ['Payment Method', (sale.payment_type || '').toUpperCase() || 'N/A'],
+            ['Operator', sale.created_by || 'System']
+          ]}
+        />
       </div>
 
       <LineTable
@@ -330,6 +327,12 @@ export function SaleInvoicePreview({ sale, settings }) {
                 ? `Paid ${money(paidHere)} against this invoice; part of the payment cleared an earlier bill. ${money(outstanding)} still due.`
                 : 'Thank you! This invoice has been settled in full on the date of purchase.'}
           </p>
+          {/* Sits with the payment status, matching the PDF: what this
+              invoice did to the account and what is owed in total are the
+              same question. */}
+          <div className="border-t border-slate-200 dark:border-slate-700 pt-1.5">
+            <OutstandingBlock record={sale} />
+          </div>
         </SummaryCard>
 
         <SummaryCard>

@@ -257,9 +257,6 @@ export function generateBillPDF(sale, settings) {
   fieldLine(doc, `Payment Method: ${sale.payment_type?.toUpperCase()}`, 115, y0 + 10.5);
   fieldLine(doc, `Operator: ${sale.created_by || 'System'}`, 115, y0 + 15.5);
 
-  // The customer's standing balance at the time this invoice was produced.
-  drawOutstandingLines(doc, sale, 115, y0 + 22);
-
   // Itemized table using jspdf-autotable. An order is now entered as one
   // pooled Ice Cubes quantity that the server draws Production-first then
   // Resell, so the several sale_items rows behind it are a stock-allocation
@@ -310,9 +307,7 @@ export function generateBillPDF(sale, settings) {
 
   doc.autoTable({
     ...TABLE_STYLE_DEFAULTS,
-    // y0 + 24 before the outstanding-debt lines were added below the
-    // Transaction Details block; they take the right column down to y0 + 26.2.
-    startY: y0 + 32,
+    startY: y0 + 24,
     head: [['ITEM DESCRIPTION', 'QUANTITY', 'RATE', 'TOTAL']],
     body: tableData,
     bodyStyles: { fontSize: 9, textColor: BODY },
@@ -334,29 +329,33 @@ export function generateBillPDF(sale, settings) {
   });
 
   // Grand Total card — flat, matching the summary-strip look
+  // Both cards are 34mm tall rather than 24mm: the payment-status card on the
+  // left now carries the customer's standing balance under a divider, and two
+  // summary cards of different heights read as a layout mistake.
   const finalY = doc.lastAutoTable.finalY + 10;
-  const boxH = 24;
+  const boxH = 34;
 
   doc.setDrawColor(BORDER[0], BORDER[1], BORDER[2]);
   doc.setFillColor(CARD_BG[0], CARD_BG[1], CARD_BG[2]);
   doc.setLineWidth(0.4);
   doc.roundedRect(118, finalY, 78, boxH, 2, 2, 'FD');
 
-  fieldLabel(doc, 'Subtotal', 124, finalY + 8);
+  fieldLabel(doc, 'Subtotal', 124, finalY + 11);
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(9.5);
   doc.setTextColor(INK[0], INK[1], INK[2]);
-  doc.text(`LKR ${sale.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 190, finalY + 8, { align: 'right' });
+  doc.text(`LKR ${sale.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 190, finalY + 11, { align: 'right' });
 
-  fieldLabel(doc, 'Grand Total', 124, finalY + 18);
+  fieldLabel(doc, 'Grand Total', 124, finalY + 24);
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(13);
   doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
-  doc.text(`LKR ${sale.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 190, finalY + 18, { align: 'right' });
+  doc.text(`LKR ${sale.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 190, finalY + 24, { align: 'right' });
 
   // Payment Status card — pill badge + note, colors matching Badge.jsx
   doc.setDrawColor(BORDER[0], BORDER[1], BORDER[2]);
   doc.setFillColor(CARD_BG[0], CARD_BG[1], CARD_BG[2]);
+  doc.setLineWidth(0.4);
   doc.roundedRect(14, finalY, 96, boxH, 2, 2, 'FD');
 
   const isDebt = sale.payment_type === 'debt';
@@ -374,7 +373,7 @@ export function generateBillPDF(sale, settings) {
   drawPill(
     doc,
     isDebt ? 'CREDIT / UNPAID' : isPartPaid ? 'PART PAID' : 'PAID IN FULL',
-    33, finalY + 7, pillBg, pillFg, 7.5
+    33, finalY + 6.5, pillBg, pillFg, 7.5
   );
 
   doc.setFont('Helvetica', 'normal');
@@ -385,22 +384,31 @@ export function generateBillPDF(sale, settings) {
     // handed over differ — say so plainly rather than leaving the customer
     // to reconcile the table.
     const billedTotal = paidItems.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
-    doc.text(`${billedTotal.toLocaleString()} cubes billed + ${freeTotal.toLocaleString()} free = ${(billedTotal + freeTotal).toLocaleString()} issued.`, 19, finalY + 15);
+    doc.text(`${billedTotal.toLocaleString()} cubes billed + ${freeTotal.toLocaleString()} free = ${(billedTotal + freeTotal).toLocaleString()} issued.`, 19, finalY + 13);
     doc.text(isDebt
       ? 'Issued on credit terms; the amount is in the debts statement.'
       : isPartPaid
         ? `Paid LKR ${paidHere.toLocaleString()} — LKR ${outstanding.toLocaleString()} still due.`
-        : 'Thank you! This invoice has been settled in full.', 19, finalY + 19.5);
+        : 'Thank you! This invoice has been settled in full.', 19, finalY + 17.5);
   } else if (isDebt) {
-    doc.text('This invoice was issued on credit terms. The amount is', 19, finalY + 15);
-    doc.text('recorded in the customer’s pending debts statement.', 19, finalY + 19.5);
+    doc.text('This invoice was issued on credit terms. The amount is', 19, finalY + 13);
+    doc.text('recorded in the customer’s pending debts statement.', 19, finalY + 17.5);
   } else if (isPartPaid) {
-    doc.text(`Paid LKR ${paidHere.toLocaleString()} against this invoice; part of your`, 19, finalY + 15);
-    doc.text(`payment cleared an earlier bill. LKR ${outstanding.toLocaleString()} still due.`, 19, finalY + 19.5);
+    doc.text(`Paid LKR ${paidHere.toLocaleString()} against this invoice; part of your`, 19, finalY + 13);
+    doc.text(`payment cleared an earlier bill. LKR ${outstanding.toLocaleString()} still due.`, 19, finalY + 17.5);
   } else {
-    doc.text('Thank you! This invoice has been settled in full on the', 19, finalY + 15);
-    doc.text('date of purchase.', 19, finalY + 19.5);
+    doc.text('Thank you! This invoice has been settled in full on the', 19, finalY + 13);
+    doc.text('date of purchase.', 19, finalY + 17.5);
   }
+
+  // The customer's standing balance belongs with the payment status, not up
+  // beside the transaction details where it first went: "what this invoice
+  // did to your account" and "what you owe in total" are the same question,
+  // and the reader answers it in one place.
+  doc.setDrawColor(BORDER[0], BORDER[1], BORDER[2]);
+  doc.setLineWidth(0.2);
+  doc.line(19, finalY + 21.5, 105, finalY + 21.5);
+  drawOutstandingLines(doc, sale, 19, finalY + 26.5);
 
   drawFooter(doc);
   return doc;
