@@ -190,22 +190,28 @@ export function SagaAiDrawer({ isOpen, onClose }) {
 
           <div className="flex items-center space-x-1">
             <button
+              type="button"
               onClick={() => setIsExpanded(!isExpanded)}
-              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+              className="touch-target p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg active:scale-95 transition flex items-center justify-center"
+              aria-label={isExpanded ? "Collapse window" : "Expand window"}
               title={isExpanded ? "Collapse Window" : "Expand Window"}
             >
               {isExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             </button>
             <button
+              type="button"
               onClick={handleClearChat}
-              className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition"
+              className="touch-target p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg active:scale-95 transition flex items-center justify-center"
+              aria-label="Clear conversation"
               title="Clear Conversation"
             >
               <Trash2 size={16} />
             </button>
             <button
+              type="button"
               onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+              className="touch-target p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg active:scale-95 transition flex items-center justify-center"
+              aria-label="Close SAGA AI"
               title="Close SAGA AI"
             >
               <X size={18} />
@@ -250,7 +256,7 @@ export function SagaAiDrawer({ isOpen, onClose }) {
         </div>
 
         {/* Chat Messages */}
-        <div className="flex-1 p-4 overflow-y-auto space-y-4 text-xs text-slate-800 dark:text-slate-200">
+        <div className="flex-1 p-4 overflow-y-auto touch-scroll space-y-4 text-xs text-slate-800 dark:text-slate-200">
           {messages.map((msg) => (
             <div
               key={msg.id}
@@ -273,11 +279,13 @@ export function SagaAiDrawer({ isOpen, onClose }) {
                       <span>SAGA AI</span>
                     </div>
                     <button
+                      type="button"
                       onClick={() => handleCopy(msg.id, msg.content)}
-                      className="opacity-0 group-hover:opacity-100 transition p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded"
+                      className="opacity-0 group-hover:opacity-100 touch-always-visible transition p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg active:scale-95 touch-target flex items-center justify-center"
+                      aria-label="Copy response"
                       title="Copy Response"
                     >
-                      {copiedId === msg.id ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                      {copiedId === msg.id ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
                     </button>
                   </div>
                 )}
@@ -325,15 +333,16 @@ export function SagaAiDrawer({ isOpen, onClose }) {
               onChange={(e) => setInput(e.target.value)}
               placeholder={apiKey ? "Ask SAGA AI to analyze factory data..." : "Add Gemini API Key in Settings to use SAGA AI"}
               disabled={isLoading}
-              className="flex-1 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 rounded-xl px-4 py-2 text-xs border border-slate-200 dark:border-slate-700 focus:border-navy-500 focus:bg-white dark:focus:bg-slate-950 focus:outline-none transition"
+              className="flex-1 min-h-[44px] bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 rounded-xl px-4 py-2.5 text-xs border border-slate-200 dark:border-slate-700 focus:border-navy-500 focus:bg-white dark:focus:bg-slate-950 focus:outline-none transition"
             />
             <button
               type="submit"
               disabled={!input.trim() || isLoading}
-              className="p-2.5 bg-navy-600 hover:bg-navy-700 text-white rounded-xl transition shadow-xs disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+              className="touch-target p-3 bg-navy-600 hover:bg-navy-700 active:scale-95 text-white rounded-xl transition shadow-xs disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0 flex items-center justify-center"
+              aria-label="Send message"
               title="Send Message"
             >
-              <Send size={15} />
+              <Send size={18} />
             </button>
           </form>
         </div>

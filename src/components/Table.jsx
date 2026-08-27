@@ -135,7 +135,7 @@ export function Table({
             <select
               value={pageSize}
               onChange={handlePageSizeChange}
-              className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 focus:outline-none text-xs font-semibold text-slate-700 dark:text-slate-300"
+              className="touch-target bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none text-xs font-semibold text-slate-700 dark:text-slate-300"
             >
               <option value={5}>5</option>
               <option value={10}>10</option>
@@ -154,7 +154,7 @@ export function Table({
             <button
               onClick={() => handlePageChange(safePage - 1)}
               disabled={safePage <= 1}
-              className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition min-w-[32px] min-h-[32px] flex items-center justify-center"
+              className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition touch-target flex items-center justify-center active:scale-95"
               title="Previous Page"
               aria-label="Previous Page"
             >
@@ -166,7 +166,7 @@ export function Table({
             <button
               onClick={() => handlePageChange(safePage + 1)}
               disabled={safePage >= totalPages}
-              className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition min-w-[32px] min-h-[32px] flex items-center justify-center"
+              className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition touch-target flex items-center justify-center active:scale-95"
               title="Next Page"
               aria-label="Next Page"
             >

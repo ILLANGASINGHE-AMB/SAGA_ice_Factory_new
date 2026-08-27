@@ -625,7 +625,7 @@ export function CustomerProfilePage() {
                   <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5">
                     <button
                       onClick={() => handleViewSale(sale)}
-                      className="p-1.5 rounded-lg text-slate-500 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[32px] min-h-[32px] flex items-center justify-center cursor-pointer"
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition active:scale-95 touch-target flex items-center justify-center cursor-pointer"
                       title="View Sale (download bill PDF)"
                     >
                       <FileDown size={15} />
@@ -681,7 +681,7 @@ export function CustomerProfilePage() {
                   <td className="px-3.5 sm:px-6 py-2.5 sm:py-3.5">
                     <button
                       onClick={() => handleViewPayment(payment)}
-                      className="p-1.5 rounded-lg text-slate-500 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[32px] min-h-[32px] flex items-center justify-center cursor-pointer"
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition active:scale-95 touch-target flex items-center justify-center cursor-pointer"
                       title="View Payment Receipt"
                     >
                       <ExternalLink size={15} />

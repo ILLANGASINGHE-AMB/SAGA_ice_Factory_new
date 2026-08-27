@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from 'react';
 import { X } from 'lucide-react';
+import { useBackdropDismiss } from '../hooks/useBackdropDismiss';
 
 // Modals can stack (a ConfirmDialog opened from inside a form modal, for
 // example), so the open ones are tracked as a stack rather than a count:
@@ -24,9 +25,15 @@ export function Modal({
   title,
   children,
   size = 'md', // 'sm', 'md', 'lg', 'xl', '2xl'
-  // Set by forms that hold unsaved input: a stray backdrop click then asks
-  // before discarding instead of throwing the work away silently.
-  confirmOnBackdropClose = false
+  // This system runs on a wall-mounted touch screen, where a tap just outside
+  // the panel is almost always a mis-tap rather than an intent to close — and
+  // most of these modals hold a part-filled form. So the dim area is inert by
+  // default and the panel is dismissed deliberately, via the header's Close
+  // button, a Cancel action, or Escape.
+  //
+  // Transient, data-free overlays (a picker, a menu) can opt back in; even
+  // then the tap has to be a clean one, see useBackdropDismiss.
+  dismissOnBackdrop = false
 }) {
   const titleId = useId();
   const panelRef = useRef(null);
@@ -112,6 +119,8 @@ export function Modal({
     // `onClose` is deliberately absent — see the ref above.
   }, [isOpen]);
 
+  const backdropHandlers = useBackdropDismiss(onClose, dismissOnBackdrop);
+
   if (!isOpen) return null;
 
   const sizes = {
@@ -122,20 +131,13 @@ export function Modal({
     '2xl': 'max-w-6xl'
   };
 
-  const handleBackdropClick = () => {
-    if (confirmOnBackdropClose) {
-      const discard = window.confirm("Discard your unsaved changes?");
-      if (!discard) return;
-    }
-    onClose();
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto">
-      {/* Backdrop overlay */}
+      {/* Backdrop overlay. Inert unless the caller opted into dismissal. */}
       <div
+        aria-hidden="true"
         className="fixed inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm transition-opacity duration-300"
-        onClick={handleBackdropClick}
+        {...(dismissOnBackdrop ? backdropHandlers : {})}
       />
 
       {/* Modal Content Box */}
@@ -153,11 +155,12 @@ export function Modal({
             {title}
           </h3>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition shrink-0 min-w-[32px] min-h-[32px] flex items-center justify-center"
-            aria-label="Close modal"
+            className="touch-target p-2 rounded-xl text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200 active:scale-95 transition shrink-0 flex items-center justify-center"
+            aria-label="Close"
           >
-            <X size={18} />
+            <X size={20} />
           </button>
         </div>
 
@@ -167,7 +170,7 @@ export function Modal({
             padding box, which otherwise cut off the focus ring on the first and
             last focusable elements (most visibly the top edge of a search input
             sitting flush against the body). */}
-        <div className="overflow-y-auto touch-scroll flex-1 -m-1 p-1">
+        <div className="overflow-y-auto touch-scroll overscroll-contain flex-1 -m-1 p-1">
           {children}
         </div>
       </div>

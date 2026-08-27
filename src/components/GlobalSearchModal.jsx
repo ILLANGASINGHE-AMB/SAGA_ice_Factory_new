@@ -14,6 +14,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useBackdropDismiss } from '../hooks/useBackdropDismiss';
 
 const MIN_QUERY_LENGTH = 2;
 const PER_TABLE_LIMIT = 20;
@@ -209,6 +210,11 @@ export function GlobalSearchModal({ isOpen, onClose }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
+  // The palette carries no unsaved input, so tapping the dim area still
+  // closes it — but only on a clean tap, never on a flick or a mis-tap that
+  // began inside the results list.
+  const backdropHandlers = useBackdropDismiss(onClose);
+
   if (!isOpen) return null;
 
   const handleSelectResult = (path) => {
@@ -219,9 +225,10 @@ export function GlobalSearchModal({ isOpen, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 p-4 overflow-y-auto">
       {/* Backdrop */}
-      <div 
+      <div
+        aria-hidden="true"
         className="fixed inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm transition-opacity"
-        onClick={onClose}
+        {...backdropHandlers}
       />
 
       {/* Search Modal Box */}
@@ -238,17 +245,27 @@ export function GlobalSearchModal({ isOpen, onClose }) {
             className="w-full py-4 text-sm font-medium bg-transparent border-none text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none"
           />
           {query && (
-            <button onClick={() => setQuery('')} className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 mr-2">
-              <X size={16} />
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              aria-label="Clear search"
+              className="touch-target p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition mr-1 flex items-center justify-center"
+            >
+              <X size={18} />
             </button>
           )}
-          <span className="hidden sm:inline-block text-[10px] font-semibold uppercase px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-400">
-            ESC
-          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close search"
+            className="touch-target px-3 py-2 rounded-xl text-[11px] font-semibold uppercase tracking-wide bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition flex items-center justify-center"
+          >
+            Close
+          </button>
         </div>
 
         {/* Results Box */}
-        <div className="max-h-[60vh] overflow-y-auto p-2">
+        <div className="max-h-[60vh] overflow-y-auto touch-scroll overscroll-contain p-2">
           {isLoading ? (
             <div className="p-8 text-center text-xs text-slate-400 animate-pulse">
               Searching system registries...
@@ -270,7 +287,7 @@ export function GlobalSearchModal({ isOpen, onClose }) {
                   <button
                     key={chip.path}
                     onClick={() => handleSelectResult(chip.path)}
-                    className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-navy-50 dark:hover:bg-sky-500/10 text-xs font-medium text-slate-700 dark:text-slate-300 hover:text-navy-600 dark:hover:text-sky-400 transition"
+                    className="touch-target px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-navy-50 dark:hover:bg-sky-500/10 active:scale-95 text-xs font-medium text-slate-700 dark:text-slate-300 hover:text-navy-600 dark:hover:text-sky-400 transition"
                   >
                     {chip.name}
                   </button>
@@ -288,10 +305,11 @@ export function GlobalSearchModal({ isOpen, onClose }) {
           ) : (
             <div className="space-y-1">
               {searchResults.map((item, idx) => (
-                <div
+                <button
+                  type="button"
                   key={idx}
                   onClick={() => handleSelectResult(item.path)}
-                  className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer transition group"
+                  className="w-full text-left flex items-center justify-between gap-3 p-3.5 min-h-[56px] rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 active:bg-slate-100 dark:active:bg-slate-800 cursor-pointer transition"
                 >
                   <div className="flex items-center space-x-3">
                     <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800">
@@ -311,8 +329,8 @@ export function GlobalSearchModal({ isOpen, onClose }) {
                       </p>
                     </div>
                   </div>
-                  <ArrowRight size={14} className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
+                  <ArrowRight size={16} className="text-slate-400 shrink-0" />
+                </button>
               ))}
             </div>
           )}

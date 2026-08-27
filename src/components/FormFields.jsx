@@ -21,9 +21,9 @@ export const Input = React.forwardRef(({
         id={name}
         name={name}
         type={type}
-        className={`w-full px-3.5 py-2.5 sm:py-2 text-xs sm:text-sm bg-white dark:bg-slate-900 border ${
+        className={`w-full px-3.5 py-3 text-xs sm:text-sm bg-white dark:bg-slate-900 border ${
           error ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-slate-300 dark:border-slate-800 focus:ring-navy-500 focus:border-navy-500'
-        } rounded-xl text-slate-900 dark:text-slate-100 shadow-xs focus:outline-none focus:ring-2 focus:ring-opacity-50 transition min-h-[38px]`}
+        } rounded-xl text-slate-900 dark:text-slate-100 shadow-xs focus:outline-none focus:ring-2 focus:ring-opacity-50 transition min-h-[44px]`}
         {...props}
       />
       {error && (
@@ -53,9 +53,9 @@ export const Select = React.forwardRef(({
         ref={ref}
         id={name}
         name={name}
-        className={`w-full px-3.5 py-2.5 sm:py-2 text-xs sm:text-sm bg-white dark:bg-slate-900 border ${
+        className={`w-full px-3.5 py-3 text-xs sm:text-sm bg-white dark:bg-slate-900 border ${
           error ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 dark:border-slate-800 focus:ring-navy-500 focus:border-navy-500'
-        } rounded-xl text-slate-900 dark:text-slate-100 shadow-xs focus:outline-none focus:ring-2 focus:ring-opacity-50 transition min-h-[38px]`}
+        } rounded-xl text-slate-900 dark:text-slate-100 shadow-xs focus:outline-none focus:ring-2 focus:ring-opacity-50 transition min-h-[44px]`}
         {...props}
       >
         {options.map((opt) => (
@@ -92,7 +92,7 @@ export const TextArea = React.forwardRef(({
         id={name}
         name={name}
         rows={rows}
-        className={`w-full px-3.5 py-2.5 sm:py-2 text-xs sm:text-sm bg-white dark:bg-slate-900 border ${
+        className={`w-full px-3.5 py-3 text-xs sm:text-sm bg-white dark:bg-slate-900 border ${
           error ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 dark:border-slate-800 focus:ring-navy-500 focus:border-navy-500'
         } rounded-xl text-slate-900 dark:text-slate-100 shadow-xs focus:outline-none focus:ring-2 focus:ring-opacity-50 transition`}
         {...props}

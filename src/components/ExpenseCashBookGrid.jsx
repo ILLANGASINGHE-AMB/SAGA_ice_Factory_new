@@ -367,20 +367,27 @@ export function ExpenseCashBookGrid({
                           <span className="font-medium text-slate-800 dark:text-slate-200 truncate">
                             {row.description || '—'}
                           </span>
-                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        {/* A touch screen never hovers, so these row actions
+                            were both invisible and unreachable on the tablet;
+                            `touch-always-visible` pins them open there. */}
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 touch-always-visible transition-opacity shrink-0">
                             <button
+                              type="button"
                               onClick={() => handleEditRow(row.id)}
-                              className="p-1 rounded-lg text-navy-600 dark:text-navy-400 hover:bg-navy-50 dark:hover:bg-navy-950/30 transition cursor-pointer"
+                              className="touch-target p-1.5 rounded-lg text-navy-600 dark:text-navy-400 hover:bg-navy-50 dark:hover:bg-navy-950/30 active:scale-95 transition cursor-pointer flex items-center justify-center"
+                              aria-label="Edit row"
                               title="Edit row"
                             >
-                              <Pencil size={12} />
+                              <Pencil size={14} />
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleDeleteRow(row)}
-                              className="p-1 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition cursor-pointer"
+                              className="touch-target p-1.5 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 active:scale-95 transition cursor-pointer flex items-center justify-center"
+                              aria-label="Delete row"
                               title="Delete row"
                             >
-                              <Trash2 size={12} />
+                              <Trash2 size={14} />
                             </button>
                           </div>
                         </div>

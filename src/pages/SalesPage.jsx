@@ -880,7 +880,7 @@ export function SalesPage() {
               <div className="flex items-center space-x-1">
                 <button
                   onClick={() => handleViewClick(sale)}
-                  className="p-1.5 rounded-lg text-slate-500 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition active:scale-95 touch-target flex items-center justify-center"
                   title="View Bill Preview"
                   aria-label="View Bill Preview"
                 >
@@ -888,7 +888,7 @@ export function SalesPage() {
                 </button>
                 <button
                   onClick={() => downloadInvoice(sale)}
-                  className="p-1.5 rounded-lg text-slate-500 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition active:scale-95 touch-target flex items-center justify-center"
                   title="Download Bill PDF"
                   aria-label="Download Bill PDF"
                 >
@@ -898,7 +898,7 @@ export function SalesPage() {
                   <>
                     <button
                       onClick={() => handleEditClick(sale)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-navy-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition active:scale-95 touch-target flex items-center justify-center"
                       title="Edit Sale Record"
                       aria-label="Edit Sale Record"
                     >
@@ -906,7 +906,7 @@ export function SalesPage() {
                     </button>
                     <button
                       onClick={() => handleDeleteClick(sale)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition min-w-[32px] min-h-[32px] flex items-center justify-center"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition active:scale-95 touch-target flex items-center justify-center"
                       title="Delete Sale Record"
                       aria-label="Delete Sale Record"
                     >
@@ -1063,7 +1063,7 @@ export function SalesPage() {
                   />
                   {/* Droplist Results — shows the full registry on focus, filters as you type */}
                   {customerFieldFocused && !customerId && (
-                    <div className="absolute top-full left-0 right-0 mt-1 max-h-36 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 divide-y divide-slate-100 dark:divide-slate-800 touch-scroll">
+                    <div className="absolute top-full left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 divide-y divide-slate-100 dark:divide-slate-800 touch-scroll">
                       {filteredCustomersForSearch.length === 0 ? (
                         <div className="p-3 text-xs text-slate-400 text-center">
                           No matching profiles.
@@ -1072,8 +1072,16 @@ export function SalesPage() {
                         filteredCustomersForSearch.map(c => (
                           <div
                             key={c.id}
-                            className="p-2.5 text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 flex justify-between items-center text-slate-800 dark:text-slate-200"
-                            onMouseDown={(e) => { e.preventDefault(); selectCustomer(c); }}
+                            role="button"
+                            tabIndex={0}
+                            className="p-3.5 min-h-[48px] text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 active:bg-slate-100 dark:active:bg-slate-800 flex justify-between items-center gap-3 text-slate-800 dark:text-slate-200"
+                            onPointerDown={(e) => { e.preventDefault(); selectCustomer(c); }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                selectCustomer(c);
+                              }
+                            }}
                           >
                             <span className="font-semibold">{c.name}</span>
                             <span className="font-mono text-slate-400">{c.whatsapp_number || c.contact_number}</span>

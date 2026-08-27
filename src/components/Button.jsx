@@ -19,10 +19,13 @@ export function Button({
     ghost: 'bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 focus:ring-slate-500'
   };
 
+  // `touch-target` lifts every button to the 44px floor on a touch panel while
+  // leaving the tighter sizing intact for mouse-driven browsers — see the
+  // `pointer: coarse` block in index.css.
   const sizes = {
-    sm: 'px-3 py-1.5 text-xs min-h-[36px]',
-    md: 'px-4 py-2 text-xs sm:text-sm min-h-[40px]',
-    lg: 'px-5 py-2.5 text-sm sm:text-base min-h-[44px]'
+    sm: 'px-3.5 py-2 text-xs min-h-[36px] touch-target',
+    md: 'px-4 py-2.5 text-xs sm:text-sm min-h-[40px] touch-target',
+    lg: 'px-5 py-3 text-sm sm:text-base min-h-[44px] touch-target'
   };
 
   return (

@@ -3,6 +3,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../hooks/useSettings';
 import { useIsMobileLayout } from '../hooks/useIsMobileLayout';
+import { useBackdropDismiss } from '../hooks/useBackdropDismiss';
 import { SagaAiDrawer } from './SagaAiDrawer';
 import { GlobalSearchModal } from './GlobalSearchModal';
 import { getStoredTheme, getThemeConfig, applyTheme } from '../utils/theme';
@@ -31,7 +32,8 @@ import {
   Send,
   History,
   Trash2,
-  UserCircle
+  UserCircle,
+  X
 } from 'lucide-react';
 
 export function AppShell({ children }) {
@@ -154,8 +156,8 @@ export function AppShell({ children }) {
         setIsProfileOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('pointerdown', handleClickOutside);
+    return () => document.removeEventListener('pointerdown', handleClickOutside);
   }, [isProfileOpen]);
 
   const navItems = [
@@ -186,6 +188,11 @@ export function AppShell({ children }) {
   };
 
   const { isDarkBase, backgroundUrl } = getThemeConfig(theme);
+
+  // The nav sheet holds no unsaved input, so an outside tap may still close
+  // it — but only a clean, deliberate one (see useBackdropDismiss), not the
+  // tail of a scroll through the module tiles.
+  const sheetBackdropHandlers = useBackdropDismiss(() => setIsMobileMenuOpen(false));
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans transition-colors duration-200">
@@ -323,7 +330,7 @@ export function AppShell({ children }) {
             {/* Global Search Button */}
             <button
               onClick={() => setIsSearchOpen(true)}
-              className="flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 text-xs font-medium transition min-h-[36px]"
+              className="flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 text-xs font-medium transition active:scale-95 touch-target"
               title="Search System (⌘K)"
             >
               <Search size={14} />
@@ -336,7 +343,7 @@ export function AppShell({ children }) {
             {isAdmin && (
               <button
                 onClick={() => navigate('/recent-actions')}
-                className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition min-h-[36px] min-w-[36px] flex items-center justify-center"
+                className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition active:scale-95 touch-target flex items-center justify-center"
                 title="Recent Actions"
               >
                 <History size={18} />
@@ -346,7 +353,7 @@ export function AppShell({ children }) {
             {isAdmin && (
               <button
                 onClick={() => navigate('/trash')}
-                className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition min-h-[36px] min-w-[36px] flex items-center justify-center"
+                className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition active:scale-95 touch-target flex items-center justify-center"
                 title="Trash"
               >
                 <Trash2 size={18} />
@@ -355,7 +362,7 @@ export function AppShell({ children }) {
 
             <button
               onClick={() => navigate('/settings')}
-              className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition min-h-[36px] min-w-[36px] flex items-center justify-center"
+              className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition active:scale-95 touch-target flex items-center justify-center"
               title="Settings"
             >
               <SettingsIcon size={18} />
@@ -363,7 +370,7 @@ export function AppShell({ children }) {
 
             <button
               onClick={() => setTheme(isDarkBase ? 'light' : 'dark')}
-              className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-h-[36px] min-w-[36px] flex items-center justify-center"
+              className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition active:scale-95 touch-target flex items-center justify-center"
               title="Toggle Light/Dark Mode (Beach & Ocean themes live in Settings)"
             >
               {isDarkBase ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} />}
@@ -373,7 +380,7 @@ export function AppShell({ children }) {
             <div className="relative" ref={profileRef}>
               <button
                 onClick={() => setIsProfileOpen(prev => !prev)}
-                className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition min-h-[36px] min-w-[36px] flex items-center justify-center"
+                className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition active:scale-95 touch-target flex items-center justify-center"
                 title="Profile"
               >
                 <UserCircle size={18} />
@@ -393,7 +400,7 @@ export function AppShell({ children }) {
 
             <button
               onClick={handleLogout}
-              className="p-2 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition min-h-[36px] min-w-[36px] flex items-center justify-center"
+              className="p-2 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition active:scale-95 touch-target flex items-center justify-center"
               title="Logout"
             >
               <LogOut size={18} />
@@ -440,15 +447,23 @@ export function AppShell({ children }) {
 
       {/* Mobile More Navigation Bottom Sheet */}
       {isMobileMenuOpen && isMobileLayout && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}>
-          <div 
-            className="bg-white dark:bg-slate-900 rounded-t-2xl p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800 shadow-2xl max-h-[75vh] overflow-y-auto touch-scroll"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div
+          className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-900/60 backdrop-blur-sm"
+          {...sheetBackdropHandlers}
+        >
+          <div className="bg-white dark:bg-slate-900 rounded-t-2xl p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800 shadow-2xl max-h-[75vh] overflow-y-auto touch-scroll overscroll-contain">
+            {/* Grab handle — the standard "this is a sheet you can dismiss"
+                affordance on a touch screen. */}
+            <div aria-hidden="true" className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-slate-300 dark:bg-slate-700" />
             <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 dark:border-slate-800">
               <h3 className="font-heading font-bold text-base text-slate-900 dark:text-slate-100">All Factory Modules</h3>
-              <button onClick={() => setIsMobileMenuOpen(false)} className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-                ✕
+              <button
+                type="button"
+                onClick={() => setIsMobileMenuOpen(false)}
+                aria-label="Close menu"
+                className="touch-target p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition flex items-center justify-center"
+              >
+                <X size={20} />
               </button>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -458,7 +473,7 @@ export function AppShell({ children }) {
                   to={item.path}
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={({ isActive }) => 
-                    `flex items-center space-x-3 p-2.5 sm:p-3 rounded-xl text-xs font-medium transition-all ${
+                    `flex items-center space-x-3 p-3.5 min-h-[52px] rounded-xl text-xs font-medium transition-all active:scale-[0.98] ${
                       isActive 
                         ? 'bg-navy-50 dark:bg-sky-500/10 text-navy-600 dark:text-sky-400 font-bold border border-navy-100 dark:border-sky-500/20' 
                         : 'bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300'

@@ -142,16 +142,98 @@ h1, h2, h3, h4, h5, h6 {
   box-shadow: 0 0 25px -5px rgba(245, 158, 11, 0.15);
 }
 
-/* Tablet & Mobile Touch Enhancements */
-button, a, input, select, textarea {
+/* ==========================================================================
+   Touch screen behaviour
+   The factory runs this on a wall-mounted tablet, so every rule below treats
+   a fingertip — not a mouse pointer — as the primary input device.
+   ========================================================================== */
+
+/* `manipulation` drops the 300ms wait the browser otherwise spends checking
+   for a double-tap-to-zoom, which is what made every button feel laggy. */
+button, a, input, select, textarea, [role="button"], label {
   touch-action: manipulation;
+}
+
+/* The grey flash a tap paints over a control is out of place next to the
+   app's own :active styling, and it lingers on slower panels. */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Resting a finger on a control must not raise the OS text-selection bubble
+   or the link preview sheet. Text the operator may genuinely want to copy —
+   readings, totals, table cells — is exempted below. */
+button, a, label, [role="button"], nav, .theme-nav {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+td, th, p, input, textarea, [data-selectable] {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* Prevent text zoom on iOS input focus */
 input, select, textarea {
   font-size: 16px;
 }
-@media (min-width: 640px) {
+
+/* Every scrollable region stops at its own edge instead of handing the
+   leftover scroll to the page behind it — the effect that made a flick
+   inside a modal or a table drag the whole screen. */
+.touch-scroll {
+  overscroll-behavior: contain;
+}
+
+/* Rules for finger input only; a mouse/trackpad keeps the tighter desktop
+   sizing. `pointer: coarse` is what a touch panel reports. */
+@media (pointer: coarse) {
+  /* The 44px floor comes from Apple's HIG and Material's 48dp guidance —
+     below it, mis-taps climb sharply on a wall-mounted screen. */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Icon-only controls are the usual offenders: a 16px glyph with 4px of
+     padding is a 24px target. Lift them to the finger-sized floor — but not
+     bare `a[href]`, which would stretch inline links inside body copy. */
+  button, [role="button"] {
+    min-height: 40px;
+  }
+
+  nav button, nav a[href],
+  header button, header a[href] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* A 6px scrollbar cannot be grabbed with a fingertip. */
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border-radius: 6px;
+  }
+
+  /* Checkboxes and radios ship at ~13px, far under the tap floor. */
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  /* Hover-revealed affordances never appear on a touch screen, so anything
+     that opts in with this class stays visible instead. */
+  .touch-always-visible {
+    opacity: 1 !important;
+  }
+}
+
+@media (min-width: 640px) and (pointer: fine) {
   input, select, textarea {
     font-size: var(--text-base-size, 14px);
   }
@@ -177,3 +259,10 @@ input, select, textarea {
   scrollbar-width: thin;
 }
 
+@media (pointer: coarse) {
+  /* Overrides the `thin` set just above: a thin scrollbar is undraggable
+     with a fingertip. Declared last so source order lands in our favour. */
+  .touch-scroll {
+    scrollbar-width: auto;
+  }
+}
