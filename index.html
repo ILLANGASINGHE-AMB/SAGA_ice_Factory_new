@@ -2,7 +2,19 @@
 <html lang="en" class="h-full">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Browser tab icon. The .ico carries every size from 16px to 256px, so
+         the tab, the bookmark bar and Windows shortcuts each pick their own.
+         The old favicon.svg link is gone on purpose: Chrome prefers an SVG
+         whenever both are declared, which would have kept showing the
+         previous mark. -->
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+
+    <!-- Home-screen icon when the page is installed as an app.
+         iOS ignores both the manifest icons and .ico files for this, and
+         reads apple-touch-icon alone; Android/Chrome reads the manifest. Both
+         are declared so "Add to Home Screen" shows the logo on either phone. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <!-- viewport-fit=cover fills notched/rounded tablet screens;
          interactive-widget=resizes-content keeps the on-screen keyboard from
          shoving fixed headers and modals off the top of the display.
@@ -12,6 +24,8 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Sagacious Ice" />
+    <meta name="theme-color" content="#0284c7" />
     <title>Sagacious Ice Factory Management System</title>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
