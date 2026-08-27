@@ -10,6 +10,7 @@ import { Button } from '../components/Button';
 import { Modal } from '../components/Modal';
 import { Input, Select, TextArea } from '../components/FormFields';
 import { generateDebtStatementPDF } from '../utils/pdfGenerator';
+import { toLocalDateTimeStr } from '../utils/date';
 import { buildSettlementNotification, notificationUrl, toWhatsAppNumber } from '../utils/notifications';
 import { SendNotificationDialog } from '../components/SendNotificationDialog';
 import { recordNotification } from '../hooks/useNotifications';
@@ -24,9 +25,21 @@ function groupDebtsByCustomer(rows) {
     if (d.status === 'settled') return;
     const key = d.customer_id;
     if (!map.has(key)) {
-      map.set(key, { customer_id: key, customer: d.customer, total_debt: 0 });
+      map.set(key, { customer_id: key, customer: d.customer, total_debt: 0, latest_debt_at: null });
     }
-    map.get(key).total_debt += Number(d.remaining_amount);
+    const group = map.get(key);
+    group.total_debt += Number(d.remaining_amount);
+
+    // `created_at` is when the debt was incurred and is never rewritten, so
+    // the newest one in the group is the last time this customer took credit —
+    // what the "Debt Date & Time" column reports. Compared as timestamps
+    // rather than strings so a missing/invalid value can't win the max.
+    const incurredAt = d.created_at ? new Date(d.created_at) : null;
+    if (incurredAt && !isNaN(incurredAt.getTime())) {
+      if (!group.latest_debt_at || incurredAt > new Date(group.latest_debt_at)) {
+        group.latest_debt_at = d.created_at;
+      }
+    }
   });
   return Array.from(map.values()).sort((a, b) => b.total_debt - a.total_debt);
 }
@@ -682,6 +695,7 @@ export function DebtsPage() {
             { key: 'customerId', label: 'Customer ID', sortable: false },
             { key: 'customerName', label: 'Customer Name', sortable: false },
             { key: 'total_debt', label: 'Total Debt', sortable: false },
+            { key: 'latest_debt_at', label: 'Debt Date & Time', sortable: false },
             { key: 'action', label: 'Actions', sortable: false }
           ]}
           data={customerGroups}
@@ -692,6 +706,9 @@ export function DebtsPage() {
               <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono text-navy-600 dark:text-navy-400">{group.customer?.customer_code}</td>
               <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-semibold text-slate-900 dark:text-slate-100">{group.customer?.name}</td>
               <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono font-semibold text-rose-600 dark:text-rose-400">LKR {group.total_debt.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+              <td className="px-2.5 sm:px-4 py-2.5 sm:py-3 font-mono whitespace-nowrap text-slate-600 dark:text-slate-300">
+                {toLocalDateTimeStr(group.latest_debt_at) || '—'}
+              </td>
               <td className="px-2.5 sm:px-4 py-2.5 sm:py-3">
                 <Button
                   variant="primary"
