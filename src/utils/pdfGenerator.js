@@ -1019,13 +1019,13 @@ export function generateDailyManagerReportPDF(reportData, settings) {
   doc.text('07. EMPLOYEE DETAILS', 14, currentY);
 
   const empRows = reportData.employeeAttendanceList.length > 0
-    ? reportData.employeeAttendanceList.map(e => [e.employeeName, e.date, e.startTime, e.endTime])
-    : [['No employee attendance recorded', '-', '-', '-']];
+    ? reportData.employeeAttendanceList.map(e => [e.employeeName, e.date, e.endDate || '-', e.startTime, e.endTime])
+    : [['No employee attendance recorded', '-', '-', '-', '-']];
 
   doc.autoTable({
     ...TABLE_STYLE_DEFAULTS,
     startY: currentY + 3,
-    head: [['EMPLOYEE NAME', 'DATE', 'START TIME', 'END TIME']],
+    head: [['EMPLOYEE NAME', 'START DATE', 'END DATE', 'START TIME', 'END TIME']],
     body: empRows,
     headStyles: { ...TABLE_STYLE_DEFAULTS.headStyles, fontSize: 7.5 },
     bodyStyles: { fontSize: 7.5, textColor: BODY },

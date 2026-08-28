@@ -559,6 +559,9 @@ export function useDailyReport(selectedDateStr) {
       .map(a => ({
         employeeName: employeeById.get(a.employee_id)?.name || 'Unknown',
         date: a.attendance_date,
+        // An overnight shift closes on a different day, so the end date rides
+        // along with the end time instead of being assumed same-day.
+        endDate: a.end_date || '',
         startTime: (a.start_time || '').slice(0, 5) || '-',
         endTime: (a.end_time || '').slice(0, 5) || '-'
       }))

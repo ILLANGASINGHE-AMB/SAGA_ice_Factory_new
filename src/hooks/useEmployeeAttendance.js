@@ -47,23 +47,27 @@ export function useEmployeeAttendance() {
     };
   }, []);
 
-  const validateRow = ({ employee_id, attendance_date }) => {
+  const validateRow = ({ employee_id, attendance_date, end_date }) => {
     if (!employee_id) {
       throw new Error("An employee must be selected for every row");
     }
     if (!attendance_date) {
-      throw new Error("Date is required for every row");
+      throw new Error("Start Date is required for every row");
+    }
+    if (end_date && end_date < attendance_date) {
+      throw new Error("End Date cannot be earlier than Start Date");
     }
   };
 
-  const addAttendance = async ({ employee_id, attendance_date, start_time = '', end_time = '', description = '' }) => {
-    validateRow({ employee_id, attendance_date });
+  const addAttendance = async ({ employee_id, attendance_date, end_date = '', start_time = '', end_time = '', description = '' }) => {
+    validateRow({ employee_id, attendance_date, end_date });
 
     const { data, error } = await supabase
       .from('employee_attendance')
       .insert({
         employee_id: Number(employee_id),
         attendance_date,
+        end_date: end_date || null,
         start_time: start_time || null,
         end_time: end_time || null,
         description: description.trim(),
@@ -77,14 +81,15 @@ export function useEmployeeAttendance() {
     return { id: data.id };
   };
 
-  const updateAttendance = async (id, { employee_id, attendance_date, start_time = '', end_time = '', description = '' }) => {
-    validateRow({ employee_id, attendance_date });
+  const updateAttendance = async (id, { employee_id, attendance_date, end_date = '', start_time = '', end_time = '', description = '' }) => {
+    validateRow({ employee_id, attendance_date, end_date });
 
     const { error } = await supabase
       .from('employee_attendance')
       .update({
         employee_id: Number(employee_id),
         attendance_date,
+        end_date: end_date || null,
         start_time: start_time || null,
         end_time: end_time || null,
         description: description.trim()

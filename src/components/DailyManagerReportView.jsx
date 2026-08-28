@@ -584,7 +584,8 @@ export function DailyManagerReportView() {
                   <thead>
                     <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px]">
                       <th className="py-2">Employee Name</th>
-                      <th className="py-2">Date</th>
+                      <th className="py-2">Start Date</th>
+                      <th className="py-2">End Date</th>
                       <th className="py-2">Start Time</th>
                       <th className="py-2">End Time</th>
                     </tr>
@@ -594,6 +595,7 @@ export function DailyManagerReportView() {
                       <tr key={index}>
                         <td className="py-2 font-medium">{emp.employeeName}</td>
                         <td className="py-2 text-slate-500">{emp.date}</td>
+                        <td className="py-2 text-slate-500">{emp.endDate || '-'}</td>
                         <td className="py-2 font-mono">{emp.startTime}</td>
                         <td className="py-2 font-mono">{emp.endTime}</td>
                       </tr>

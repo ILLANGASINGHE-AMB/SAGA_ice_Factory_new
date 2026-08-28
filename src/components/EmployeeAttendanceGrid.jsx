@@ -8,6 +8,18 @@ function todayInput() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// Shifts here routinely run past midnight (in at 08:00, out at 08:00 the next
+// morning), so the end date defaults to the day after the start date rather
+// than the same day. It stays a default, not a rule — the cell is editable and
+// a day shift is corrected back with one click.
+function nextDayInput(value) {
+  if (!value) return '';
+  const d = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return '';
+  d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function formatDateDisplay(value) {
   if (!value) return '—';
   return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
@@ -65,8 +77,12 @@ export function EmployeeAttendanceGrid({ employees, rows, isLoading, addAttendan
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLocalRows(rows.map(r => ({
       ...r,
+      end_date: r.end_date || '',
       start_time: toTimeInputValue(r.start_time),
       end_time: toTimeInputValue(r.end_time),
+      // A stored end date was chosen deliberately, so editing the start date
+      // must not overwrite it; a blank one is still free to auto-fill.
+      _endDateTouched: !!r.end_date,
       _isNew: false
     })));
   }, [rows, editingIds.size]);
@@ -77,13 +93,16 @@ export function EmployeeAttendanceGrid({ employees, rows, isLoading, addAttendan
       return;
     }
     const id = nextTempId();
+    const today = todayInput();
     const draft = {
       id,
       employee_id: '',
-      attendance_date: todayInput(),
+      attendance_date: today,
+      end_date: nextDayInput(today),
       start_time: '',
       end_time: '',
       description: '',
+      _endDateTouched: false,
       _isNew: true
     };
     setLocalRows(prev => [draft, ...prev]);
@@ -95,7 +114,20 @@ export function EmployeeAttendanceGrid({ employees, rows, isLoading, addAttendan
   };
 
   const handleFieldChange = (id, field, value) => {
-    setLocalRows(prev => prev.map(r => (r.id === id ? { ...r, [field]: value } : r)));
+    setLocalRows(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      if (field === 'end_date') {
+        return { ...r, end_date: value, _endDateTouched: true };
+      }
+      if (field === 'attendance_date') {
+        // Follow the start date with the day after it, until the user picks an
+        // end date of their own — from then on theirs stands.
+        return r._endDateTouched
+          ? { ...r, attendance_date: value }
+          : { ...r, attendance_date: value, end_date: nextDayInput(value) };
+      }
+      return { ...r, [field]: value };
+    }));
   };
 
   const handleDeleteRow = (row) => {
@@ -137,10 +169,18 @@ export function EmployeeAttendanceGrid({ employees, rows, isLoading, addAttendan
           throw new Error("Select an employee for every row before saving");
         }
         if (!row.attendance_date) {
-          throw new Error("Date is required for every row");
+          throw new Error("Start Date is required for every row");
         }
-        if (row.start_time && row.end_time && row.end_time < row.start_time) {
-          throw new Error("End Time cannot be earlier than Start Time");
+        if (row.end_date && row.end_date < row.attendance_date) {
+          throw new Error("End Date cannot be earlier than Start Date");
+        }
+        // Compared as full moments, not clock times: 08:00 -> 08:00 is a valid
+        // overnight shift once the end date is the following day.
+        if (row.start_time && row.end_time) {
+          const endDate = row.end_date || row.attendance_date;
+          if (`${endDate}T${row.end_time}` < `${row.attendance_date}T${row.start_time}`) {
+            throw new Error("Shift end cannot be earlier than shift start");
+          }
         }
       }
 
@@ -148,6 +188,7 @@ export function EmployeeAttendanceGrid({ employees, rows, isLoading, addAttendan
         const payload = {
           employee_id: row.employee_id,
           attendance_date: row.attendance_date,
+          end_date: row.end_date,
           start_time: row.start_time,
           end_time: row.end_time,
           description: row.description
@@ -190,7 +231,10 @@ export function EmployeeAttendanceGrid({ employees, rows, isLoading, addAttendan
                 Name
               </th>
               <th className={`${cellBase} sticky top-0 z-[2] bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800`}>
-                Date
+                Start Date
+              </th>
+              <th className={`${cellBase} sticky top-0 z-[2] bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800`}>
+                End Date
               </th>
               <th className={`${cellBase} sticky top-0 z-[2] bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800`}>
                 Start Time <span className="normal-case font-normal text-slate-400">(24h)</span>
@@ -209,11 +253,11 @@ export function EmployeeAttendanceGrid({ employees, rows, isLoading, addAttendan
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
             {isLoading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-slate-400">Loading attendance records...</td>
+                <td colSpan={8} className="px-4 py-10 text-center text-slate-400">Loading attendance records...</td>
               </tr>
             ) : localRows.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center">
+                <td colSpan={8} className="px-4 py-12 text-center">
                   <div className="flex flex-col items-center justify-center space-y-3">
                     <div className="p-3 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-2xl">
                       <Inbox size={32} className="stroke-[1.5]" />
@@ -259,6 +303,17 @@ export function EmployeeAttendanceGrid({ employees, rows, isLoading, addAttendan
                           onChange={(e) => handleFieldChange(row.id, 'attendance_date', e.target.value)}
                         />
                       ) : formatDateDisplay(row.attendance_date)}
+                    </td>
+                    <td className={cellBase}>
+                      {isEditing ? (
+                        <input
+                          type="date"
+                          className={inputBase}
+                          min={row.attendance_date || undefined}
+                          value={row.end_date || ''}
+                          onChange={(e) => handleFieldChange(row.id, 'end_date', e.target.value)}
+                        />
+                      ) : formatDateDisplay(row.end_date)}
                     </td>
                     <td className={cellBase}>
                       {isEditing ? (
@@ -320,7 +375,7 @@ export function EmployeeAttendanceGrid({ employees, rows, isLoading, addAttendan
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={7} className="sticky bottom-0 z-[3] bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-3 sm:px-4 py-2.5">
+              <td colSpan={8} className="sticky bottom-0 z-[3] bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-3 sm:px-4 py-2.5">
                 <div className="flex items-center justify-between">
                   <button
                     onClick={handleAddRow}
